@@ -14,7 +14,7 @@ import {
 } from "@shared/schema";
 import { z } from "zod";
 import { eq, desc } from "drizzle-orm";
-import { createHash, randomBytes, randomInt } from "crypto";
+import { createHash, randomBytes, randomInt, randomUUID } from "crypto";
 
 // Auth request schemas
 const authStartSchema = z.object({
@@ -1282,21 +1282,22 @@ export async function registerRoutes(
 
   // Admin: Create new campaign
   // Protected by requireAdminAuth middleware
-  // ALWAYS creates campaigns in AGGREGATION state only
+  // ALWAYS creates campaigns in AGGREGATION state and DRAFT publish status
   app.post("/api/admin/campaigns", requireAdminAuth, async (req, res) => {
     try {
-      const { adminUsername, title, description, rules, imageUrl, targetAmount, minCommitment, maxCommitment, unitPrice, aggregationDeadline } = req.body;
-
-      if (!adminUsername) {
-        return res.status(400).json({ error: "Admin username is required for audit trail" });
-      }
+      const { 
+        adminUsername, title, description, rules, imageUrl, targetAmount, 
+        minCommitment, maxCommitment, unitPrice, aggregationDeadline,
+        sku, productName, deliveryStrategy,
+        consolidationContactName, consolidationCompany, consolidationAddressLine1,
+        consolidationAddressLine2, consolidationCity, consolidationState,
+        consolidationPostalCode, consolidationCountry, consolidationPhone,
+        deliveryWindow, fulfillmentNotes
+      } = req.body;
 
       // Validate required fields
       if (!title || !title.trim()) {
         return res.status(400).json({ error: "Title is required" });
-      }
-      if (!rules || !rules.trim()) {
-        return res.status(400).json({ error: "Rules text is required" });
       }
       if (!targetAmount || parseFloat(targetAmount) <= 0) {
         return res.status(400).json({ error: "Target amount must be positive" });
@@ -1313,32 +1314,52 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Aggregation deadline must be a valid future date" });
       }
 
-      // Create campaign - ALWAYS starts in AGGREGATION state
-      const campaign = await storage.createCampaign({
+      // Insert directly with all new fields
+      const campaignId = crypto.randomUUID();
+      await db.insert(campaigns).values({
+        id: campaignId,
         title: title.trim(),
         description: description?.trim() || "",
-        rules: rules.trim(),
+        rules: rules?.trim() || "Standard campaign rules apply.",
         imageUrl: imageUrl?.trim() || null,
         targetAmount: targetAmount.toString(),
         minCommitment: minCommitment?.toString() || unitPrice.toString(),
         maxCommitment: maxCommitment?.toString() || null,
         unitPrice: unitPrice.toString(),
-        state: "AGGREGATION", // ALWAYS AGGREGATION
+        state: "AGGREGATION",
+        adminPublishStatus: "DRAFT",
         aggregationDeadline: deadlineDate,
         supplierAccepted: false,
+        sku: sku?.trim() || null,
+        productName: productName?.trim() || null,
+        deliveryStrategy: deliveryStrategy || "SUPPLIER_DIRECT",
+        consolidationContactName: consolidationContactName?.trim() || null,
+        consolidationCompany: consolidationCompany?.trim() || null,
+        consolidationAddressLine1: consolidationAddressLine1?.trim() || null,
+        consolidationAddressLine2: consolidationAddressLine2?.trim() || null,
+        consolidationCity: consolidationCity?.trim() || null,
+        consolidationState: consolidationState?.trim() || null,
+        consolidationPostalCode: consolidationPostalCode?.trim() || null,
+        consolidationCountry: consolidationCountry?.trim() || null,
+        consolidationPhone: consolidationPhone?.trim() || null,
+        deliveryWindow: deliveryWindow?.trim() || null,
+        fulfillmentNotes: fulfillmentNotes?.trim() || null,
       });
+
+      const campaignResult = await db.select().from(campaigns).where(eq(campaigns.id, campaignId)).limit(1);
+      const campaign = campaignResult[0];
 
       // Log admin action - CAMPAIGN_CREATE
       await storage.createAdminActionLog({
         campaignId: campaign.id,
-        adminUsername,
+        adminUsername: adminUsername || (req as any).adminUsername || "admin",
         action: "CAMPAIGN_CREATE",
         previousState: null,
         newState: "AGGREGATION",
         reason: "admin_create_campaign",
       });
 
-      console.log(`[ADMIN] Campaign created: ${campaign.id} by ${adminUsername}`);
+      console.log(`[ADMIN] Campaign created: ${campaign.id} as DRAFT`);
       res.status(201).json(campaign);
     } catch (error) {
       console.error("Error creating campaign:", error);
@@ -1354,6 +1375,7 @@ export async function registerRoutes(
         id: c.id,
         title: c.title,
         state: c.state,
+        adminPublishStatus: (c as any).adminPublishStatus || "DRAFT",
         aggregationDeadline: c.aggregationDeadline,
         participantCount: c.participantCount,
         totalCommitted: c.totalCommitted,
@@ -1372,10 +1394,178 @@ export async function registerRoutes(
       if (!campaign) {
         return res.status(404).json({ error: "Campaign not found" });
       }
-      res.json(campaign);
+      // Include all campaign fields including publish status and consolidation
+      const fullCampaign = await db.select().from(campaigns).where(eq(campaigns.id, req.params.id)).limit(1);
+      const campaignData = fullCampaign[0];
+      res.json({
+        ...campaign,
+        adminPublishStatus: campaignData?.adminPublishStatus || "DRAFT",
+        sku: campaignData?.sku,
+        productName: campaignData?.productName,
+        deliveryStrategy: campaignData?.deliveryStrategy || "SUPPLIER_DIRECT",
+        consolidationContactName: campaignData?.consolidationContactName,
+        consolidationCompany: campaignData?.consolidationCompany,
+        consolidationAddressLine1: campaignData?.consolidationAddressLine1,
+        consolidationAddressLine2: campaignData?.consolidationAddressLine2,
+        consolidationCity: campaignData?.consolidationCity,
+        consolidationState: campaignData?.consolidationState,
+        consolidationPostalCode: campaignData?.consolidationPostalCode,
+        consolidationCountry: campaignData?.consolidationCountry,
+        consolidationPhone: campaignData?.consolidationPhone,
+        deliveryWindow: campaignData?.deliveryWindow,
+        fulfillmentNotes: campaignData?.fulfillmentNotes,
+      });
     } catch (error) {
       console.error("Error fetching admin campaign:", error);
       res.status(500).json({ error: "Failed to fetch campaign" });
+    }
+  });
+
+  // Admin: Publish campaign (DRAFT/HIDDEN -> PUBLISHED)
+  app.post("/api/admin/campaigns/:id/publish", requireAdminAuth, async (req, res) => {
+    try {
+      const campaignId = req.params.id;
+      const campaign = await db.select().from(campaigns).where(eq(campaigns.id, campaignId)).limit(1);
+      
+      if (!campaign[0]) {
+        return res.status(404).json({ error: "Campaign not found" });
+      }
+      
+      const currentStatus = campaign[0].adminPublishStatus || "DRAFT";
+      if (currentStatus === "PUBLISHED") {
+        return res.status(400).json({ error: "Campaign is already published" });
+      }
+      
+      await db.update(campaigns)
+        .set({ adminPublishStatus: "PUBLISHED" })
+        .where(eq(campaigns.id, campaignId));
+      
+      await storage.createAdminActionLog({
+        campaignId,
+        adminUsername: (req as any).adminUsername || "admin",
+        action: "CAMPAIGN_PUBLISHED",
+        reason: `Campaign published (was ${currentStatus})`,
+      });
+      
+      res.json({ success: true, adminPublishStatus: "PUBLISHED" });
+    } catch (error) {
+      console.error("Error publishing campaign:", error);
+      res.status(500).json({ error: "Failed to publish campaign" });
+    }
+  });
+
+  // Admin: Hide campaign (PUBLISHED -> HIDDEN)
+  app.post("/api/admin/campaigns/:id/hide", requireAdminAuth, async (req, res) => {
+    try {
+      const campaignId = req.params.id;
+      const campaign = await db.select().from(campaigns).where(eq(campaigns.id, campaignId)).limit(1);
+      
+      if (!campaign[0]) {
+        return res.status(404).json({ error: "Campaign not found" });
+      }
+      
+      const currentStatus = campaign[0].adminPublishStatus || "DRAFT";
+      if (currentStatus !== "PUBLISHED") {
+        return res.status(400).json({ error: "Can only hide published campaigns" });
+      }
+      
+      await db.update(campaigns)
+        .set({ adminPublishStatus: "HIDDEN" })
+        .where(eq(campaigns.id, campaignId));
+      
+      await storage.createAdminActionLog({
+        campaignId,
+        adminUsername: (req as any).adminUsername || "admin",
+        action: "CAMPAIGN_HIDDEN",
+        reason: "Campaign hidden from public view",
+      });
+      
+      res.json({ success: true, adminPublishStatus: "HIDDEN" });
+    } catch (error) {
+      console.error("Error hiding campaign:", error);
+      res.status(500).json({ error: "Failed to hide campaign" });
+    }
+  });
+
+  // Consolidation fields that can be edited while published (until fulfillment phase)
+  const CONSOLIDATION_FIELDS = [
+    "consolidationContactName", "consolidationCompany", "consolidationAddressLine1",
+    "consolidationAddressLine2", "consolidationCity", "consolidationState",
+    "consolidationPostalCode", "consolidationCountry", "consolidationPhone",
+    "deliveryWindow", "fulfillmentNotes"
+  ];
+  
+  // Fields locked after publish
+  const CORE_FIELDS = [
+    "title", "description", "rules", "imageUrl", "targetAmount", "minCommitment",
+    "maxCommitment", "unitPrice", "aggregationDeadline", "sku", "productName", "deliveryStrategy"
+  ];
+
+  // Admin: Update campaign with field locking enforcement
+  app.patch("/api/admin/campaigns/:id", requireAdminAuth, async (req, res) => {
+    try {
+      const campaignId = req.params.id;
+      const campaign = await db.select().from(campaigns).where(eq(campaigns.id, campaignId)).limit(1);
+      
+      if (!campaign[0]) {
+        return res.status(404).json({ error: "Campaign not found" });
+      }
+      
+      const adminPublishStatus = campaign[0].adminPublishStatus || "DRAFT";
+      const campaignState = campaign[0].state;
+      const isPublished = adminPublishStatus !== "DRAFT";
+      const isFulfillmentPhase = campaignState === "FULFILLMENT" || campaignState === "RELEASED";
+      
+      const updateFields = req.body;
+      const disallowedFields: string[] = [];
+      
+      // Validate field locks
+      for (const field of Object.keys(updateFields)) {
+        if (isPublished && CORE_FIELDS.includes(field)) {
+          disallowedFields.push(field);
+        }
+        if (isFulfillmentPhase && CONSOLIDATION_FIELDS.includes(field)) {
+          disallowedFields.push(field);
+        }
+      }
+      
+      if (disallowedFields.length > 0) {
+        const message = isPublished && isFulfillmentPhase
+          ? `Campaign is in fulfillment; these fields are locked: ${disallowedFields.join(", ")}`
+          : `Campaign is published; these core fields are locked: ${disallowedFields.join(", ")}`;
+        return res.status(400).json({ error: "Field update not allowed", message, disallowedFields });
+      }
+      
+      // Build safe update object
+      const safeUpdate: Record<string, any> = {};
+      for (const [key, value] of Object.entries(updateFields)) {
+        if (!isPublished || CONSOLIDATION_FIELDS.includes(key)) {
+          // Map camelCase to snake_case for DB
+          const dbKey = key.replace(/([A-Z])/g, "_$1").toLowerCase();
+          safeUpdate[dbKey] = value;
+        }
+      }
+      
+      if (Object.keys(safeUpdate).length === 0) {
+        return res.status(400).json({ error: "No valid fields to update" });
+      }
+      
+      await db.update(campaigns)
+        .set(safeUpdate)
+        .where(eq(campaigns.id, campaignId));
+      
+      await storage.createAdminActionLog({
+        campaignId,
+        adminUsername: (req as any).adminUsername || "admin",
+        action: "CAMPAIGN_UPDATED",
+        reason: `Updated fields: ${Object.keys(updateFields).join(", ")}`,
+      });
+      
+      const updated = await db.select().from(campaigns).where(eq(campaigns.id, campaignId)).limit(1);
+      res.json(updated[0]);
+    } catch (error) {
+      console.error("Error updating campaign:", error);
+      res.status(500).json({ error: "Failed to update campaign" });
     }
   });
 

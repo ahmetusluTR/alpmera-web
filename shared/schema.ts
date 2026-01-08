@@ -71,6 +71,14 @@ export const escrowEntryTypeEnum = pgEnum("escrow_entry_type", [
   "RELEASE"
 ]);
 
+// Admin Publish Status (separate from campaign state machine)
+// Controls visibility in public UI and editability in admin
+export const adminPublishStatusEnum = pgEnum("admin_publish_status", [
+  "DRAFT",
+  "PUBLISHED", 
+  "HIDDEN"
+]);
+
 // Campaigns table
 export const campaigns = pgTable("campaigns", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -87,6 +95,25 @@ export const campaigns = pgTable("campaigns", {
   supplierAccepted: boolean("supplier_accepted").default(false),
   supplierAcceptedAt: timestamp("supplier_accepted_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  // Admin publish status (separate from state machine)
+  adminPublishStatus: adminPublishStatusEnum("admin_publish_status").notNull().default("DRAFT"),
+  // SKU and product identification
+  sku: text("sku"),
+  productName: text("product_name"),
+  // Delivery strategy
+  deliveryStrategy: text("delivery_strategy").default("SUPPLIER_DIRECT"), // SUPPLIER_DIRECT | BULK_TO_CONSOLIDATION
+  // Consolidation fields (editable while published, locked in fulfillment phase)
+  consolidationContactName: text("consolidation_contact_name"),
+  consolidationCompany: text("consolidation_company"),
+  consolidationAddressLine1: text("consolidation_address_line1"),
+  consolidationAddressLine2: text("consolidation_address_line2"),
+  consolidationCity: text("consolidation_city"),
+  consolidationState: text("consolidation_state"),
+  consolidationPostalCode: text("consolidation_postal_code"),
+  consolidationCountry: text("consolidation_country"),
+  consolidationPhone: text("consolidation_phone"),
+  deliveryWindow: text("delivery_window"),
+  fulfillmentNotes: text("fulfillment_notes"),
 });
 
 // Commitments table - user commitments to campaigns
