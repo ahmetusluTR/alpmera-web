@@ -105,6 +105,8 @@ AGGREGATION → SUCCESS → FULFILLMENT → RELEASED
 - `PATCH /api/me/profile` - Update user profile (protected)
 - `GET /api/account/commitments` - Get user's own commitments with campaign details and lastCampaignStatusUpdate (protected)
 - `GET /api/account/commitments/:code` - Get commitment detail by reference code with escrow entries and status transitions (protected)
+- `GET /api/account/escrow` - Get user's escrow movements (append-only ledger entries) (protected)
+- `GET /api/account/escrow/:id` - Get escrow movement detail with related entries timeline (protected)
 
 ### Commitment Linking
 - When authenticated, `POST /api/campaigns/:id/commit` attaches `user_id` to the commitment

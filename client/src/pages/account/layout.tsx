@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 const navItems = [
   { path: "/account/commitments", label: "Commitments", icon: Package },
   { path: "/account/profile", label: "Profile", icon: User },
-  { path: "/account/payments", label: "Payments & Escrow", icon: Wallet },
+  { path: "/account/escrow", label: "Payments & Escrow", icon: Wallet },
   { path: "/account/refunds", label: "Refunds", icon: RefreshCcw },
   { path: "/account/security", label: "Security", icon: Shield },
 ];

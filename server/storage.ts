@@ -59,6 +59,8 @@ export interface IStorage {
   // Escrow ledger operations (append-only)
   getEscrowEntries(campaignId: string): Promise<EscrowEntry[]>;
   getEscrowEntriesByCommitment(commitmentId: string): Promise<EscrowEntry[]>;
+  getEscrowEntriesByUserId(userId: string): Promise<(EscrowEntry & { commitment: Commitment; campaign: Campaign })[]>;
+  getEscrowEntryById(id: string): Promise<(EscrowEntry & { commitment: Commitment; campaign: Campaign }) | undefined>;
   createEscrowEntry(entry: InsertEscrowEntry): Promise<EscrowEntry>;
   getCampaignEscrowBalance(campaignId: string): Promise<number>;
   
@@ -262,6 +264,47 @@ export class DatabaseStorage implements IStorage {
       .from(escrowLedger)
       .where(eq(escrowLedger.commitmentId, commitmentId))
       .orderBy(desc(escrowLedger.createdAt));
+  }
+
+  async getEscrowEntriesByUserId(userId: string): Promise<(EscrowEntry & { commitment: Commitment; campaign: Campaign })[]> {
+    const results = await db
+      .select({
+        escrowEntry: escrowLedger,
+        commitment: commitments,
+        campaign: campaigns,
+      })
+      .from(escrowLedger)
+      .innerJoin(commitments, eq(escrowLedger.commitmentId, commitments.id))
+      .innerJoin(campaigns, eq(escrowLedger.campaignId, campaigns.id))
+      .where(eq(commitments.userId, userId))
+      .orderBy(desc(escrowLedger.createdAt));
+    
+    return results.map(r => ({
+      ...r.escrowEntry,
+      commitment: r.commitment,
+      campaign: r.campaign,
+    }));
+  }
+
+  async getEscrowEntryById(id: string): Promise<(EscrowEntry & { commitment: Commitment; campaign: Campaign }) | undefined> {
+    const [result] = await db
+      .select({
+        escrowEntry: escrowLedger,
+        commitment: commitments,
+        campaign: campaigns,
+      })
+      .from(escrowLedger)
+      .innerJoin(commitments, eq(escrowLedger.commitmentId, commitments.id))
+      .innerJoin(campaigns, eq(escrowLedger.campaignId, campaigns.id))
+      .where(eq(escrowLedger.id, id));
+    
+    if (!result) return undefined;
+    
+    return {
+      ...result.escrowEntry,
+      commitment: result.commitment,
+      campaign: result.campaign,
+    };
   }
 
   async createEscrowEntry(entry: InsertEscrowEntry): Promise<EscrowEntry> {

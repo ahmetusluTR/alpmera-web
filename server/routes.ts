@@ -578,6 +578,78 @@ export async function registerRoutes(
     }
   });
 
+  // GET /api/account/escrow - List user's escrow movements (append-only ledger entries)
+  app.get("/api/account/escrow", requireUserAuth, async (req, res) => {
+    try {
+      const userId = (req as any).userId;
+      const entries = await storage.getEscrowEntriesByUserId(userId);
+      
+      // Map to list format (exclude supplier-private pricing details)
+      const movements = entries.map(entry => ({
+        id: entry.id,
+        entryType: entry.entryType,
+        amount: entry.amount,
+        createdAt: entry.createdAt,
+        reason: entry.reason,
+        actor: entry.actor,
+        commitmentCode: entry.commitment.referenceNumber,
+        campaignId: entry.campaign.id,
+        campaignName: entry.campaign.title,
+      }));
+      
+      res.json(movements);
+    } catch (error) {
+      console.error("[USER] Error fetching escrow movements:", error);
+      res.status(500).json({ error: "Failed to fetch escrow movements" });
+    }
+  });
+
+  // GET /api/account/escrow/:id - Get single escrow movement detail
+  app.get("/api/account/escrow/:id", requireUserAuth, async (req, res) => {
+    try {
+      const userId = (req as any).userId;
+      const entryId = req.params.id;
+      
+      const entry = await storage.getEscrowEntryById(entryId);
+      if (!entry) {
+        return res.status(404).json({ error: "Escrow movement not found" });
+      }
+      
+      // Verify ownership
+      if (entry.commitment.userId !== userId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
+      // Get all escrow entries for this commitment (for timeline)
+      const relatedEntries = await storage.getEscrowEntriesByCommitment(entry.commitmentId);
+      
+      res.json({
+        id: entry.id,
+        entryType: entry.entryType,
+        amount: entry.amount,
+        createdAt: entry.createdAt,
+        reason: entry.reason,
+        actor: entry.actor,
+        commitmentCode: entry.commitment.referenceNumber,
+        commitmentId: entry.commitment.id,
+        campaignId: entry.campaign.id,
+        campaignName: entry.campaign.title,
+        campaignState: entry.campaign.state,
+        relatedEntries: relatedEntries.map(e => ({
+          id: e.id,
+          entryType: e.entryType,
+          amount: e.amount,
+          createdAt: e.createdAt,
+          reason: e.reason,
+          actor: e.actor,
+        })),
+      });
+    } catch (error) {
+      console.error("[USER] Error fetching escrow movement detail:", error);
+      res.status(500).json({ error: "Failed to fetch escrow movement" });
+    }
+  });
+
   // Get all campaigns with stats
   app.get("/api/campaigns", async (req, res) => {
     try {

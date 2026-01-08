@@ -1,110 +1,59 @@
 import { useQuery } from "@tanstack/react-query";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
-import { useAuth } from "@/lib/auth";
-import { Wallet } from "lucide-react";
+import { useLocation } from "wouter";
 import { AccountLayout } from "./layout";
-import { Timeline, TimelineEvent } from "@/components/timeline";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
+import { ArrowRight, RefreshCw, Lock, Unlock, RotateCcw, Wallet } from "lucide-react";
+import { format } from "date-fns";
+import { useAuth } from "@/lib/auth";
 
-interface Commitment {
+interface EscrowMovement {
   id: string;
-  referenceNumber: string;
-  quantity: number;
+  entryType: "LOCK" | "REFUND" | "RELEASE";
   amount: string;
   createdAt: string;
-  campaign: {
-    id: string;
-    title: string;
-    state: string;
-  };
+  reason: string;
+  actor: string;
+  commitmentCode: string;
+  campaignId: string;
+  campaignName: string;
 }
 
-function mapCommitmentsToEscrowEvents(commitments: Commitment[]): TimelineEvent[] {
-  const events: TimelineEvent[] = [];
+function getEntryTypeBadge(entryType: EscrowMovement["entryType"]) {
+  switch (entryType) {
+    case "LOCK":
+      return { label: "Escrow Lock", variant: "secondary" as const, icon: Lock };
+    case "REFUND":
+      return { label: "Refund", variant: "outline" as const, icon: RotateCcw };
+    case "RELEASE":
+      return { label: "Release", variant: "default" as const, icon: Unlock };
+  }
+}
 
-  commitments.forEach((commitment) => {
-    events.push({
-      id: `lock-${commitment.id}`,
-      title: "LOCK",
-      timestamp: commitment.createdAt,
-      subtitle: commitment.campaign.title,
-      status: "neutral",
-      monospaceFields: [
-        { label: "Reference", value: commitment.referenceNumber },
-        { label: "Amount", value: `$${parseFloat(commitment.amount).toFixed(2)}` },
-      ],
-      tags: ["Escrow entry"],
-      isImmutable: true,
-    });
-
-    if (commitment.campaign.state === "FAILED") {
-      events.push({
-        id: `refund-${commitment.id}`,
-        title: "REFUND",
-        timestamp: new Date().toISOString(),
-        subtitle: `Campaign failed - ${commitment.campaign.title}`,
-        status: "warning",
-        monospaceFields: [
-          { label: "Reference", value: commitment.referenceNumber },
-          { label: "Amount", value: `$${parseFloat(commitment.amount).toFixed(2)}` },
-        ],
-        tags: ["Escrow entry"],
-        isImmutable: true,
-      });
-    }
-
-    if (commitment.campaign.state === "RELEASED") {
-      events.push({
-        id: `release-${commitment.id}`,
-        title: "RELEASE",
-        timestamp: new Date().toISOString(),
-        subtitle: `Funds released - ${commitment.campaign.title}`,
-        status: "success",
-        monospaceFields: [
-          { label: "Reference", value: commitment.referenceNumber },
-          { label: "Amount", value: `$${parseFloat(commitment.amount).toFixed(2)}` },
-        ],
-        tags: ["Escrow entry"],
-        isImmutable: true,
-      });
-    }
-  });
-
-  return events.sort((a, b) => 
-    new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-  );
+function formatReason(reason: string): string {
+  const reasonMap: Record<string, string> = {
+    commitment_created: "Commitment created",
+    campaign_failed_refund: "Campaign failed",
+    admin_release: "Campaign fulfilled",
+    admin_refund: "Admin refund",
+  };
+  return reasonMap[reason] || reason;
 }
 
 export default function PaymentsPage() {
+  const [, setLocation] = useLocation();
   const { isAuthenticated } = useAuth();
 
-  const { data: commitments, isLoading } = useQuery<Commitment[]>({
-    queryKey: ["/api/account/commitments"],
+  const { data: movements, isLoading, error, refetch } = useQuery<EscrowMovement[]>({
+    queryKey: ["/api/account/escrow"],
     enabled: isAuthenticated,
   });
 
-  const escrowEvents = commitments ? mapCommitmentsToEscrowEvents(commitments) : [];
-
-  const totalLocked = commitments?.reduce((sum, c) => {
-    if (["AGGREGATION", "SUCCESS", "FULFILLMENT"].includes(c.campaign.state)) {
-      return sum + parseFloat(c.amount);
-    }
-    return sum;
-  }, 0) || 0;
-
-  const totalRefunded = commitments?.reduce((sum, c) => {
-    if (c.campaign.state === "FAILED") {
-      return sum + parseFloat(c.amount);
-    }
-    return sum;
-  }, 0) || 0;
-
-  const totalReleased = commitments?.reduce((sum, c) => {
-    if (c.campaign.state === "RELEASED") {
-      return sum + parseFloat(c.amount);
-    }
-    return sum;
-  }, 0) || 0;
+  const handleRowClick = (movementId: string) => {
+    setLocation(`/account/escrow/${movementId}`);
+  };
 
   return (
     <AccountLayout>
@@ -116,58 +65,80 @@ export default function PaymentsPage() {
               <CardTitle className="text-lg">Payments & Escrow</CardTitle>
             </div>
             <CardDescription>
-              Your escrow balance and fund movements
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <Skeleton className="h-24" />
-            ) : (
-              <div className="grid grid-cols-3 gap-4 mb-6">
-                <div className="p-4 rounded-md border border-border">
-                  <p className="text-xs text-muted-foreground mb-1">Currently locked</p>
-                  <p className="text-xl font-mono font-semibold" data-testid="text-locked-amount">
-                    ${totalLocked.toFixed(2)}
-                  </p>
-                </div>
-                <div className="p-4 rounded-md border border-border">
-                  <p className="text-xs text-muted-foreground mb-1">Refunded</p>
-                  <p className="text-xl font-mono font-semibold" data-testid="text-refunded-amount">
-                    ${totalRefunded.toFixed(2)}
-                  </p>
-                </div>
-                <div className="p-4 rounded-md border border-border">
-                  <p className="text-xs text-muted-foreground mb-1">Released</p>
-                  <p className="text-xl font-mono font-semibold" data-testid="text-released-amount">
-                    ${totalReleased.toFixed(2)}
-                  </p>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Escrow Ledger</CardTitle>
-            <CardDescription>
-              Append-only record of all fund movements
+              Append-only record of all escrow movements
             </CardDescription>
           </CardHeader>
           <CardContent>
             {isLoading ? (
               <div className="space-y-3">
-                <Skeleton className="h-16" />
-                <Skeleton className="h-16" />
+                {[1, 2, 3].map((i) => (
+                  <Skeleton key={i} className="h-16 w-full" />
+                ))}
               </div>
+            ) : error ? (
+              <div className="text-center py-8">
+                <p className="text-muted-foreground mb-4">Unable to load escrow movements.</p>
+                <Button variant="outline" onClick={() => refetch()} data-testid="button-retry">
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  Retry
+                </Button>
+              </div>
+            ) : !movements || movements.length === 0 ? (
+              <p className="text-muted-foreground text-center py-8" data-testid="text-empty-escrow">
+                No escrow movements yet.
+              </p>
             ) : (
-              <Timeline
-                events={escrowEvents}
-                density="comfortable"
-                showConnector={true}
-                emptyStateTitle="No escrow entries"
-                emptyStateHint="Your fund movements will appear here when you make commitments"
-              />
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm" data-testid="table-escrow-movements">
+                  <thead>
+                    <tr className="border-b text-left text-muted-foreground">
+                      <th className="pb-2 font-medium">Date</th>
+                      <th className="pb-2 font-medium">Type</th>
+                      <th className="pb-2 font-medium">Reason</th>
+                      <th className="pb-2 font-medium">Reference</th>
+                      <th className="pb-2 font-medium sr-only">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {movements.map((movement) => {
+                      const entryBadge = getEntryTypeBadge(movement.entryType);
+                      const Icon = entryBadge.icon;
+                      return (
+                        <tr
+                          key={movement.id}
+                          className="border-b last:border-0 hover-elevate cursor-pointer"
+                          onClick={() => handleRowClick(movement.id)}
+                          data-testid={`row-escrow-${movement.id}`}
+                        >
+                          <td className="py-3 font-mono text-xs">
+                            {format(new Date(movement.createdAt), "yyyy-MM-dd HH:mm")}
+                          </td>
+                          <td className="py-3">
+                            <Badge variant={entryBadge.variant} className="gap-1">
+                              <Icon className="w-3 h-3" />
+                              {entryBadge.label}
+                            </Badge>
+                          </td>
+                          <td className="py-3 text-muted-foreground">
+                            {formatReason(movement.reason)}
+                          </td>
+                          <td className="py-3">
+                            <div className="flex flex-col">
+                              <span className="font-mono text-xs">{movement.commitmentCode}</span>
+                              <span className="text-xs text-muted-foreground truncate max-w-[200px]">
+                                {movement.campaignName}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="py-3 text-right">
+                            <ArrowRight className="w-4 h-4 text-muted-foreground" />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             )}
           </CardContent>
         </Card>
