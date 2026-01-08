@@ -50,7 +50,8 @@ import {
   FileText,
   Plus,
   LogOut,
-  Loader2
+  Loader2,
+  X
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -448,15 +449,26 @@ export default function AdminConsole() {
         <Card>
           <CardHeader>
             <div className="flex items-start justify-between gap-4">
-              <div>
-                <CardTitle data-testid="selected-campaign-title">{selectedCampaign.title}</CardTitle>
+              <div className="min-w-0 flex-1">
+                <CardTitle data-testid="selected-campaign-title" className="truncate">{selectedCampaign.title}</CardTitle>
                 <CardDescription className="font-mono text-xs mt-1">
                   ID: {selectedCampaign.id}
                 </CardDescription>
               </div>
-              <Badge className={`text-sm ${STATE_COLORS[selectedCampaign.state]}`} data-testid="selected-campaign-state">
-                {selectedCampaign.state}
-              </Badge>
+              <div className="flex items-center gap-2 shrink-0">
+                <Badge className={`text-sm ${STATE_COLORS[selectedCampaign.state]}`} data-testid="selected-campaign-state">
+                  {selectedCampaign.state}
+                </Badge>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setSelectedCampaignId(null)}
+                  title="Clear selection"
+                  data-testid="button-clear-selection"
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -646,8 +658,14 @@ export default function AdminConsole() {
   };
 
   const handleCampaignSelect = (campaignId: string) => {
-    setSelectedCampaignId(campaignId);
-    setMobileDetailSheetOpen(true);
+    // Toggle selection: clicking the same campaign again clears selection
+    if (selectedCampaignId === campaignId) {
+      setSelectedCampaignId(null);
+      setMobileDetailSheetOpen(false);
+    } else {
+      setSelectedCampaignId(campaignId);
+      setMobileDetailSheetOpen(true);
+    }
   };
 
   return (
