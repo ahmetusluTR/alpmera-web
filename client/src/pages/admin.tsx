@@ -25,6 +25,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { 
   Table, 
   TableBody, 
@@ -109,6 +115,7 @@ export default function AdminConsole() {
   const [stateFilter, setStateFilter] = useState<string>("all");
   const [transitionDialogOpen, setTransitionDialogOpen] = useState(false);
   const [createCampaignDialogOpen, setCreateCampaignDialogOpen] = useState(false);
+  const [mobileDetailSheetOpen, setMobileDetailSheetOpen] = useState(false);
   const [targetState, setTargetState] = useState<CampaignState | null>(null);
   const [transitionReason, setTransitionReason] = useState("");
   const [adminUsername, setAdminUsername] = useState("admin");
@@ -423,19 +430,240 @@ export default function AdminConsole() {
     );
   }
 
+  // Campaign detail content - reused in desktop pane and mobile sheet
+  const CampaignDetailContent = () => {
+    if (!selectedCampaign) {
+      return (
+        <div className="h-full flex items-center justify-center">
+          <div className="text-center text-muted-foreground">
+            <FileText className="w-12 h-12 mx-auto mb-4 opacity-50" />
+            <p>Select a campaign to view details</p>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-6">
+        <Card>
+          <CardHeader>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <CardTitle data-testid="selected-campaign-title">{selectedCampaign.title}</CardTitle>
+                <CardDescription className="font-mono text-xs mt-1">
+                  ID: {selectedCampaign.id}
+                </CardDescription>
+              </div>
+              <Badge className={`text-sm ${STATE_COLORS[selectedCampaign.state]}`} data-testid="selected-campaign-state">
+                {selectedCampaign.state}
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div>
+                <p className="text-sm text-muted-foreground">Participants</p>
+                <p className="text-xl font-mono font-semibold" data-testid="text-admin-participants">
+                  {selectedCampaign.participantCount}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Total Committed</p>
+                <p className="text-xl font-mono font-semibold" data-testid="text-admin-committed">
+                  {selectedCampaign.totalCommitted.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Target</p>
+                <p className="text-xl font-mono font-semibold">
+                  {parseFloat(selectedCampaign.targetAmount).toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Deadline</p>
+                <p className="text-sm font-medium">
+                  {new Date(selectedCampaign.aggregationDeadline).toLocaleDateString()}
+                </p>
+              </div>
+            </div>
+
+            <Separator />
+
+            <div>
+              <h4 className="text-sm font-medium mb-3">State Transitions</h4>
+              <div className="flex flex-wrap gap-2">
+                {(validTransitions[selectedCampaign.state as CampaignState] ?? []).map(state => (
+                  <Button 
+                    key={state}
+                    variant={state === "FAILED" ? "destructive" : "default"}
+                    size="sm"
+                    onClick={() => openTransitionDialog(state)}
+                    data-testid={`button-transition-${state}`}
+                  >
+                    <ArrowRight className="w-4 h-4 mr-2" />
+                    {state}
+                  </Button>
+                ))}
+                {(validTransitions[selectedCampaign.state as CampaignState] ?? []).length === 0 && (
+                  <p className="text-sm text-muted-foreground">No transitions available from this state.</p>
+                )}
+              </div>
+            </div>
+
+            <Separator />
+
+            <div>
+              <h4 className="text-sm font-medium mb-3">Admin Actions</h4>
+              <div className="flex flex-wrap gap-2">
+                {selectedCampaign.state === "FAILED" && (
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => processRefundsMutation.mutate(selectedCampaign.id)}
+                    disabled={processRefundsMutation.isPending}
+                    data-testid="button-process-refunds"
+                  >
+                    <RefreshCw className="w-4 h-4 mr-2" />
+                    Process Refunds
+                  </Button>
+                )}
+                {selectedCampaign.state === "RELEASED" && (
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => releasesFundsMutation.mutate(selectedCampaign.id)}
+                    disabled={releasesFundsMutation.isPending}
+                    data-testid="button-release-funds"
+                  >
+                    <CheckCircle className="w-4 h-4 mr-2" />
+                    Release All Funds
+                  </Button>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Commitments ({commitments?.length || 0})</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <ScrollArea className="h-[200px]">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Reference</TableHead>
+                    <TableHead>Participant</TableHead>
+                    <TableHead className="text-right">Amount</TableHead>
+                    <TableHead className="text-right">Qty</TableHead>
+                    <TableHead>Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {commitments?.map(commitment => (
+                    <TableRow key={commitment.id} data-testid={`row-commitment-${commitment.id}`}>
+                      <TableCell className="font-mono text-xs">{commitment.referenceNumber}</TableCell>
+                      <TableCell>{commitment.participantName}</TableCell>
+                      <TableCell className="text-right font-mono">
+                        {parseFloat(commitment.amount).toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
+                      </TableCell>
+                      <TableCell className="text-right font-mono">{commitment.quantity}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="text-xs">
+                          {commitment.status}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {(!commitments || commitments.length === 0) && (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                        No commitments yet
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </ScrollArea>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Clock className="w-4 h-4" />
+              Audit Log
+            </CardTitle>
+            <CardDescription>Recent admin actions (append-only)</CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            <ScrollArea className="h-[180px]">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Timestamp</TableHead>
+                    <TableHead>Admin</TableHead>
+                    <TableHead>Action</TableHead>
+                    <TableHead>Previous</TableHead>
+                    <TableHead>New</TableHead>
+                    <TableHead>Reason</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {actionLogs?.filter(l => l.campaignId === selectedCampaign.id).slice(0, 20).map(log => (
+                    <TableRow key={log.id} data-testid={`row-log-${log.id}`}>
+                      <TableCell className="font-mono text-xs">
+                        {new Date(log.createdAt).toLocaleString()}
+                      </TableCell>
+                      <TableCell>{log.adminUsername}</TableCell>
+                      <TableCell>{log.action}</TableCell>
+                      <TableCell>
+                        {log.previousState && <Badge variant="outline" className="text-xs">{log.previousState}</Badge>}
+                      </TableCell>
+                      <TableCell>
+                        {log.newState && <Badge variant="outline" className="text-xs">{log.newState}</Badge>}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground max-w-[150px] truncate">
+                        {log.reason || "-"}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {(!actionLogs || actionLogs.filter(l => l.campaignId === selectedCampaign.id).length === 0) && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center text-muted-foreground py-6">
+                        No actions logged for this campaign
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </ScrollArea>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  };
+
+  const handleCampaignSelect = (campaignId: string) => {
+    setSelectedCampaignId(campaignId);
+    setMobileDetailSheetOpen(true);
+  };
+
   return (
     <Layout>
-      <div className="max-w-7xl mx-auto px-6 py-8">
-        <div className="flex items-center justify-between gap-4 mb-8">
+      <div className="h-[calc(100vh-4rem)] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between gap-4 px-6 py-4 border-b shrink-0">
           <div>
             <h1 className="text-2xl font-semibold flex items-center gap-2" data-testid="admin-title">
               <Shield className="w-6 h-6" />
               Admin Console
             </h1>
-            <p className="text-muted-foreground">Manage campaigns, state transitions, and audit logs</p>
+            <p className="text-muted-foreground text-sm">Manage campaigns, state transitions, and audit logs</p>
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-sm text-muted-foreground">Logged in as: <strong>{adminUsername}</strong></span>
+            <span className="text-sm text-muted-foreground hidden sm:inline">Logged in as: <strong>{adminUsername}</strong></span>
             <Button 
               variant="outline" 
               size="sm"
@@ -448,291 +676,92 @@ export default function AdminConsole() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-1 space-y-6">
-            <Card>
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between gap-2 mb-2">
-                  <CardTitle className="text-base">Campaigns</CardTitle>
-                  <Button 
-                    size="sm" 
-                    onClick={() => setCreateCampaignDialogOpen(true)}
-                    data-testid="button-create-campaign"
-                  >
-                    <Plus className="w-4 h-4 mr-1" />
-                    Create
-                  </Button>
+        {/* Two-pane master/detail layout */}
+        <div className="flex-1 flex overflow-hidden">
+          {/* Left pane - Campaign list */}
+          <div className="w-full lg:w-[35%] lg:min-w-[320px] lg:max-w-[400px] border-r flex flex-col">
+            <div className="p-4 border-b shrink-0">
+              <div className="flex items-center justify-between gap-2 mb-3">
+                <h2 className="font-semibold">Campaigns</h2>
+                <Button 
+                  size="sm" 
+                  onClick={() => setCreateCampaignDialogOpen(true)}
+                  data-testid="button-create-campaign"
+                >
+                  <Plus className="w-4 h-4 mr-1" />
+                  Create
+                </Button>
+              </div>
+              <Select value={stateFilter} onValueChange={setStateFilter}>
+                <SelectTrigger data-testid="select-state-filter">
+                  <SelectValue placeholder="Filter by state" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All States</SelectItem>
+                  <SelectItem value="AGGREGATION">Aggregation</SelectItem>
+                  <SelectItem value="SUCCESS">Success</SelectItem>
+                  <SelectItem value="FAILED">Failed</SelectItem>
+                  <SelectItem value="FULFILLMENT">Fulfillment</SelectItem>
+                  <SelectItem value="RELEASED">Released</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <ScrollArea className="flex-1">
+              {campaignsLoading ? (
+                <div className="p-4 space-y-3">
+                  {[1, 2, 3].map(i => <Skeleton key={i} className="h-16 w-full" />)}
                 </div>
-                <Select value={stateFilter} onValueChange={setStateFilter}>
-                  <SelectTrigger data-testid="select-state-filter">
-                    <SelectValue placeholder="Filter by state" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All States</SelectItem>
-                    <SelectItem value="AGGREGATION">Aggregation</SelectItem>
-                    <SelectItem value="SUCCESS">Success</SelectItem>
-                    <SelectItem value="FAILED">Failed</SelectItem>
-                    <SelectItem value="FULFILLMENT">Fulfillment</SelectItem>
-                    <SelectItem value="RELEASED">Released</SelectItem>
-                  </SelectContent>
-                </Select>
-              </CardHeader>
-              <CardContent className="p-0">
-                <ScrollArea className="h-[400px]">
-                  {campaignsLoading ? (
-                    <div className="p-4 space-y-3">
-                      {[1, 2, 3].map(i => <Skeleton key={i} className="h-16 w-full" />)}
-                    </div>
-                  ) : filteredCampaigns.length === 0 ? (
-                    <div className="p-6 text-center text-muted-foreground">
-                      No campaigns found
-                    </div>
-                  ) : (
-                    <div className="divide-y divide-border">
-                      {filteredCampaigns.map(campaign => (
-                        <button
-                          key={campaign.id}
-                          onClick={() => setSelectedCampaignId(campaign.id)}
-                          className={`w-full p-4 text-left hover-elevate active-elevate-2 transition-colors ${
-                            selectedCampaignId === campaign.id ? "bg-muted" : ""
-                          }`}
-                          data-testid={`button-campaign-${campaign.id}`}
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0 flex-1">
-                              <p className="font-medium truncate">{campaign.title}</p>
-                              <p className="text-sm text-muted-foreground flex items-center gap-2">
-                                <Users className="w-3.5 h-3.5" />
-                                {campaign.participantCount}
-                              </p>
-                            </div>
-                            <Badge className={`shrink-0 text-xs ${STATE_COLORS[campaign.state]}`}>
-                              {campaign.state}
-                            </Badge>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </ScrollArea>
-              </CardContent>
-            </Card>
+              ) : filteredCampaigns.length === 0 ? (
+                <div className="p-6 text-center text-muted-foreground">
+                  No campaigns found
+                </div>
+              ) : (
+                <div className="divide-y divide-border">
+                  {filteredCampaigns.map(campaign => (
+                    <button
+                      key={campaign.id}
+                      onClick={() => handleCampaignSelect(campaign.id)}
+                      className={`w-full p-4 text-left hover-elevate active-elevate-2 transition-colors ${
+                        selectedCampaignId === campaign.id ? "bg-muted" : ""
+                      }`}
+                      data-testid={`button-campaign-${campaign.id}`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium truncate">{campaign.title}</p>
+                          <p className="text-sm text-muted-foreground flex items-center gap-2">
+                            <Users className="w-3.5 h-3.5" />
+                            {campaign.participantCount}
+                          </p>
+                        </div>
+                        <Badge className={`shrink-0 text-xs ${STATE_COLORS[campaign.state]}`}>
+                          {campaign.state}
+                        </Badge>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </ScrollArea>
           </div>
 
-          <div className="lg:col-span-2 space-y-6">
-            {selectedCampaign ? (
-              <>
-                <Card>
-                  <CardHeader>
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <CardTitle data-testid="selected-campaign-title">{selectedCampaign.title}</CardTitle>
-                        <CardDescription className="font-mono text-xs mt-1">
-                          ID: {selectedCampaign.id}
-                        </CardDescription>
-                      </div>
-                      <Badge className={`text-sm ${STATE_COLORS[selectedCampaign.state]}`} data-testid="selected-campaign-state">
-                        {selectedCampaign.state}
-                      </Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-6">
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      <div>
-                        <p className="text-sm text-muted-foreground">Participants</p>
-                        <p className="text-xl font-mono font-semibold" data-testid="text-admin-participants">
-                          {selectedCampaign.participantCount}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Total Committed</p>
-                        <p className="text-xl font-mono font-semibold" data-testid="text-admin-committed">
-                          {selectedCampaign.totalCommitted.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Target</p>
-                        <p className="text-xl font-mono font-semibold">
-                          {parseFloat(selectedCampaign.targetAmount).toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Deadline</p>
-                        <p className="text-sm font-medium">
-                          {new Date(selectedCampaign.aggregationDeadline).toLocaleDateString()}
-                        </p>
-                      </div>
-                    </div>
-
-                    <Separator />
-
-                    <div>
-                      <h4 className="text-sm font-medium mb-3">State Transitions</h4>
-                      <div className="flex flex-wrap gap-2">
-                        {(validTransitions[selectedCampaign.state as CampaignState] ?? []).map(state => (
-                          <Button 
-                            key={state}
-                            variant={state === "FAILED" ? "destructive" : "default"}
-                            size="sm"
-                            onClick={() => openTransitionDialog(state)}
-                            data-testid={`button-transition-${state}`}
-                          >
-                            <ArrowRight className="w-4 h-4 mr-2" />
-                            {state}
-                          </Button>
-                        ))}
-                        {(validTransitions[selectedCampaign.state as CampaignState] ?? []).length === 0 && (
-                          <p className="text-sm text-muted-foreground">No transitions available from this state.</p>
-                        )}
-                      </div>
-                    </div>
-
-                    <Separator />
-
-                    <div>
-                      <h4 className="text-sm font-medium mb-3">Admin Actions</h4>
-                      <div className="flex flex-wrap gap-2">
-                        {selectedCampaign.state === "FAILED" && (
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => processRefundsMutation.mutate(selectedCampaign.id)}
-                            disabled={processRefundsMutation.isPending}
-                            data-testid="button-process-refunds"
-                          >
-                            <RefreshCw className="w-4 h-4 mr-2" />
-                            Process Refunds
-                          </Button>
-                        )}
-                        {selectedCampaign.state === "RELEASED" && (
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => releasesFundsMutation.mutate(selectedCampaign.id)}
-                            disabled={releasesFundsMutation.isPending}
-                            data-testid="button-release-funds"
-                          >
-                            <CheckCircle className="w-4 h-4 mr-2" />
-                            Release All Funds
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">Commitments ({commitments?.length || 0})</CardTitle>
-                  </CardHeader>
-                  <CardContent className="p-0">
-                    <ScrollArea className="h-[250px]">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Reference</TableHead>
-                            <TableHead>Participant</TableHead>
-                            <TableHead className="text-right">Amount</TableHead>
-                            <TableHead className="text-right">Qty</TableHead>
-                            <TableHead>Status</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {commitments?.map(commitment => (
-                            <TableRow key={commitment.id} data-testid={`row-commitment-${commitment.id}`}>
-                              <TableCell className="font-mono text-xs">{commitment.referenceNumber}</TableCell>
-                              <TableCell>{commitment.participantName}</TableCell>
-                              <TableCell className="text-right font-mono">
-                                {parseFloat(commitment.amount).toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
-                              </TableCell>
-                              <TableCell className="text-right font-mono">{commitment.quantity}</TableCell>
-                              <TableCell>
-                                <Badge variant="outline" className="text-xs">
-                                  {commitment.status}
-                                </Badge>
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                          {(!commitments || commitments.length === 0) && (
-                            <TableRow>
-                              <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
-                                No commitments yet
-                              </TableCell>
-                            </TableRow>
-                          )}
-                        </TableBody>
-                      </Table>
-                    </ScrollArea>
-                  </CardContent>
-                </Card>
-              </>
-            ) : (
-              <Card className="h-[400px] flex items-center justify-center">
-                <div className="text-center text-muted-foreground">
-                  <FileText className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                  <p>Select a campaign to view details</p>
-                </div>
-              </Card>
-            )}
+          {/* Right pane - Campaign details (desktop only) */}
+          <div className="hidden lg:block flex-1 overflow-y-auto p-6">
+            <CampaignDetailContent />
           </div>
         </div>
 
-        <Card className="mt-6">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Clock className="w-4 h-4" />
-              Audit Log
-            </CardTitle>
-            <CardDescription>Recent admin actions (append-only)</CardDescription>
-          </CardHeader>
-          <CardContent className="p-0">
-            <ScrollArea className="h-[200px]">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Timestamp</TableHead>
-                    <TableHead>Admin</TableHead>
-                    <TableHead>Action</TableHead>
-                    <TableHead>Campaign</TableHead>
-                    <TableHead>Previous</TableHead>
-                    <TableHead>New</TableHead>
-                    <TableHead>Reason</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {actionLogs?.slice(0, 50).map(log => (
-                    <TableRow key={log.id} data-testid={`row-log-${log.id}`}>
-                      <TableCell className="font-mono text-xs">
-                        {new Date(log.createdAt).toLocaleString()}
-                      </TableCell>
-                      <TableCell>{log.adminUsername}</TableCell>
-                      <TableCell>{log.action}</TableCell>
-                      <TableCell className="font-mono text-xs max-w-[100px] truncate">
-                        {log.campaignId?.substring(0, 8)}...
-                      </TableCell>
-                      <TableCell>
-                        {log.previousState && <Badge variant="outline" className="text-xs">{log.previousState}</Badge>}
-                      </TableCell>
-                      <TableCell>
-                        {log.newState && <Badge variant="outline" className="text-xs">{log.newState}</Badge>}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">
-                        {log.reason || "-"}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {(!actionLogs || actionLogs.length === 0) && (
-                    <TableRow>
-                      <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                        No admin actions logged yet
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </ScrollArea>
-          </CardContent>
-        </Card>
+        {/* Mobile sheet for campaign details */}
+        <Sheet open={mobileDetailSheetOpen} onOpenChange={setMobileDetailSheetOpen}>
+          <SheetContent side="right" className="w-full sm:max-w-lg overflow-y-auto">
+            <SheetHeader>
+              <SheetTitle>Campaign Details</SheetTitle>
+            </SheetHeader>
+            <div className="mt-4">
+              <CampaignDetailContent />
+            </div>
+          </SheetContent>
+        </Sheet>
       </div>
 
       <Dialog open={transitionDialogOpen} onOpenChange={setTransitionDialogOpen}>
