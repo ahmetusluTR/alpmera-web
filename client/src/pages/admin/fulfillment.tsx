@@ -38,7 +38,7 @@ import {
   TableHeader, 
   TableRow 
 } from "@/components/ui/table";
-import { ArrowLeft, RefreshCw, Upload, FileUp, Loader2, MoreHorizontal, Plus, Clock } from "lucide-react";
+import { ArrowLeft, RefreshCw, Upload, FileUp, Loader2, MoreHorizontal, Plus, Clock, Download, FileDown, Info } from "lucide-react";
 import { format } from "date-fns";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -302,6 +302,43 @@ export default function FulfillmentConsolePage() {
 
             <Card>
               <CardHeader>
+                <CardTitle className="text-lg">Supplier Export</CardTitle>
+                <CardDescription>Download eligible commitment manifest for fulfillment</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  {summary?.deliveryStrategy === "BULK_TO_CONSOLIDATION" ? (
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        window.location.href = `/api/admin/campaigns/${campaignId}/fulfillment/export/bulk`;
+                      }}
+                      data-testid="button-export-bulk"
+                    >
+                      <Download className="w-4 h-4 mr-2" />
+                      Export supplier manifest (bulk)
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        window.location.href = `/api/admin/campaigns/${campaignId}/fulfillment/export/direct`;
+                      }}
+                      data-testid="button-export-direct"
+                    >
+                      <Download className="w-4 h-4 mr-2" />
+                      Export supplier manifest (direct)
+                    </Button>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground mt-3">
+                  Only eligible commitments (LOCKED status) are included. Export is logged for audit.
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
                 <CardTitle className="text-lg">Commitment Roster</CardTitle>
                 <CardDescription>Commitments and their delivery status</CardDescription>
               </CardHeader>
@@ -399,7 +436,7 @@ export default function FulfillmentConsolePage() {
       </Dialog>
 
       <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Import Delivery Updates</DialogTitle>
             <DialogDescription>
@@ -423,6 +460,29 @@ export default function FulfillmentConsolePage() {
                 <span>{selectedFile.name}</span>
               </div>
             )}
+            <div className="border rounded-md p-3 bg-muted/30 space-y-2">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <Info className="w-4 h-4" />
+                CSV Schema
+              </div>
+              <div className="text-xs text-muted-foreground space-y-1">
+                <p><strong>Required:</strong> commitment_code, milestone_code</p>
+                <p><strong>Optional:</strong> carrier, tracking_url, note</p>
+                <p className="pt-1"><strong>Allowed milestone_code values:</strong></p>
+                <p className="font-mono text-xs">FULFILLMENT_SCHEDULED, IN_PROGRESS, SHIPPED, DELIVERED, EXCEPTION</p>
+              </div>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                window.location.href = "/api/admin/fulfillment/import-template";
+              }}
+              data-testid="button-download-template"
+            >
+              <FileDown className="w-4 h-4 mr-2" />
+              Download CSV template
+            </Button>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setImportDialogOpen(false)}>

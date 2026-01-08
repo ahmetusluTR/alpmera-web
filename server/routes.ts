@@ -1697,5 +1697,168 @@ export async function registerRoutes(
     }
   });
 
+  // Admin: Export direct supplier manifest (SUPPLIER_DIRECT strategy)
+  // Includes per-recipient delivery data for direct-to-customer fulfillment
+  // Eligibility: commitments that are LOCKED (not refunded/released)
+  // SECURITY: Only allowed for SUPPLIER_DIRECT strategy campaigns
+  app.get("/api/admin/campaigns/:id/fulfillment/export/direct", requireAdminAuth, async (req, res) => {
+    try {
+      const campaignId = req.params.id;
+      const campaign = await storage.getCampaignWithStats(campaignId);
+      
+      if (!campaign) {
+        return res.status(404).json({ error: "Campaign not found" });
+      }
+      
+      // Strategy validation: direct export requires SUPPLIER_DIRECT or Standard (default)
+      // BULK_TO_CONSOLIDATION campaigns cannot use direct export (PII protection)
+      const strategy = (campaign as any).deliveryStrategy || "Standard";
+      if (strategy === "BULK_TO_CONSOLIDATION") {
+        console.warn(`[SECURITY] Direct export denied for BULK_TO_CONSOLIDATION campaign: ${campaignId}`);
+        await storage.createAdminActionLog({
+          campaignId,
+          adminUsername: (req as any).adminUsername || "admin",
+          action: "FULFILLMENT_EXPORT_DENIED",
+          reason: "Direct export not allowed for BULK_TO_CONSOLIDATION strategy",
+        });
+        return res.status(400).json({ 
+          error: "Strategy mismatch",
+          message: "Direct manifest export is not available for bulk consolidation campaigns. Use bulk export instead."
+        });
+      }
+      
+      // Get eligible commitments: LOCKED status only (not refunded/released, not exception)
+      // Since we don't have per-commitment delivery state yet, LOCKED is safest approximation
+      const allCommitments = await storage.getCommitments(campaignId);
+      const eligibleCommitments = allCommitments.filter((c: { status: string }) => c.status === "LOCKED");
+      
+      // Get user profiles for delivery data
+      const rows: string[] = [];
+      const headers = [
+        "commitment_code", "sku", "product_name", "quantity",
+        "recipient_name", "address_line1", "address_line2", "city", "state", "postal_code", "country",
+        "phone", "email", "delivery_notes"
+      ];
+      rows.push(headers.join(","));
+      
+      for (const commitment of eligibleCommitments) {
+        // Get user profile if user_id exists
+        let profile: any = null;
+        if (commitment.userId) {
+          profile = await storage.getUserProfile(commitment.userId);
+        }
+        
+        const row = [
+          commitment.referenceNumber,
+          "SKU-" + campaign.id.slice(0, 8).toUpperCase(), // Placeholder SKU
+          campaign.title,
+          String(commitment.quantity),
+          profile?.fullName || commitment.participantName,
+          profile?.defaultAddressLine1 || "",
+          profile?.defaultAddressLine2 || "",
+          profile?.city || "",
+          profile?.state || "",
+          profile?.zip || "",
+          profile?.country || "USA",
+          profile?.phone || "",
+          commitment.participantEmail,
+          "" // delivery_notes
+        ].map(v => `"${(v || "").replace(/"/g, '""')}"`);
+        rows.push(row.join(","));
+      }
+      
+      // Log audit event
+      await storage.createAdminActionLog({
+        campaignId,
+        adminUsername: (req as any).adminUsername || "admin",
+        action: "FULFILLMENT_EXPORT_CREATED",
+        reason: JSON.stringify({ strategy: "SUPPLIER_DIRECT", rowCount: eligibleCommitments.length }),
+      });
+      
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", `attachment; filename="manifest-direct-${campaignId.slice(0, 8)}.csv"`);
+      res.send(rows.join("\n"));
+    } catch (error) {
+      console.error("Error exporting direct manifest:", error);
+      res.status(500).json({ error: "Failed to export direct manifest" });
+    }
+  });
+
+  // Admin: Export bulk supplier manifest (BULK_TO_CONSOLIDATION strategy)
+  // Aggregated totals for bulk shipment to consolidation point (no end-user PII)
+  app.get("/api/admin/campaigns/:id/fulfillment/export/bulk", requireAdminAuth, async (req, res) => {
+    try {
+      const campaignId = req.params.id;
+      const campaign = await storage.getCampaignWithStats(campaignId);
+      
+      if (!campaign) {
+        return res.status(404).json({ error: "Campaign not found" });
+      }
+      
+      // Get eligible commitments: LOCKED status only
+      const allCommitments = await storage.getCommitments(campaignId);
+      const eligibleCommitments = allCommitments.filter((c: { status: string }) => c.status === "LOCKED");
+      
+      // Calculate total quantity
+      const totalQuantity = eligibleCommitments.reduce((sum: number, c: { quantity: number }) => sum + c.quantity, 0);
+      
+      // Build bulk manifest (no end-user PII)
+      const headers = [
+        "sku", "product_name", "total_quantity",
+        "consolidation_contact_name", "consolidation_company",
+        "consolidation_address_line1", "consolidation_address_line2", "consolidation_city",
+        "consolidation_state", "consolidation_postal_code", "consolidation_country",
+        "consolidation_phone", "delivery_window", "fulfillment_notes"
+      ];
+      
+      const row = [
+        "SKU-" + campaign.id.slice(0, 8).toUpperCase(),
+        campaign.title,
+        String(totalQuantity),
+        "Alpmera Consolidation",
+        "Alpmera Inc.",
+        "TBD - Consolidation Address Line 1",
+        "",
+        "TBD - City",
+        "TBD - State",
+        "TBD - Postal",
+        "USA",
+        "",
+        "TBD",
+        `Total eligible commitments: ${eligibleCommitments.length}`
+      ].map(v => `"${(v || "").replace(/"/g, '""')}"`);
+      
+      // Log audit event
+      await storage.createAdminActionLog({
+        campaignId,
+        adminUsername: (req as any).adminUsername || "admin",
+        action: "FULFILLMENT_EXPORT_CREATED",
+        reason: JSON.stringify({ strategy: "BULK_TO_CONSOLIDATION", rowCount: 1, totalQuantity }),
+      });
+      
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", `attachment; filename="manifest-bulk-${campaignId.slice(0, 8)}.csv"`);
+      res.send([headers.join(","), row.join(",")].join("\n"));
+    } catch (error) {
+      console.error("Error exporting bulk manifest:", error);
+      res.status(500).json({ error: "Failed to export bulk manifest" });
+    }
+  });
+
+  // Admin: Download import template for delivery updates
+  app.get("/api/admin/fulfillment/import-template", requireAdminAuth, async (req, res) => {
+    try {
+      const headers = ["commitment_code", "milestone_code", "carrier", "tracking_url", "note"];
+      const exampleRow = ["ALP-XXXX-XXXX", "SHIPPED", "UPS", "https://tracking.example.com/...", "Shipped via ground"];
+      
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", `attachment; filename="delivery-updates-template.csv"`);
+      res.send([headers.join(","), exampleRow.join(",")].join("\n"));
+    } catch (error) {
+      console.error("Error generating import template:", error);
+      res.status(500).json({ error: "Failed to generate import template" });
+    }
+  });
+
   return httpServer;
 }
