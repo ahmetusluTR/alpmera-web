@@ -1,14 +1,19 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
+import { db } from "./db";
 import { 
   type CampaignState, 
   type CommitmentStatus,
   VALID_TRANSITIONS,
   insertCommitmentSchema,
-  updateUserProfileSchema
+  updateUserProfileSchema,
+  escrowLedger,
+  commitments,
+  campaigns
 } from "@shared/schema";
 import { z } from "zod";
+import { eq, desc } from "drizzle-orm";
 import { createHash, randomBytes, randomInt } from "crypto";
 
 // Auth request schemas
@@ -1341,6 +1346,59 @@ export async function registerRoutes(
     }
   });
 
+  // Admin: Get campaigns list with full details
+  app.get("/api/admin/campaigns", requireAdminAuth, async (req, res) => {
+    try {
+      const campaignsList = await storage.getCampaignsWithStats();
+      res.json(campaignsList.map(c => ({
+        id: c.id,
+        title: c.title,
+        state: c.state,
+        aggregationDeadline: c.aggregationDeadline,
+        participantCount: c.participantCount,
+        totalCommitted: c.totalCommitted,
+        createdAt: c.createdAt,
+      })));
+    } catch (error) {
+      console.error("Error fetching admin campaigns:", error);
+      res.status(500).json({ error: "Failed to fetch campaigns" });
+    }
+  });
+
+  // Admin: Get single campaign with full details
+  app.get("/api/admin/campaigns/:id/detail", requireAdminAuth, async (req, res) => {
+    try {
+      const campaign = await storage.getCampaignWithStats(req.params.id);
+      if (!campaign) {
+        return res.status(404).json({ error: "Campaign not found" });
+      }
+      res.json(campaign);
+    } catch (error) {
+      console.error("Error fetching admin campaign:", error);
+      res.status(500).json({ error: "Failed to fetch campaign" });
+    }
+  });
+
+  // Admin: Get commitments for a campaign
+  app.get("/api/admin/campaigns/:id/commitments", requireAdminAuth, async (req, res) => {
+    try {
+      const commitmentsList = await storage.getCommitments(req.params.id);
+      res.json(commitmentsList.map(c => ({
+        id: c.id,
+        referenceNumber: c.referenceNumber,
+        participantName: c.participantName,
+        participantEmail: c.participantEmail,
+        quantity: c.quantity,
+        status: c.status,
+        createdAt: c.createdAt,
+        deliveryId: null,
+      })));
+    } catch (error) {
+      console.error("Error fetching admin commitments:", error);
+      res.status(500).json({ error: "Failed to fetch commitments" });
+    }
+  });
+
   // Admin: Get action logs (append-only audit trail)
   // Protected by requireAdminAuth middleware
   app.get("/api/admin/logs", requireAdminAuth, async (req, res) => {
@@ -1363,6 +1421,215 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching escrow entries:", error);
       res.status(500).json({ error: "Failed to fetch escrow entries" });
+    }
+  });
+
+  // Admin: Control Room - Overview tiles and queues
+  app.get("/api/admin/control-room", requireAdminAuth, async (req, res) => {
+    try {
+      const campaigns = await storage.getCampaignsWithStats();
+      const allEntries = await db.select().from(escrowLedger);
+      
+      const inAggregation = campaigns.filter(c => c.state === "AGGREGATION").length;
+      const needsAction = campaigns.filter(c => 
+        c.state === "SUCCESS" || 
+        (c.state === "AGGREGATION" && new Date(c.aggregationDeadline) < new Date())
+      ).length;
+      
+      const totalLocked = allEntries
+        .filter(e => e.entryType === "LOCK")
+        .reduce((sum, e) => sum + parseFloat(e.amount), 0);
+      const totalReturned = allEntries
+        .filter(e => e.entryType === "REFUND")
+        .reduce((sum, e) => sum + parseFloat(e.amount), 0);
+      const totalReleased = allEntries
+        .filter(e => e.entryType === "RELEASE")
+        .reduce((sum, e) => sum + parseFloat(e.amount), 0);
+      
+      res.json({
+        tiles: {
+          campaignsInAggregation: inAggregation,
+          campaignsNeedingAction: needsAction,
+          pendingRefunds: 0,
+          overdueDeliveries: 0,
+          totalEscrowLocked: totalLocked - totalReturned - totalReleased,
+        },
+        queues: {
+          needsAction: campaigns
+            .filter(c => c.state === "SUCCESS" || (c.state === "AGGREGATION" && new Date(c.aggregationDeadline) < new Date()))
+            .slice(0, 5)
+            .map(c => ({ id: c.id, title: c.title, state: c.state, deadline: c.aggregationDeadline })),
+          recentRefunds: [],
+          overdueDeliveries: [],
+        },
+      });
+    } catch (error) {
+      console.error("Error fetching control room:", error);
+      res.status(500).json({ error: "Failed to fetch control room data" });
+    }
+  });
+
+  // Admin: Clearing Snapshot
+  app.get("/api/admin/clearing/snapshot", requireAdminAuth, async (req, res) => {
+    try {
+      const allEntries = await db.select().from(escrowLedger);
+      
+      const totalLocked = allEntries
+        .filter(e => e.entryType === "LOCK")
+        .reduce((sum, e) => sum + parseFloat(e.amount), 0);
+      const totalReturned = allEntries
+        .filter(e => e.entryType === "REFUND")
+        .reduce((sum, e) => sum + parseFloat(e.amount), 0);
+      const totalReleased = allEntries
+        .filter(e => e.entryType === "RELEASE")
+        .reduce((sum, e) => sum + parseFloat(e.amount), 0);
+      
+      res.json({
+        inEscrow: totalLocked - totalReturned - totalReleased,
+        released: totalReleased,
+        returned: totalReturned,
+        currency: "USD",
+      });
+    } catch (error) {
+      console.error("Error fetching clearing snapshot:", error);
+      res.status(500).json({ error: "Failed to fetch clearing snapshot" });
+    }
+  });
+
+  // Admin: Clearing Ledger Explorer
+  app.get("/api/admin/clearing/ledger", requireAdminAuth, async (req, res) => {
+    try {
+      const entries = await db.select().from(escrowLedger).orderBy(desc(escrowLedger.createdAt)).limit(500);
+      res.json(entries);
+    } catch (error) {
+      console.error("Error fetching clearing ledger:", error);
+      res.status(500).json({ error: "Failed to fetch clearing ledger" });
+    }
+  });
+
+  // Admin: Refunds list (REFUND type entries from escrow ledger)
+  app.get("/api/admin/refunds", requireAdminAuth, async (req, res) => {
+    try {
+      const refundEntries = await db
+        .select({
+          id: escrowLedger.id,
+          amount: escrowLedger.amount,
+          createdAt: escrowLedger.createdAt,
+          reason: escrowLedger.reason,
+          actor: escrowLedger.actor,
+          commitmentId: escrowLedger.commitmentId,
+          campaignId: escrowLedger.campaignId,
+        })
+        .from(escrowLedger)
+        .where(eq(escrowLedger.entryType, "REFUND"))
+        .orderBy(desc(escrowLedger.createdAt))
+        .limit(200);
+      
+      const result = await Promise.all(refundEntries.map(async (entry) => {
+        const commitment = await db.select().from(commitments).where(eq(commitments.id, entry.commitmentId)).limit(1);
+        const campaign = await db.select().from(campaigns).where(eq(campaigns.id, entry.campaignId)).limit(1);
+        return {
+          ...entry,
+          status: "COMPLETED",
+          commitmentCode: commitment[0]?.referenceNumber || "Unknown",
+          campaignName: campaign[0]?.title || "Unknown",
+        };
+      }));
+      
+      res.json(result);
+    } catch (error) {
+      console.error("Error fetching admin refunds:", error);
+      res.status(500).json({ error: "Failed to fetch refunds" });
+    }
+  });
+
+  // Admin: Refund Plans list (placeholder - returns empty for now)
+  app.get("/api/admin/refund-plans", requireAdminAuth, async (req, res) => {
+    try {
+      res.json([]);
+    } catch (error) {
+      console.error("Error fetching refund plans:", error);
+      res.status(500).json({ error: "Failed to fetch refund plans" });
+    }
+  });
+
+  // Admin: Refund Plan detail (placeholder)
+  app.get("/api/admin/refund-plans/:id", requireAdminAuth, async (req, res) => {
+    res.status(404).json({ error: "Refund plan not found" });
+  });
+
+  // Admin: Refund Plan rows (placeholder)
+  app.get("/api/admin/refund-plans/:id/rows", requireAdminAuth, async (req, res) => {
+    res.json([]);
+  });
+
+  // Admin: Import Refund Plan (CSV)
+  app.post("/api/admin/refund-plans/import", requireAdminAuth, async (req, res) => {
+    try {
+      res.status(501).json({ error: "CSV import not yet implemented. Plan creation requires schema extension." });
+    } catch (error) {
+      console.error("Error importing refund plan:", error);
+      res.status(500).json({ error: "Failed to import refund plan" });
+    }
+  });
+
+  // Admin: Deliveries list
+  app.get("/api/admin/deliveries", requireAdminAuth, async (req, res) => {
+    try {
+      const campaignsInFulfillment = await storage.getCampaignsWithStats();
+      const deliveries = campaignsInFulfillment
+        .filter(c => c.state === "FULFILLMENT" || c.state === "RELEASED")
+        .map(c => ({
+          campaignId: c.id,
+          campaignName: c.title,
+          deliveryStrategy: "Standard",
+          status: c.state === "RELEASED" ? "COMPLETED" : "IN_PROGRESS",
+          lastUpdateAt: c.supplierAcceptedAt || null,
+          nextUpdateDueAt: null,
+          isOverdue: false,
+        }));
+      
+      res.json(deliveries);
+    } catch (error) {
+      console.error("Error fetching deliveries:", error);
+      res.status(500).json({ error: "Failed to fetch deliveries" });
+    }
+  });
+
+  // Admin: Fulfillment summary for campaign
+  app.get("/api/admin/campaigns/:id/fulfillment", requireAdminAuth, async (req, res) => {
+    try {
+      const campaign = await storage.getCampaignWithStats(req.params.id);
+      if (!campaign) {
+        return res.status(404).json({ error: "Campaign not found" });
+      }
+      
+      const commitmentsList = await storage.getCommitments(req.params.id);
+      const deliveredCount = commitmentsList.filter(c => c.status === "RELEASED").length;
+      
+      res.json({
+        campaignId: campaign.id,
+        campaignTitle: campaign.title,
+        deliveryStrategy: "Standard",
+        currentMilestone: campaign.state,
+        lastUpdateAt: campaign.supplierAcceptedAt || null,
+        nextUpdateDueAt: null,
+        totalCommitments: commitmentsList.length,
+        deliveredCount,
+      });
+    } catch (error) {
+      console.error("Error fetching fulfillment summary:", error);
+      res.status(500).json({ error: "Failed to fetch fulfillment summary" });
+    }
+  });
+
+  // Admin: Import fulfillment updates (CSV)
+  app.post("/api/admin/campaigns/:id/fulfillment/import", requireAdminAuth, async (req, res) => {
+    try {
+      res.status(501).json({ error: "CSV import not yet implemented. Delivery events require schema extension." });
+    } catch (error) {
+      console.error("Error importing fulfillment updates:", error);
+      res.status(500).json({ error: "Failed to import fulfillment updates" });
     }
   });
 
