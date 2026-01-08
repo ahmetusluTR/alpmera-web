@@ -35,10 +35,16 @@ AGGREGATION → SUCCESS → FULFILLMENT → RELEASED
 ### Data Models
 
 **Campaigns:** Campaign details, rules, target, state, deadline
-**Commitments:** User commitments with reference numbers, locked amounts
+**Commitments:** User commitments with reference numbers, locked amounts (optional user_id FK)
 **Escrow Ledger:** Append-only record of LOCK/REFUND/RELEASE entries
 **Supplier Acceptances:** When suppliers accept successful campaigns
 **Admin Action Logs:** Audit trail for all admin actions
+
+**User Authentication (Phase 1.5):**
+- **Users:** id (UUID), email (unique), created_at
+- **User Profiles:** delivery addresses, contact info linked to user_id
+- **User Sessions:** session tokens with 30-day expiry, httpOnly cookies
+- **Auth Codes:** 6-digit passwordless login codes (hashed with salt), 10-min TTL, single-use
 
 ## File Structure
 
@@ -75,6 +81,14 @@ AGGREGATION → SUCCESS → FULFILLMENT → RELEASED
 - `GET /api/campaigns/:id` - Get single campaign with stats
 - `POST /api/campaigns/:id/commit` - Create commitment (lock funds)
 - `GET /api/commitments/:reference` - Get commitment by reference
+
+### User Authentication Endpoints
+- `POST /api/auth/start` - Request login code (logs to console in dev)
+- `POST /api/auth/verify` - Verify code and create session
+- `GET /api/auth/session` - Check current session status
+- `POST /api/auth/logout` - Destroy session and clear cookie
+- `GET /api/me` - Get current user and profile (protected)
+- `PATCH /api/me/profile` - Update user profile (protected)
 
 ### Admin Endpoints
 - `GET /api/campaigns/:id/commitments` - List campaign commitments
