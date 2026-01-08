@@ -208,10 +208,26 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getCampaignEscrowBalance(campaignId: string): Promise<number> {
-    const entries = await this.getEscrowEntries(campaignId);
-    if (entries.length === 0) return 0;
-    // Get the most recent entry's balance
-    return parseFloat(entries[0].balanceAfter);
+    // DERIVED BALANCE: Sum LOCKs and subtract REFUNDs/RELEASEs
+    // This is the append-only ledger pattern - balances are computed, not stored
+    const result = await db
+      .select({
+        balance: sql<number>`
+          COALESCE(
+            SUM(
+              CASE 
+                WHEN ${escrowLedger.entryType} = 'LOCK' THEN ${escrowLedger.amount}::numeric
+                ELSE -${escrowLedger.amount}::numeric
+              END
+            ),
+            0
+          )::float
+        `,
+      })
+      .from(escrowLedger)
+      .where(eq(escrowLedger.campaignId, campaignId));
+    
+    return result[0]?.balance || 0;
   }
 
   // Supplier acceptance

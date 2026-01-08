@@ -140,11 +140,16 @@ ADMIN_API_KEY=your-secure-random-key-here
 
 ### Escrow Ledger Integrity
 
-The escrow ledger is designed as append-only:
+The escrow ledger uses the append-only ledger pattern where balances are **derived**, not stored:
 - Entry types: LOCK (commitment), REFUND (failed), RELEASE (success)
-- Each entry records balanceBefore and balanceAfter
+- Each entry records: `actor` (who performed the action) and `reason` (why)
+- Balances computed by summing LOCK entries and subtracting REFUND/RELEASE entries
 - No update or delete operations exposed via API
 - Double-processing protection on refund/release operations
+
+**Migration applied:** `migrations/001_escrow_ledger_derived_balances.sql`
+- Removed: `balance_before`, `balance_after` columns
+- Added: `actor` (NOT NULL), `reason` (optional)
 
 ## Design Philosophy
 

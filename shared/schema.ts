@@ -58,14 +58,15 @@ export const commitments = pgTable("commitments", {
 });
 
 // Escrow Ledger - append-only record of all fund movements
+// Balances are DERIVED by summing entries, not stored (append-only ledger pattern)
 export const escrowLedger = pgTable("escrow_ledger", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   commitmentId: varchar("commitment_id").notNull().references(() => commitments.id),
   campaignId: varchar("campaign_id").notNull().references(() => campaigns.id),
   entryType: escrowEntryTypeEnum("entry_type").notNull(),
   amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
-  balanceBefore: decimal("balance_before", { precision: 12, scale: 2 }).notNull(),
-  balanceAfter: decimal("balance_after", { precision: 12, scale: 2 }).notNull(),
+  actor: text("actor").notNull(), // Who performed this action (user email, admin username, or 'system')
+  reason: text("reason"), // Optional reason/notes for the entry
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

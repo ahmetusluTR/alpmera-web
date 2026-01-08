@@ -159,17 +159,15 @@ export async function registerRoutes(
         quantity,
       });
 
-      // Get current escrow balance for ledger entry
-      const currentBalance = await storage.getCampaignEscrowBalance(req.params.id);
-
       // Create escrow ledger entry (LOCK) - append-only
+      // Balances are DERIVED from summing entries, not stored
       await storage.createEscrowEntry({
         commitmentId: commitment.id,
         campaignId: req.params.id,
         entryType: "LOCK",
         amount: calculatedAmount.toFixed(2),
-        balanceBefore: currentBalance.toFixed(2),
-        balanceAfter: (currentBalance + calculatedAmount).toFixed(2),
+        actor: participantEmail,
+        reason: `Commitment for ${quantity} unit(s) at ${unitPrice.toLocaleString('en-US', { style: 'currency', currency: 'USD' })} each`,
       });
 
       res.status(201).json(commitment);
@@ -299,8 +297,8 @@ export async function registerRoutes(
             campaignId: req.params.id,
             entryType: "REFUND",
             amount: commitment.amount,
-            balanceBefore: currentBalance.toFixed(2),
-            balanceAfter: (currentBalance - amountNum).toFixed(2),
+            actor: adminUsername,
+            reason: "Campaign failed - full refund to participant",
           });
 
           currentBalance -= amountNum;
@@ -382,8 +380,8 @@ export async function registerRoutes(
             campaignId: req.params.id,
             entryType: "RELEASE",
             amount: commitment.amount,
-            balanceBefore: currentBalance.toFixed(2),
-            balanceAfter: (currentBalance - amountNum).toFixed(2),
+            actor: adminUsername,
+            reason: "Campaign fulfilled - funds released to supplier",
           });
 
           currentBalance -= amountNum;
