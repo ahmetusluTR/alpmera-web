@@ -5,10 +5,39 @@ import {
   type CampaignState, 
   type CommitmentStatus,
   VALID_TRANSITIONS,
-  insertCommitmentSchema 
+  insertCommitmentSchema,
+  updateUserProfileSchema
 } from "@shared/schema";
 import { z } from "zod";
-import { createHash } from "crypto";
+import { createHash, randomBytes, randomInt } from "crypto";
+
+// Auth request schemas
+const authStartSchema = z.object({
+  email: z.string().email("Valid email is required"),
+});
+
+const authVerifySchema = z.object({
+  email: z.string().email("Valid email is required"),
+  code: z.string().length(6, "Code must be 6 digits"),
+});
+
+// Generate a random 6-digit code
+function generateAuthCode(): string {
+  return String(randomInt(100000, 999999));
+}
+
+// Hash a code for storage (using SHA-256 with salt)
+function hashAuthCode(code: string, salt: string): string {
+  return createHash("sha256").update(code + salt).digest("hex");
+}
+
+// Generate a secure session token
+function generateSessionToken(): string {
+  return randomBytes(32).toString("hex");
+}
+
+// Dev-only: Store codes in memory for test access (cleared on restart)
+const devAuthCodes: Map<string, string> = new Map();
 
 // Helper to compute request hash for idempotency verification
 function computeRequestHash(body: unknown): string {
@@ -76,6 +105,51 @@ const requireAdminAuth = (req: Request, res: Response, next: NextFunction) => {
   });
 };
 
+// User authentication middleware
+// Checks for valid user session via alpmera_user cookie
+const requireUserAuth = async (req: Request, res: Response, next: NextFunction) => {
+  const sessionToken = req.cookies?.alpmera_user;
+  
+  if (!sessionToken) {
+    return res.status(401).json({ 
+      error: "Authentication required",
+      message: "Please log in to access this resource."
+    });
+  }
+  
+  try {
+    const session = await storage.getUserSession(sessionToken);
+    
+    if (!session) {
+      return res.status(401).json({ 
+        error: "Invalid session",
+        message: "Your session is invalid. Please log in again."
+      });
+    }
+    
+    // Check if session is expired
+    if (new Date(session.expiresAt) < new Date()) {
+      await storage.deleteUserSession(sessionToken);
+      return res.status(401).json({ 
+        error: "Session expired",
+        message: "Your session has expired. Please log in again."
+      });
+    }
+    
+    // Attach user info to request for downstream handlers
+    (req as any).userId = session.userId;
+    (req as any).sessionToken = sessionToken;
+    
+    next();
+  } catch (error) {
+    console.error("[AUTH] Session verification error:", error);
+    return res.status(500).json({ 
+      error: "Authentication error",
+      message: "An error occurred during authentication."
+    });
+  }
+};
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -136,6 +210,293 @@ export async function registerRoutes(
       });
     } else {
       res.json({ authenticated: false });
+    }
+  });
+
+  // ============================================
+  // USER AUTHENTICATION ENDPOINTS
+  // ============================================
+  
+  // Start passwordless auth - generates 6-digit code
+  // POST /api/auth/start { email }
+  app.post("/api/auth/start", async (req, res) => {
+    try {
+      const parsed = authStartSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ 
+          error: "Invalid request",
+          details: parsed.error.flatten()
+        });
+      }
+      
+      const email = parsed.data.email.toLowerCase();
+      
+      // Generate 6-digit code
+      const code = generateAuthCode();
+      const salt = randomBytes(16).toString("hex");
+      const codeHash = hashAuthCode(code, salt);
+      
+      // Set expiration to 10 minutes from now
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+      
+      // Store the hashed code with salt embedded (format: salt:hash)
+      await storage.createAuthCode({
+        email,
+        codeHash: `${salt}:${codeHash}`,
+        expiresAt,
+        used: false,
+      });
+      
+      // DEV MODE: Log code to console and store in memory for tests
+      if (process.env.NODE_ENV !== "production") {
+        console.log(`[AUTH DEV] Code for ${email}: ${code}`);
+        devAuthCodes.set(email, code);
+      }
+      
+      // In production, this would send an email
+      // For now, we just return success
+      console.log(`[AUTH] Code generated for ${email}, expires at ${expiresAt.toISOString()}`);
+      
+      res.json({ 
+        success: true,
+        message: "Verification code sent to your email.",
+        // DEV ONLY: Include code in response for easier testing
+        ...(process.env.NODE_ENV !== "production" && { devCode: code })
+      });
+    } catch (error) {
+      console.error("[AUTH] Error starting auth:", error);
+      res.status(500).json({ error: "Failed to start authentication" });
+    }
+  });
+  
+  // Verify auth code and create session
+  // POST /api/auth/verify { email, code }
+  app.post("/api/auth/verify", async (req, res) => {
+    try {
+      const parsed = authVerifySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ 
+          error: "Invalid request",
+          details: parsed.error.flatten()
+        });
+      }
+      
+      const email = parsed.data.email.toLowerCase();
+      const code = parsed.data.code;
+      
+      // Get the latest valid auth code for this email
+      const authCode = await storage.getValidAuthCode(email);
+      
+      if (!authCode) {
+        console.warn(`[AUTH] No valid code found for ${email}`);
+        return res.status(401).json({ 
+          error: "Invalid or expired code",
+          message: "Please request a new verification code."
+        });
+      }
+      
+      // Check if code is expired
+      if (new Date(authCode.expiresAt) < new Date()) {
+        console.warn(`[AUTH] Expired code for ${email}`);
+        return res.status(401).json({ 
+          error: "Code expired",
+          message: "Please request a new verification code."
+        });
+      }
+      
+      // Verify the code
+      const [salt, storedHash] = authCode.codeHash.split(":");
+      const providedHash = hashAuthCode(code, salt);
+      
+      if (providedHash !== storedHash) {
+        console.warn(`[AUTH] Invalid code attempt for ${email}`);
+        return res.status(401).json({ 
+          error: "Invalid code",
+          message: "The code you entered is incorrect."
+        });
+      }
+      
+      // Mark code as used
+      await storage.markAuthCodeUsed(authCode.id);
+      
+      // Get or create user
+      let user = await storage.getUserByEmail(email);
+      if (!user) {
+        // Create new user
+        user = await storage.createUser({ email });
+        // Create empty profile
+        await storage.createUserProfile({ userId: user.id });
+        console.log(`[AUTH] New user created: ${user.id} (${email})`);
+      }
+      
+      // Create session (30 days expiry)
+      const sessionToken = generateSessionToken();
+      const sessionExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      
+      await storage.createUserSession({
+        userId: user.id,
+        sessionToken,
+        expiresAt: sessionExpiresAt,
+      });
+      
+      // Set httpOnly cookie
+      res.cookie("alpmera_user", sessionToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+        path: "/",
+      });
+      
+      console.log(`[AUTH] User logged in: ${user.id} (${email})`);
+      
+      // Clean up dev code store
+      if (process.env.NODE_ENV !== "production") {
+        devAuthCodes.delete(email);
+      }
+      
+      res.json({ 
+        success: true,
+        message: "Logged in successfully",
+        user: { id: user.id, email: user.email }
+      });
+    } catch (error) {
+      console.error("[AUTH] Error verifying code:", error);
+      res.status(500).json({ error: "Failed to verify code" });
+    }
+  });
+  
+  // Check user session status
+  // GET /api/auth/session
+  app.get("/api/auth/session", async (req, res) => {
+    const sessionToken = req.cookies?.alpmera_user;
+    
+    if (!sessionToken) {
+      return res.json({ authenticated: false });
+    }
+    
+    try {
+      const session = await storage.getUserSession(sessionToken);
+      
+      if (!session || new Date(session.expiresAt) < new Date()) {
+        if (session) {
+          await storage.deleteUserSession(sessionToken);
+        }
+        return res.json({ authenticated: false });
+      }
+      
+      const user = await storage.getUserWithProfile(session.userId);
+      
+      if (!user) {
+        return res.json({ authenticated: false });
+      }
+      
+      res.json({ 
+        authenticated: true,
+        user: {
+          id: user.id,
+          email: user.email,
+          profile: user.profile
+        }
+      });
+    } catch (error) {
+      console.error("[AUTH] Session check error:", error);
+      res.json({ authenticated: false });
+    }
+  });
+  
+  // User logout
+  // POST /api/auth/logout
+  app.post("/api/auth/logout", async (req, res) => {
+    const sessionToken = req.cookies?.alpmera_user;
+    
+    if (sessionToken) {
+      try {
+        await storage.deleteUserSession(sessionToken);
+        console.log(`[AUTH] User logged out`);
+      } catch (error) {
+        console.error("[AUTH] Logout error:", error);
+      }
+    }
+    
+    res.clearCookie("alpmera_user", { path: "/" });
+    res.json({ success: true, message: "Logged out successfully" });
+  });
+  
+  // DEV ONLY: Get auth code for testing
+  // GET /api/auth/dev-code/:email
+  if (process.env.NODE_ENV !== "production") {
+    app.get("/api/auth/dev-code/:email", (req, res) => {
+      const email = req.params.email.toLowerCase();
+      const code = devAuthCodes.get(email);
+      
+      if (code) {
+        res.json({ code });
+      } else {
+        res.status(404).json({ error: "No code found for this email" });
+      }
+    });
+  }
+  
+  // ============================================
+  // USER PROFILE ENDPOINTS (Protected)
+  // ============================================
+  
+  // Get current user info and profile
+  // GET /api/me
+  app.get("/api/me", requireUserAuth, async (req, res) => {
+    try {
+      const userId = (req as any).userId;
+      const user = await storage.getUserWithProfile(userId);
+      
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      
+      res.json({
+        id: user.id,
+        email: user.email,
+        createdAt: user.createdAt,
+        profile: user.profile
+      });
+    } catch (error) {
+      console.error("[USER] Error fetching user:", error);
+      res.status(500).json({ error: "Failed to fetch user" });
+    }
+  });
+  
+  // Update user profile
+  // PATCH /api/me/profile
+  app.patch("/api/me/profile", requireUserAuth, async (req, res) => {
+    try {
+      const userId = (req as any).userId;
+      
+      const parsed = updateUserProfileSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ 
+          error: "Invalid request",
+          details: parsed.error.flatten()
+        });
+      }
+      
+      // Check if profile exists, create if not
+      let profile = await storage.getUserProfile(userId);
+      if (!profile) {
+        profile = await storage.createUserProfile({ userId });
+      }
+      
+      // Update profile
+      const updated = await storage.updateUserProfile(userId, parsed.data);
+      
+      if (!updated) {
+        return res.status(500).json({ error: "Failed to update profile" });
+      }
+      
+      console.log(`[USER] Profile updated for user ${userId}`);
+      res.json(updated);
+    } catch (error) {
+      console.error("[USER] Error updating profile:", error);
+      res.status(500).json({ error: "Failed to update profile" });
     }
   });
 

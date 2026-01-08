@@ -1,7 +1,52 @@
 import { sql, relations } from "drizzle-orm";
-import { pgTable, text, varchar, integer, timestamp, boolean, decimal, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, timestamp, boolean, decimal, pgEnum, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+
+// ============================================
+// USER AUTHENTICATION & PROFILE TABLES
+// ============================================
+
+// Users table - core user identity
+export const users = pgTable("users", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  email: text("email").notNull().unique(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// User profiles - extended user information for delivery
+export const userProfiles = pgTable("user_profiles", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id).unique(),
+  fullName: text("full_name"),
+  phone: text("phone"),
+  defaultAddressLine1: text("default_address_line1"),
+  defaultAddressLine2: text("default_address_line2"),
+  city: text("city"),
+  state: text("state"),
+  zip: text("zip"),
+  country: text("country"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// User sessions - for persistent login (httpOnly cookie-based)
+export const userSessions = pgTable("user_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  sessionToken: text("session_token").notNull().unique(),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Auth codes - temporary codes for passwordless login
+export const authCodes = pgTable("auth_codes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  email: text("email").notNull(),
+  codeHash: text("code_hash").notNull(), // bcrypt hashed 6-digit code
+  expiresAt: timestamp("expires_at").notNull(),
+  used: boolean("used").default(false).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
 
 // Campaign State Machine: AGGREGATION → SUCCESS/FAILED → FULFILLMENT → RELEASED
 export const campaignStateEnum = pgEnum("campaign_state", [
@@ -48,8 +93,9 @@ export const campaigns = pgTable("campaigns", {
 export const commitments = pgTable("commitments", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   campaignId: varchar("campaign_id").notNull().references(() => campaigns.id),
+  userId: varchar("user_id").references(() => users.id), // nullable FK - new commitments attach user_id when logged in
   participantName: text("participant_name").notNull(),
-  participantEmail: text("participant_email").notNull(),
+  participantEmail: text("participant_email").notNull(), // kept for legacy/audit
   amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
   quantity: integer("quantity").notNull(),
   status: commitmentStatusEnum("status").notNull().default("LOCKED"),
@@ -106,6 +152,26 @@ export const idempotencyKeys = pgTable("idempotency_keys", {
 });
 
 // Relations
+export const usersRelations = relations(users, ({ one, many }) => ({
+  profile: one(userProfiles),
+  sessions: many(userSessions),
+  commitments: many(commitments),
+}));
+
+export const userProfilesRelations = relations(userProfiles, ({ one }) => ({
+  user: one(users, {
+    fields: [userProfiles.userId],
+    references: [users.id],
+  }),
+}));
+
+export const userSessionsRelations = relations(userSessions, ({ one }) => ({
+  user: one(users, {
+    fields: [userSessions.userId],
+    references: [users.id],
+  }),
+}));
+
 export const campaignsRelations = relations(campaigns, ({ many }) => ({
   commitments: many(commitments),
   escrowEntries: many(escrowLedger),
@@ -117,6 +183,10 @@ export const commitmentsRelations = relations(commitments, ({ one, many }) => ({
   campaign: one(campaigns, {
     fields: [commitments.campaignId],
     references: [campaigns.id],
+  }),
+  user: one(users, {
+    fields: [commitments.userId],
+    references: [users.id],
   }),
   escrowEntries: many(escrowLedger),
 }));
@@ -184,7 +254,45 @@ export const insertIdempotencyKeySchema = createInsertSchema(idempotencyKeys).om
   createdAt: true,
 });
 
+// User-related insert schemas
+export const insertUserSchema = createInsertSchema(users).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertUserProfileSchema = createInsertSchema(userProfiles).omit({
+  id: true,
+  updatedAt: true,
+});
+
+export const updateUserProfileSchema = insertUserProfileSchema.partial().omit({
+  userId: true,
+});
+
+export const insertUserSessionSchema = createInsertSchema(userSessions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertAuthCodeSchema = createInsertSchema(authCodes).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types
+export type User = typeof users.$inferSelect;
+export type InsertUser = z.infer<typeof insertUserSchema>;
+
+export type UserProfile = typeof userProfiles.$inferSelect;
+export type InsertUserProfile = z.infer<typeof insertUserProfileSchema>;
+export type UpdateUserProfile = z.infer<typeof updateUserProfileSchema>;
+
+export type UserSession = typeof userSessions.$inferSelect;
+export type InsertUserSession = z.infer<typeof insertUserSessionSchema>;
+
+export type AuthCode = typeof authCodes.$inferSelect;
+export type InsertAuthCode = z.infer<typeof insertAuthCodeSchema>;
+
 export type Campaign = typeof campaigns.$inferSelect;
 export type InsertCampaign = z.infer<typeof insertCampaignSchema>;
 

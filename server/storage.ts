@@ -5,6 +5,10 @@ import {
   supplierAcceptances, 
   adminActionLogs,
   idempotencyKeys,
+  users,
+  userProfiles,
+  userSessions,
+  authCodes,
   type Campaign, 
   type InsertCampaign,
   type Commitment,
@@ -17,12 +21,21 @@ import {
   type InsertAdminActionLog,
   type IdempotencyKey,
   type InsertIdempotencyKey,
+  type User,
+  type InsertUser,
+  type UserProfile,
+  type InsertUserProfile,
+  type UpdateUserProfile,
+  type UserSession,
+  type InsertUserSession,
+  type AuthCode,
+  type InsertAuthCode,
   type CampaignState,
   type CommitmentStatus,
   VALID_TRANSITIONS
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, sql, and } from "drizzle-orm";
+import { eq, desc, sql, and, lt } from "drizzle-orm";
 import { randomBytes } from "crypto";
 
 export interface IStorage {
@@ -61,6 +74,29 @@ export interface IStorage {
   getIdempotencyKey(key: string, scope: string): Promise<IdempotencyKey | undefined>;
   createIdempotencyKey(data: InsertIdempotencyKey): Promise<IdempotencyKey>;
   updateIdempotencyKeyResponse(id: string, response: string): Promise<void>;
+  
+  // User operations
+  getUserById(id: string): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
+  createUser(user: InsertUser): Promise<User>;
+  
+  // User profile operations
+  getUserProfile(userId: string): Promise<UserProfile | undefined>;
+  createUserProfile(profile: InsertUserProfile): Promise<UserProfile>;
+  updateUserProfile(userId: string, updates: UpdateUserProfile): Promise<UserProfile | undefined>;
+  getUserWithProfile(userId: string): Promise<(User & { profile: UserProfile | null }) | undefined>;
+  
+  // User session operations
+  getUserSession(sessionToken: string): Promise<UserSession | undefined>;
+  createUserSession(session: InsertUserSession): Promise<UserSession>;
+  deleteUserSession(sessionToken: string): Promise<void>;
+  deleteExpiredSessions(): Promise<number>;
+  
+  // Auth code operations
+  createAuthCode(code: InsertAuthCode): Promise<AuthCode>;
+  getValidAuthCode(email: string): Promise<AuthCode | undefined>;
+  markAuthCodeUsed(id: string): Promise<void>;
+  cleanupExpiredAuthCodes(): Promise<number>;
 }
 
 // Generate unique reference number for commitments
@@ -293,6 +329,109 @@ export class DatabaseStorage implements IStorage {
       .update(idempotencyKeys)
       .set({ response })
       .where(eq(idempotencyKeys.id, id));
+  }
+  
+  // User operations
+  async getUserById(id: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user || undefined;
+  }
+  
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.email, email.toLowerCase()));
+    return user || undefined;
+  }
+  
+  async createUser(user: InsertUser): Promise<User> {
+    const [created] = await db.insert(users).values({ ...user, email: user.email.toLowerCase() }).returning();
+    return created;
+  }
+  
+  // User profile operations
+  async getUserProfile(userId: string): Promise<UserProfile | undefined> {
+    const [profile] = await db.select().from(userProfiles).where(eq(userProfiles.userId, userId));
+    return profile || undefined;
+  }
+  
+  async createUserProfile(profile: InsertUserProfile): Promise<UserProfile> {
+    const [created] = await db.insert(userProfiles).values(profile).returning();
+    return created;
+  }
+  
+  async updateUserProfile(userId: string, updates: UpdateUserProfile): Promise<UserProfile | undefined> {
+    const [updated] = await db
+      .update(userProfiles)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(userProfiles.userId, userId))
+      .returning();
+    return updated || undefined;
+  }
+  
+  async getUserWithProfile(userId: string): Promise<(User & { profile: UserProfile | null }) | undefined> {
+    const user = await this.getUserById(userId);
+    if (!user) return undefined;
+    
+    const profile = await this.getUserProfile(userId);
+    return { ...user, profile: profile || null };
+  }
+  
+  // User session operations
+  async getUserSession(sessionToken: string): Promise<UserSession | undefined> {
+    const [session] = await db
+      .select()
+      .from(userSessions)
+      .where(eq(userSessions.sessionToken, sessionToken));
+    return session || undefined;
+  }
+  
+  async createUserSession(session: InsertUserSession): Promise<UserSession> {
+    const [created] = await db.insert(userSessions).values(session).returning();
+    return created;
+  }
+  
+  async deleteUserSession(sessionToken: string): Promise<void> {
+    await db.delete(userSessions).where(eq(userSessions.sessionToken, sessionToken));
+  }
+  
+  async deleteExpiredSessions(): Promise<number> {
+    const result = await db
+      .delete(userSessions)
+      .where(lt(userSessions.expiresAt, new Date()))
+      .returning();
+    return result.length;
+  }
+  
+  // Auth code operations
+  async createAuthCode(code: InsertAuthCode): Promise<AuthCode> {
+    const [created] = await db.insert(authCodes).values(code).returning();
+    return created;
+  }
+  
+  async getValidAuthCode(email: string): Promise<AuthCode | undefined> {
+    const [code] = await db
+      .select()
+      .from(authCodes)
+      .where(
+        and(
+          eq(authCodes.email, email.toLowerCase()),
+          eq(authCodes.used, false)
+        )
+      )
+      .orderBy(desc(authCodes.createdAt))
+      .limit(1);
+    return code || undefined;
+  }
+  
+  async markAuthCodeUsed(id: string): Promise<void> {
+    await db.update(authCodes).set({ used: true }).where(eq(authCodes.id, id));
+  }
+  
+  async cleanupExpiredAuthCodes(): Promise<number> {
+    const result = await db
+      .delete(authCodes)
+      .where(lt(authCodes.expiresAt, new Date()))
+      .returning();
+    return result.length;
   }
 }
 
