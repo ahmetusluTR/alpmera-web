@@ -3,6 +3,7 @@ import { campaigns, commitments, escrowLedger, adminActionLogs } from "../shared
 import { eq, and, desc, sql } from "drizzle-orm";
 
 const API_BASE = "http://localhost:5000";
+const ADMIN_API_KEY = process.env.ADMIN_API_KEY;
 
 interface TestResult {
   test: string;
@@ -21,6 +22,15 @@ async function makeRequest(method: string, path: string, body?: unknown, headers
     body: body ? JSON.stringify(body) : undefined,
   });
   return res;
+}
+
+async function makeAdminRequest(method: string, path: string, body?: unknown, extraHeaders?: Record<string, string>) {
+  if (!ADMIN_API_KEY) {
+    throw new Error("ADMIN_API_KEY not set. Run with: ADMIN_API_KEY=your-key npx tsx scripts/test-escrow-ledger.ts");
+  }
+  const headers: Record<string, string> = { "x-admin-auth": ADMIN_API_KEY };
+  if (extraHeaders) Object.assign(headers, extraHeaders);
+  return makeRequest(method, path, body, headers);
 }
 
 async function runTests(): Promise<TestResult[]> {
@@ -90,14 +100,14 @@ async function runTests(): Promise<TestResult[]> {
     console.log("\n--- Test 2: REFUND entry on campaign failure ---");
     
     // First transition to FAILED
-    await makeRequest("POST", `/api/admin/campaigns/${testCampaign.id}/transition`, {
+    await makeAdminRequest("POST", `/api/admin/campaigns/${testCampaign.id}/transition`, {
       newState: "FAILED",
       reason: "Test failure for escrow ledger validation",
       adminUsername: "test_admin",
     });
 
     // Process refunds
-    const refundRes = await makeRequest("POST", `/api/admin/campaigns/${testCampaign.id}/refund`, {
+    const refundRes = await makeAdminRequest("POST", `/api/admin/campaigns/${testCampaign.id}/refund`, {
       adminUsername: "test_admin",
     }, { "x-idempotency-key": `audit-test-refund-${Date.now()}` });
 
@@ -172,14 +182,14 @@ async function runTests(): Promise<TestResult[]> {
 
     if (fulfillCampaign) {
       // Transition to RELEASED
-      await makeRequest("POST", `/api/admin/campaigns/${fulfillCampaign.id}/transition`, {
+      await makeAdminRequest("POST", `/api/admin/campaigns/${fulfillCampaign.id}/transition`, {
         newState: "RELEASED",
         reason: "Test release for escrow ledger validation",
         adminUsername: "test_admin",
       });
 
       // Process release
-      const releaseRes = await makeRequest("POST", `/api/admin/campaigns/${fulfillCampaign.id}/release`, {
+      const releaseRes = await makeAdminRequest("POST", `/api/admin/campaigns/${fulfillCampaign.id}/release`, {
         adminUsername: "test_admin",
       }, { "x-idempotency-key": `audit-test-release-${Date.now()}` });
 
@@ -498,12 +508,12 @@ async function runIdempotencyTests(): Promise<TestResult[]> {
     const refundCountBefore = refundEntriesBefore.length;
 
     // First refund request
-    await makeRequest("POST", `/api/admin/campaigns/${failedCampaign.id}/refund`, {
+    await makeAdminRequest("POST", `/api/admin/campaigns/${failedCampaign.id}/refund`, {
       adminUsername: "test_admin",
     }, { "x-idempotency-key": idempotencyKey2 });
 
     // Second refund request with SAME key
-    const secondRefundRes = await makeRequest("POST", `/api/admin/campaigns/${failedCampaign.id}/refund`, {
+    const secondRefundRes = await makeAdminRequest("POST", `/api/admin/campaigns/${failedCampaign.id}/refund`, {
       adminUsername: "test_admin",
     }, { "x-idempotency-key": idempotencyKey2 });
 
@@ -555,12 +565,12 @@ async function runIdempotencyTests(): Promise<TestResult[]> {
     const idempotencyKey3 = `test-idem-release-${Date.now()}`;
 
     // First release request
-    await makeRequest("POST", `/api/admin/campaigns/${releasedCampaign.id}/release`, {
+    await makeAdminRequest("POST", `/api/admin/campaigns/${releasedCampaign.id}/release`, {
       adminUsername: "test_admin",
     }, { "x-idempotency-key": idempotencyKey3 });
 
     // Second release request with SAME key
-    const secondReleaseRes = await makeRequest("POST", `/api/admin/campaigns/${releasedCampaign.id}/release`, {
+    const secondReleaseRes = await makeAdminRequest("POST", `/api/admin/campaigns/${releasedCampaign.id}/release`, {
       adminUsername: "test_admin",
     }, { "x-idempotency-key": idempotencyKey3 });
 

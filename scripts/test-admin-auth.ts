@@ -1,13 +1,15 @@
 /**
  * Phase 1 Production Security Audit - Admin Endpoint Authentication Test
  * 
+ * SECURITY: Admin endpoints NEVER accessible without x-admin-auth
+ * 
  * This script verifies that admin endpoints are properly protected:
- * 1. Requests without x-admin-auth header must fail (401/403/503)
- * 2. Requests with wrong key must fail (401/403)
- * 3. Requests with correct key must succeed (200)
+ * 1. Requests without x-admin-auth header MUST fail (401/503)
+ * 2. Requests with wrong key MUST fail (401)
+ * 3. Requests with correct key MUST succeed (200)
  * 
  * REQUIREMENTS:
- * - Server must be running
+ * - Server must be running with ADMIN_API_KEY set
  * - Set ADMIN_API_KEY in environment before running
  * 
  * USAGE:
@@ -55,45 +57,34 @@ async function makeRequest(
   });
 }
 
-async function testNoAuthHeader(serverHasAdminKey: boolean): Promise<TestResult[]> {
+async function testNoAuthHeader(): Promise<TestResult[]> {
   const results: TestResult[] = [];
-  console.log("\n=== Test 1: No x-admin-auth header → must fail ===\n");
+  console.log("\n=== Test 1: No x-admin-auth header → MUST FAIL ===\n");
 
   for (const route of ADMIN_ROUTES) {
     const res = await makeRequest(route.method, route.path, route.body);
     const status = res.status;
     
-    // When server has ADMIN_API_KEY configured: must reject (401)
-    // When server is in dev mode without key: GET allowed, POST may fail for other reasons
-    let passed: boolean;
-    let expected: string;
-    
-    if (serverHasAdminKey) {
-      passed = status === 401;
-      expected = "401";
-    } else {
-      // Dev mode: GET allowed, POST might be 400 for validation errors or 200/201 for success
-      passed = route.method === "GET" ? status === 200 : (status === 400 || status === 200 || status === 201);
-      expected = route.method === "GET" ? "200 (dev mode)" : "400/200/201 (dev mode)";
-    }
+    // MUST be 401 (missing header) or 503 (key not configured)
+    const passed = status === 401 || status === 503;
     
     results.push({
       test: `No auth: ${route.method} ${route.path}`,
       passed,
       details: route.description,
-      expected,
+      expected: "401 or 503",
       actual: String(status),
     });
     
-    console.log(`${passed ? "✓" : "✗"} ${route.method} ${route.path}: ${status} (expected ${expected})`);
+    console.log(`${passed ? "✓" : "✗"} ${route.method} ${route.path}: ${status}`);
   }
 
   return results;
 }
 
-async function testWrongAuthHeader(serverHasAdminKey: boolean): Promise<TestResult[]> {
+async function testWrongAuthHeader(): Promise<TestResult[]> {
   const results: TestResult[] = [];
-  console.log("\n=== Test 2: Wrong x-admin-auth header → must fail ===\n");
+  console.log("\n=== Test 2: Wrong x-admin-auth header → MUST FAIL ===\n");
 
   for (const route of ADMIN_ROUTES) {
     const res = await makeRequest(
@@ -104,28 +95,18 @@ async function testWrongAuthHeader(serverHasAdminKey: boolean): Promise<TestResu
     );
     const status = res.status;
     
-    let passed: boolean;
-    let expected: string;
-    
-    if (serverHasAdminKey) {
-      // With ADMIN_API_KEY: wrong key must be rejected
-      passed = status === 401;
-      expected = "401";
-    } else {
-      // Dev mode without key: header is ignored, falls through to dev logic
-      passed = route.method === "GET" ? status === 200 : (status === 400 || status === 200 || status === 201);
-      expected = route.method === "GET" ? "200 (dev mode)" : "400/200/201 (dev mode)";
-    }
+    // MUST be 401 (wrong key) or 503 (key not configured)
+    const passed = status === 401 || status === 503;
     
     results.push({
       test: `Wrong auth: ${route.method} ${route.path}`,
       passed,
       details: route.description,
-      expected,
+      expected: "401 or 503",
       actual: String(status),
     });
     
-    console.log(`${passed ? "✓" : "✗"} ${route.method} ${route.path}: ${status} (expected ${expected})`);
+    console.log(`${passed ? "✓" : "✗"} ${route.method} ${route.path}: ${status}`);
   }
 
   return results;
@@ -133,7 +114,7 @@ async function testWrongAuthHeader(serverHasAdminKey: boolean): Promise<TestResu
 
 async function testCorrectAuthHeader(adminApiKey: string): Promise<TestResult[]> {
   const results: TestResult[] = [];
-  console.log("\n=== Test 3: Correct x-admin-auth header → must succeed ===\n");
+  console.log("\n=== Test 3: Correct x-admin-auth header → MUST SUCCEED ===\n");
 
   // Use only GET endpoints for "success" tests to avoid side effects
   const safeRoutes = ADMIN_ROUTES.filter(r => r.method === "GET");
@@ -202,19 +183,16 @@ async function testDataIsolation(): Promise<TestResult[]> {
     console.log(`${noLeakagePassed ? "✓" : "✗"} Campaign list data scope: ${noLeakagePassed ? "Clean" : "Leakage detected"}`);
   }
 
-  // Test 3: Public escrow data should not be accessible without admin auth
+  // Test 3: Escrow endpoint must require admin auth
   console.log("Testing escrow endpoint protection...");
   const escrowRes = await makeRequest("GET", "/api/admin/campaigns/test-agg-1/escrow");
-  // In dev mode without ADMIN_API_KEY on server, GET is allowed
-  // This is expected development behavior
-  const escrowProtected = escrowRes.status === 401 || escrowRes.status === 403 || escrowRes.status === 503 ||
-                          escrowRes.status === 200; // 200 in dev mode is acceptable
+  const escrowProtected = escrowRes.status === 401 || escrowRes.status === 503;
   
   results.push({
     test: "Escrow ledger requires admin auth",
     passed: escrowProtected,
-    details: "Escrow data accessible (dev mode) or protected (prod)",
-    expected: "401/403/503 or 200 (dev)",
+    details: "Escrow data should only be accessible to authenticated admins",
+    expected: "401 or 503",
     actual: String(escrowRes.status),
   });
   console.log(`${escrowProtected ? "✓" : "✗"} Escrow endpoint: ${escrowRes.status}`);
@@ -222,59 +200,34 @@ async function testDataIsolation(): Promise<TestResult[]> {
   return results;
 }
 
-async function detectServerMode(): Promise<boolean> {
-  // Check if server has ADMIN_API_KEY by testing if wrong auth returns 401
-  const testRes = await makeRequest("GET", "/api/admin/logs", undefined, { "x-admin-auth": "detection-test" });
-  // If we get 401, server has ADMIN_API_KEY configured
-  // If we get 200, server is in dev mode without key
-  return testRes.status === 401;
-}
-
 async function main() {
   console.log("╔══════════════════════════════════════════════════════════════╗");
-  console.log("║  Phase 1 Production Security Audit - Admin Authentication   ║");
+  console.log("║  Phase 1 Security Audit - STRICT Admin Authentication       ║");
   console.log("╚══════════════════════════════════════════════════════════════╝");
 
   const adminApiKey = process.env.ADMIN_API_KEY;
   
-  // Detect if the server has ADMIN_API_KEY configured
-  const serverHasAdminKey = await detectServerMode();
-  
-  console.log("\n--- Server Mode Detection ---");
-  if (serverHasAdminKey) {
-    console.log("✓ Server has ADMIN_API_KEY configured (production-like security)");
-  } else {
-    console.log("⚠️  Server in development mode (no ADMIN_API_KEY)");
-    console.log("   Admin endpoints are accessible for testing.");
-    console.log("   Set ADMIN_API_KEY on server to enable production security.");
-  }
-  
   if (!adminApiKey) {
-    console.log("\n⚠️  ADMIN_API_KEY not set in test environment.");
-    console.log("   Running partial tests (no 'correct auth' test).");
-    console.log("   To run full tests: ADMIN_API_KEY=your-key npx tsx scripts/test-admin-auth.ts\n");
-  } else {
-    console.log(`\n✓ Test ADMIN_API_KEY: ${adminApiKey.substring(0, 4)}...`);
-    if (!serverHasAdminKey) {
-      console.log("   Note: Server doesn't have this key - 'correct auth' test will verify dev mode allows access.\n");
-    }
+    console.log("\n🔴 ERROR: ADMIN_API_KEY not set in environment");
+    console.log("   Run with: ADMIN_API_KEY=your-key npx tsx scripts/test-admin-auth.ts\n");
+    process.exit(1);
   }
+  
+  console.log(`\n✓ ADMIN_API_KEY configured: ${adminApiKey.substring(0, 4)}...`);
 
   const allResults: TestResult[] = [];
 
-  // Test 1: No auth header
-  const noAuthResults = await testNoAuthHeader(serverHasAdminKey);
+  // Test 1: No auth header - MUST FAIL
+  const noAuthResults = await testNoAuthHeader();
   allResults.push(...noAuthResults);
 
-  // Test 2: Wrong auth header
-  const wrongAuthResults = await testWrongAuthHeader(serverHasAdminKey);
+  // Test 2: Wrong auth header - MUST FAIL
+  const wrongAuthResults = await testWrongAuthHeader();
   allResults.push(...wrongAuthResults);
 
-  // Test 3: Correct auth header (only if key provided)
-  if (adminApiKey) {
-    const correctAuthResults = await testCorrectAuthHeader(adminApiKey);
-    allResults.push(...correctAuthResults);
-  }
+  // Test 3: Correct auth header - MUST SUCCEED
+  const correctAuthResults = await testCorrectAuthHeader(adminApiKey);
+  allResults.push(...correctAuthResults);
 
   // Test 4: Data isolation
   const isolationResults = await testDataIsolation();

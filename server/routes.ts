@@ -30,48 +30,44 @@ const transitionRequestSchema = z.object({
 });
 
 // Admin authentication middleware
-// SECURITY: Validates admin API key when ADMIN_API_KEY is configured (any environment)
-// In development WITHOUT ADMIN_API_KEY: allows dev access for testing
-// In production WITHOUT ADMIN_API_KEY: rejects all admin requests
+// SECURITY: STRICT enforcement - NO dev mode bypass allowed
+// All /api/admin/* endpoints require:
+// 1. ADMIN_API_KEY must be configured in environment
+// 2. Request must include x-admin-auth header matching ADMIN_API_KEY exactly
 // All admin access attempts are logged for audit trail
 const requireAdminAuth = (req: Request, res: Response, next: NextFunction) => {
   const adminHeader = req.headers["x-admin-auth"] as string | undefined;
-  const adminUsername = req.body?.adminUsername;
-  const isReadOnly = req.method === "GET";
   const adminApiKey = process.env.ADMIN_API_KEY;
-  const isDevelopment = process.env.NODE_ENV === "development";
   
-  // PRIORITY 1: If ADMIN_API_KEY is configured, ALWAYS enforce it (any environment)
-  // This allows testing production-like security in development
-  if (adminApiKey) {
-    if (adminHeader !== adminApiKey) {
-      console.warn(`[SECURITY] Invalid admin API key attempt: ${req.method} ${req.path} from ${req.ip}`);
-      return res.status(401).json({ 
-        error: "Admin authentication failed",
-        message: "Invalid admin credentials. This attempt has been logged."
-      });
-    }
-    console.log(`[ADMIN] Authenticated access via API key: ${req.method} ${req.path}`);
-    return next();
+  // SECURITY CHECK 1: ADMIN_API_KEY must be configured
+  if (!adminApiKey) {
+    console.error(`[SECURITY] ADMIN_API_KEY not configured - admin endpoints disabled`);
+    return res.status(503).json({ 
+      error: "Admin endpoints disabled",
+      message: "Admin endpoints disabled: ADMIN_API_KEY not configured"
+    });
   }
   
-  // PRIORITY 2: Development mode without ADMIN_API_KEY - allow dev access
-  if (isDevelopment) {
-    // GET requests allowed (read-only, no state mutation)
-    // POST requests require adminUsername or dev header
-    if (isReadOnly || adminUsername || adminHeader === "development-admin") {
-      return next();
-    }
-    // POST without adminUsername will be caught by route-level validation
-    return next();
+  // SECURITY CHECK 2: x-admin-auth header must be present and match
+  if (!adminHeader) {
+    console.warn(`[SECURITY] Missing x-admin-auth header: ${req.method} ${req.path} from ${req.ip}`);
+    return res.status(401).json({ 
+      error: "Admin authentication required",
+      message: "x-admin-auth header is required. This attempt has been logged."
+    });
   }
   
-  // PRIORITY 3: Production without ADMIN_API_KEY configured - reject all
-  console.error(`[SECURITY] ADMIN_API_KEY not configured - admin endpoints disabled in production`);
-  return res.status(503).json({ 
-    error: "Admin endpoints unavailable",
-    message: "Admin API is not configured for production. Contact platform administrator."
-  });
+  if (adminHeader !== adminApiKey) {
+    console.warn(`[SECURITY] Invalid admin API key attempt: ${req.method} ${req.path} from ${req.ip}`);
+    return res.status(401).json({ 
+      error: "Admin authentication failed",
+      message: "Invalid admin credentials. This attempt has been logged."
+    });
+  }
+  
+  // Authentication successful
+  console.log(`[ADMIN] Authenticated access via API key: ${req.method} ${req.path}`);
+  return next();
 };
 
 export async function registerRoutes(
