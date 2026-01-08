@@ -26,7 +26,7 @@ import {
   TableHeader, 
   TableRow 
 } from "@/components/ui/table";
-import { Search, RefreshCw, ArrowUp, ArrowDown } from "lucide-react";
+import { Search, RefreshCw, ArrowUp, ArrowDown, Download } from "lucide-react";
 import { format } from "date-fns";
 
 interface RefundEntry {
@@ -41,20 +41,24 @@ interface RefundEntry {
 }
 
 const REASON_LABELS: Record<string, string> = {
-  campaign_failed_refund: "Campaign failed (bulk refund)",
-  admin_manual_refund: "Manual refund by admin",
-  commitment_cancelled: "Commitment cancelled",
-  duplicate_commitment: "Duplicate commitment",
-  participant_request: "Participant request",
+  campaign_failed_refund: "Campaign Failed",
+  admin_manual_refund: "Manual Refund",
+  commitment_cancelled: "Commitment Cancelled",
+  duplicate_commitment: "Duplicate Commitment",
+  participant_request: "Participant Request",
+  supplier_unable_to_fulfill: "Supplier Unable to Fulfill",
+  quality_issue: "Quality Issue",
+  delivery_failure: "Delivery Failure",
 };
 
-function formatReason(reason: string): string {
-  return REASON_LABELS[reason] || reason.replace(/_/g, " ");
+function formatReason(reason: string): { label: string; code: string } {
+  const label = REASON_LABELS[reason] || reason.replace(/_/g, " ");
+  return { label, code: reason };
 }
 
 export default function RefundsPage() {
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [reasonFilter, setReasonFilter] = useState("all");
   const [sortBy, setSortBy] = useState("createdAt");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
@@ -62,9 +66,13 @@ export default function RefundsPage() {
     queryKey: ["/api/admin/refunds"],
   });
 
+  const handleDownloadReasonsRef = () => {
+    window.open("/api/admin/refunds/reasons/export", "_blank");
+  };
+
   const filteredRefunds = refunds
     ?.filter((r) => {
-      if (statusFilter !== "all" && r.status !== statusFilter) return false;
+      if (reasonFilter !== "all" && r.reason !== reasonFilter) return false;
       if (search) {
         const searchLower = search.toLowerCase();
         if (!r.commitmentCode.toLowerCase().includes(searchLower) &&
@@ -82,6 +90,8 @@ export default function RefundsPage() {
         cmp = parseFloat(a.amount) - parseFloat(b.amount);
       } else if (sortBy === "campaign") {
         cmp = a.campaignName.localeCompare(b.campaignName);
+      } else if (sortBy === "reason") {
+        cmp = a.reason.localeCompare(b.reason);
       }
       return sortDir === "desc" ? -cmp : cmp;
     }) || [];
@@ -90,12 +100,20 @@ export default function RefundsPage() {
     setSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
   };
 
+  const uniqueReasons = Array.from(new Set(refunds?.map(r => r.reason) || []));
+
   return (
     <AdminLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-semibold" data-testid="text-refunds-heading">Refunds</h1>
-          <p className="text-muted-foreground text-sm">All refund entries from the escrow ledger</p>
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div>
+            <h1 className="text-2xl font-semibold" data-testid="text-refunds-heading">Refunds</h1>
+            <p className="text-muted-foreground text-sm">All refund entries from the escrow ledger</p>
+          </div>
+          <Button variant="outline" onClick={handleDownloadReasonsRef} data-testid="button-export-reasons">
+            <Download className="w-4 h-4 mr-2" />
+            Reason Codes Reference
+          </Button>
         </div>
 
         <div className="flex flex-col sm:flex-row gap-4 flex-wrap">
@@ -109,13 +127,17 @@ export default function RefundsPage() {
               data-testid="input-search-refunds"
             />
           </div>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[150px]" data-testid="select-status-filter">
-              <SelectValue placeholder="Status" />
+          <Select value={reasonFilter} onValueChange={setReasonFilter}>
+            <SelectTrigger className="w-[180px]" data-testid="select-reason-filter">
+              <SelectValue placeholder="Reason" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All</SelectItem>
-              <SelectItem value="COMPLETED">Completed</SelectItem>
+              <SelectItem value="all">All Reasons</SelectItem>
+              {uniqueReasons.map((reason) => (
+                <SelectItem key={reason} value={reason}>
+                  {REASON_LABELS[reason] || reason}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
           <Select value={sortBy} onValueChange={setSortBy}>
@@ -126,6 +148,7 @@ export default function RefundsPage() {
               <SelectItem value="createdAt">Date</SelectItem>
               <SelectItem value="amount">Amount</SelectItem>
               <SelectItem value="campaign">Campaign</SelectItem>
+              <SelectItem value="reason">Reason</SelectItem>
             </SelectContent>
           </Select>
           <Button variant="outline" size="icon" onClick={toggleSortDir} data-testid="button-sort-dir">
@@ -157,7 +180,6 @@ export default function RefundsPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Date</TableHead>
-                      <TableHead>Status</TableHead>
                       <TableHead>Amount</TableHead>
                       <TableHead>Commitment</TableHead>
                       <TableHead>Campaign</TableHead>
@@ -165,35 +187,36 @@ export default function RefundsPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredRefunds.map((refund) => (
-                      <TableRow key={refund.id} data-testid={`refund-row-${refund.id}`}>
-                        <TableCell className="font-mono text-xs">
-                          {format(new Date(refund.createdAt), "yyyy-MM-dd HH:mm")}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{refund.status}</Badge>
-                        </TableCell>
-                        <TableCell className="font-mono">
-                          ${parseFloat(refund.amount).toLocaleString()}
-                        </TableCell>
-                        <TableCell className="font-mono text-xs">{refund.commitmentCode}</TableCell>
-                        <TableCell className="text-sm max-w-[150px] truncate">
-                          {refund.campaignName}
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground max-w-[180px]">
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <span className="truncate block cursor-help">
-                                {formatReason(refund.reason)}
-                              </span>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <p className="font-mono text-xs">{refund.reason}</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {filteredRefunds.map((refund) => {
+                      const { label, code } = formatReason(refund.reason);
+                      return (
+                        <TableRow key={refund.id} data-testid={`refund-row-${refund.id}`}>
+                          <TableCell className="font-mono text-xs">
+                            {format(new Date(refund.createdAt), "yyyy-MM-dd HH:mm")}
+                          </TableCell>
+                          <TableCell className="font-mono">
+                            ${parseFloat(refund.amount).toLocaleString()}
+                          </TableCell>
+                          <TableCell className="font-mono text-xs">{refund.commitmentCode}</TableCell>
+                          <TableCell className="text-sm max-w-[150px] truncate">
+                            {refund.campaignName}
+                          </TableCell>
+                          <TableCell className="text-sm max-w-[180px]">
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <div className="cursor-help">
+                                  <span className="block truncate">{label}</span>
+                                  <span className="font-mono text-xs text-muted-foreground">{code}</span>
+                                </div>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p className="font-mono text-xs">{code}</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </div>

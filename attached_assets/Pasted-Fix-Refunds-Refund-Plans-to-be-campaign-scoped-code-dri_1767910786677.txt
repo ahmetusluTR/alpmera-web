@@ -1,0 +1,60 @@
+Fix Refunds + Refund Plans to be campaign-scoped, code-driven, and operationally safe.
+
+SCOPE (ONLY):
+- /admin/refunds: improve filters and reason display (no PII)
+- /admin/refund-plans: redesign to be campaign-scoped and remove “guessing”
+- Implement exportable reference tables for code-based fields (global rule)
+- Add exports for eligible commitments for refund planning
+- Keep execution out of scope (plans can remain draft/approved views)
+
+GUARDRAILS:
+- Do NOT allow manual refund amounts to be “trusted” from CSV.
+- Amounts must be derived/validated from escrow ledger.
+- Imports with code-based fields must use codes (not labels).
+- No PII in refunds list.
+
+REQUIREMENTS:
+
+1) Refund Plans are campaign-scoped
+- Update Refund Plans UI so admin selects a campaign context first (or navigate from Campaign detail to “Refund planning”).
+- Provide “Export eligible commitments for refund” from the selected campaign.
+- Then allow import of a refund plan CSV that references only eligible commitment_codes.
+
+2) Refund Plan CSV template (codes)
+Provide “Download CSV template”:
+Required columns:
+  commitment_code, reason_code
+Optional:
+  note
+Do NOT require amount in the template.
+If amount is currently required by backend, keep it but validate against escrow and reject mismatches; update template accordingly only if unavoidable.
+
+3) Export: Eligible commitments for refund planning
+Add export button (campaign-scoped):
+- “Export eligible commitments (refund planning)”
+CSV includes:
+  commitment_code, refundable_amount, currency, current_status
+(refundable_amount derived, for review only)
+
+Backend endpoint (add if missing):
+- GET /api/admin/campaigns/:campaignId/refunds/eligible/export
+
+4) Export: Refund reason reference table (codes↔labels)
+Add “Export reason reference (CSV)” accessible from Refund Plans page:
+CSV columns:
+  reason_code, label, description, scope, active
+This table must be the source for operators to find codes.
+
+Backend endpoint (add if missing):
+- GET /api/admin/refunds/reasons/export
+
+5) Refunds page improvements
+- Status filter must match actual backend statuses.
+- Reason column should display label (mapped from reason_code) with code as secondary text/tooltip.
+- Ensure no user name/email is displayed or requested.
+
+DELIVERABLE:
+- Refund Plans are campaign-scoped with eligible export + code-based template.
+- Refund reasons reference export exists.
+- Refunds list shows reason labels (no PII).
+- Short summary of changed files/endpoints.

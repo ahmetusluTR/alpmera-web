@@ -1573,6 +1573,129 @@ export async function registerRoutes(
     }
   });
 
+  // Admin: Refund reason reference table export (codes ↔ labels)
+  // This is the authoritative source for operators to find valid reason codes
+  app.get("/api/admin/refunds/reasons/export", requireAdminAuth, async (req, res) => {
+    try {
+      const reasons = [
+        { reason_code: "campaign_failed_refund", label: "Campaign Failed", description: "Bulk refund when campaign fails to reach target", scope: "campaign", active: "true" },
+        { reason_code: "admin_manual_refund", label: "Manual Refund", description: "Manual refund initiated by administrator", scope: "commitment", active: "true" },
+        { reason_code: "commitment_cancelled", label: "Commitment Cancelled", description: "Refund due to commitment cancellation", scope: "commitment", active: "true" },
+        { reason_code: "duplicate_commitment", label: "Duplicate Commitment", description: "Refund for duplicate or erroneous commitment", scope: "commitment", active: "true" },
+        { reason_code: "participant_request", label: "Participant Request", description: "Refund requested by participant before campaign deadline", scope: "commitment", active: "true" },
+        { reason_code: "supplier_unable_to_fulfill", label: "Supplier Unable to Fulfill", description: "Refund when supplier cannot fulfill the order", scope: "campaign", active: "true" },
+        { reason_code: "quality_issue", label: "Quality Issue", description: "Refund due to product quality problems", scope: "commitment", active: "true" },
+        { reason_code: "delivery_failure", label: "Delivery Failure", description: "Refund due to failed delivery", scope: "commitment", active: "true" },
+      ];
+      
+      const headers = ["reason_code", "label", "description", "scope", "active"];
+      const rows = [headers.join(",")];
+      
+      for (const reason of reasons) {
+        const row = headers.map(h => `"${(reason[h as keyof typeof reason] || "").replace(/"/g, '""')}"`);
+        rows.push(row.join(","));
+      }
+      
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", 'attachment; filename="refund_reasons_reference.csv"');
+      res.send(rows.join("\n"));
+    } catch (error) {
+      console.error("Error exporting refund reasons:", error);
+      res.status(500).json({ error: "Failed to export refund reasons" });
+    }
+  });
+
+  // Admin: Export eligible commitments for refund planning (campaign-scoped)
+  // Uses escrow ledger as source of truth for refundable amounts
+  // Any commitment with positive balance (LOCK - REFUND - RELEASE > 0) is eligible
+  app.get("/api/admin/campaigns/:id/refunds/eligible/export", requireAdminAuth, async (req, res) => {
+    try {
+      const campaignId = req.params.id;
+      const campaign = await storage.getCampaignWithStats(campaignId);
+      
+      if (!campaign) {
+        return res.status(404).json({ error: "Campaign not found" });
+      }
+      
+      const allCommitments = await storage.getCommitments(campaignId);
+      
+      // Get escrow entries to calculate refundable amounts (source of truth)
+      const escrowEntries = await db
+        .select()
+        .from(escrowLedger)
+        .where(eq(escrowLedger.campaignId, campaignId));
+      
+      // Calculate refundable amount per commitment from escrow ledger
+      // This is the authoritative source - don't rely on commitment.status
+      const eligibleCommitments = allCommitments
+        .map((c: { id: string; referenceNumber: string; status: string }) => {
+          const commitmentEntries = escrowEntries.filter(e => e.commitmentId === c.id);
+          const locked = commitmentEntries
+            .filter(e => e.entryType === "LOCK")
+            .reduce((sum, e) => sum + parseFloat(e.amount), 0);
+          const returned = commitmentEntries
+            .filter(e => e.entryType === "REFUND" || e.entryType === "RELEASE")
+            .reduce((sum, e) => sum + parseFloat(e.amount), 0);
+          const refundableAmount = locked - returned;
+          
+          return {
+            commitment_code: c.referenceNumber,
+            refundable_amount: refundableAmount.toFixed(2),
+            currency: "USD",
+            current_status: c.status,
+            // Derive ledger-based status for clarity
+            ledger_status: refundableAmount > 0 ? "FUNDS_HELD" : "FULLY_RETURNED",
+          };
+        })
+        .filter((c: { refundable_amount: string }) => parseFloat(c.refundable_amount) > 0);
+      
+      const headers = ["commitment_code", "refundable_amount", "currency", "current_status"];
+      const rows = [headers.join(",")];
+      
+      for (const commitment of eligibleCommitments) {
+        const row = headers.map(h => `"${(commitment[h as keyof typeof commitment] || "").replace(/"/g, '""')}"`);
+        rows.push(row.join(","));
+      }
+      
+      await storage.createAdminActionLog({
+        campaignId,
+        adminUsername: (req as any).adminUsername || "admin",
+        action: "REFUND_ELIGIBLE_EXPORT",
+        reason: `Exported ${eligibleCommitments.length} eligible commitments for refund planning`,
+      });
+      
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", `attachment; filename="eligible_refunds_${campaignId.slice(0, 8)}.csv"`);
+      res.send(rows.join("\n"));
+    } catch (error) {
+      console.error("Error exporting eligible commitments:", error);
+      res.status(500).json({ error: "Failed to export eligible commitments" });
+    }
+  });
+
+  // Admin: Download refund plan CSV template (campaign-scoped)
+  app.get("/api/admin/campaigns/:id/refunds/template", requireAdminAuth, async (req, res) => {
+    try {
+      const campaignId = req.params.id;
+      const campaign = await storage.getCampaignWithStats(campaignId);
+      
+      if (!campaign) {
+        return res.status(404).json({ error: "Campaign not found" });
+      }
+      
+      const template = `commitment_code,reason_code,note
+ABC12345,campaign_failed_refund,"Campaign did not reach target"
+DEF67890,admin_manual_refund,"Participant requested early refund"`;
+      
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", `attachment; filename="refund_plan_template_${campaignId.slice(0, 8)}.csv"`);
+      res.send(template);
+    } catch (error) {
+      console.error("Error downloading refund plan template:", error);
+      res.status(500).json({ error: "Failed to download template" });
+    }
+  });
+
   // Admin: Deliveries list
   app.get("/api/admin/deliveries", requireAdminAuth, async (req, res) => {
     try {
