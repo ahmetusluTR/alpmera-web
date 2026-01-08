@@ -70,6 +70,7 @@ export default function CommitmentWizard() {
     quantity: 1,
   });
   const [referenceNumber, setReferenceNumber] = useState<string | null>(null);
+  const [wasIdempotent, setWasIdempotent] = useState(false);
 
   const { data: campaign, isLoading, error } = useQuery<CampaignWithStats>({
     queryKey: ["/api/campaigns", id],
@@ -97,10 +98,23 @@ export default function CommitmentWizard() {
       return response.json();
     },
     onSuccess: (data) => {
-      setReferenceNumber(data.referenceNumber);
-      setStep(4);
-      queryClient.invalidateQueries({ queryKey: ["/api/campaigns"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/campaigns", id] });
+      const isIdempotent = data._idempotent === true;
+      setWasIdempotent(isIdempotent);
+      
+      const refNum = data.referenceNumber || data.response?.referenceNumber;
+      
+      if (refNum) {
+        setReferenceNumber(refNum);
+        setStep(4);
+        queryClient.invalidateQueries({ queryKey: ["/api/campaigns"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/campaigns", id] });
+      } else if (isIdempotent) {
+        toast({
+          title: "Commitment Already Recorded",
+          description: "Your commitment was already confirmed. Please check your email for your reference number.",
+        });
+        navigate(`/campaign/${id}`);
+      }
     },
     onError: (error: Error) => {
       toast({
@@ -443,6 +457,11 @@ export default function CommitmentWizard() {
                     <CheckCircle className="w-8 h-8 text-green-600" />
                   </div>
                   <h3 className="text-lg font-semibold mb-2">Commitment Confirmed</h3>
+                  {wasIdempotent && (
+                    <p className="text-muted-foreground text-xs mb-2" data-testid="text-idempotent-notice">
+                      This commitment was already confirmed. Showing your existing reference.
+                    </p>
+                  )}
                   <p className="text-muted-foreground text-sm mb-4">
                     Your reference number is:
                   </p>
