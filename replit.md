@@ -147,9 +147,14 @@ The escrow ledger uses the append-only ledger pattern where balances are **deriv
 - No update or delete operations exposed via API
 - Double-processing protection on refund/release operations
 
-**Migration applied:** `migrations/001_escrow_ledger_derived_balances.sql`
-- Removed: `balance_before`, `balance_after` columns
-- Added: `actor` (NOT NULL), `reason` (optional)
+**Migrations applied:**
+1. `migrations/001_escrow_ledger_derived_balances.sql` - Removed balance columns, added actor/reason
+2. `migrations/002_escrow_ledger_reason_not_null.sql` - Made reason NOT NULL, added indexes
+
+**Standardized reason codes:**
+- `commitment_created` - LOCK entry when participant commits
+- `campaign_failed_refund` - REFUND entry when admin processes failed campaign
+- `admin_release` - RELEASE entry when admin releases funds to supplier
 
 ## Design Philosophy
 

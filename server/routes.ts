@@ -167,7 +167,7 @@ export async function registerRoutes(
         entryType: "LOCK",
         amount: calculatedAmount.toFixed(2),
         actor: participantEmail,
-        reason: `Commitment for ${quantity} unit(s) at ${unitPrice.toLocaleString('en-US', { style: 'currency', currency: 'USD' })} each`,
+        reason: "commitment_created",
       });
 
       res.status(201).json(commitment);
@@ -298,7 +298,7 @@ export async function registerRoutes(
             entryType: "REFUND",
             amount: commitment.amount,
             actor: adminUsername,
-            reason: "Campaign failed - full refund to participant",
+            reason: "campaign_failed_refund",
           });
 
           currentBalance -= amountNum;
@@ -381,7 +381,7 @@ export async function registerRoutes(
             entryType: "RELEASE",
             amount: commitment.amount,
             actor: adminUsername,
-            reason: "Campaign fulfilled - funds released to supplier",
+            reason: "admin_release",
           });
 
           currentBalance -= amountNum;
