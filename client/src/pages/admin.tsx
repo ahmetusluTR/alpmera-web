@@ -65,6 +65,21 @@ const STATE_COLORS: Record<string, string> = {
   RELEASED: "bg-green-700 dark:bg-green-800 text-white",
 };
 
+function getAdminIdempotencyKey(action: "refund" | "release", campaignId: string): string {
+  const storageKey = `admin-idem-${action}-${campaignId}`;
+  let existingKey = sessionStorage.getItem(storageKey);
+  if (!existingKey) {
+    existingKey = crypto.randomUUID();
+    sessionStorage.setItem(storageKey, existingKey);
+  }
+  return existingKey;
+}
+
+function clearAdminIdempotencyKey(action: "refund" | "release", campaignId: string): void {
+  const storageKey = `admin-idem-${action}-${campaignId}`;
+  sessionStorage.removeItem(storageKey);
+}
+
 // Fallback transitions in case server is unavailable
 const FALLBACK_TRANSITIONS: Record<CampaignState, CampaignState[]> = {
   AGGREGATION: ["SUCCESS", "FAILED"],
@@ -144,13 +159,22 @@ export default function AdminConsole() {
 
   const processRefundsMutation = useMutation({
     mutationFn: async (campaignId: string) => {
+      const idempotencyKey = getAdminIdempotencyKey("refund", campaignId);
       const response = await apiRequest("POST", `/api/admin/campaigns/${campaignId}/refund`, {
         adminUsername,
+      }, {
+        "x-idempotency-key": idempotencyKey,
       });
       return response.json();
     },
-    onSuccess: () => {
-      toast({ title: "Refunds Processed", description: "All commitments have been refunded." });
+    onSuccess: (data, campaignId) => {
+      const isIdempotent = data._idempotent === true;
+      if (isIdempotent) {
+        toast({ title: "Already Processed", description: "This refund was already processed. Showing existing result." });
+      } else {
+        toast({ title: "Refunds Processed", description: "All commitments have been refunded." });
+      }
+      clearAdminIdempotencyKey("refund", campaignId);
       queryClient.invalidateQueries({ queryKey: ["/api/campaigns"] });
       queryClient.invalidateQueries({ queryKey: ["/api/campaigns", selectedCampaignId, "commitments"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/logs"] });
@@ -162,13 +186,22 @@ export default function AdminConsole() {
 
   const releasesFundsMutation = useMutation({
     mutationFn: async (campaignId: string) => {
+      const idempotencyKey = getAdminIdempotencyKey("release", campaignId);
       const response = await apiRequest("POST", `/api/admin/campaigns/${campaignId}/release`, {
         adminUsername,
+      }, {
+        "x-idempotency-key": idempotencyKey,
       });
       return response.json();
     },
-    onSuccess: () => {
-      toast({ title: "Funds Released", description: "All commitments have been released." });
+    onSuccess: (data, campaignId) => {
+      const isIdempotent = data._idempotent === true;
+      if (isIdempotent) {
+        toast({ title: "Already Processed", description: "This release was already processed. Showing existing result." });
+      } else {
+        toast({ title: "Funds Released", description: "All commitments have been released." });
+      }
+      clearAdminIdempotencyKey("release", campaignId);
       queryClient.invalidateQueries({ queryKey: ["/api/campaigns"] });
       queryClient.invalidateQueries({ queryKey: ["/api/campaigns", selectedCampaignId, "commitments"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/logs"] });

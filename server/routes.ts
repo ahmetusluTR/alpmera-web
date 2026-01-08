@@ -341,8 +341,15 @@ export async function registerRoutes(
       const existingKey = await storage.getIdempotencyKey(idempotencyKey, scope);
       if (existingKey) {
         if (existingKey.response) {
-          const cachedResponse = JSON.parse(existingKey.response);
-          return res.status(200).json({ ...cachedResponse, _idempotent: true });
+          try {
+            const responseStr = typeof existingKey.response === 'string' 
+              ? existingKey.response 
+              : JSON.stringify(existingKey.response);
+            const cachedResponse = JSON.parse(responseStr);
+            return res.status(200).json({ ...cachedResponse, _idempotent: true });
+          } catch {
+            return res.status(200).json({ message: "Request already processed", _idempotent: true });
+          }
         }
         return res.status(200).json({ message: "Request already processed", _idempotent: true });
       }
@@ -374,8 +381,15 @@ export async function registerRoutes(
         if (error.code === "23505") {
           const existing = await storage.getIdempotencyKey(idempotencyKey, scope);
           if (existing?.response) {
-            const cachedResponse = JSON.parse(existing.response);
-            return res.status(200).json({ ...cachedResponse, _idempotent: true });
+            try {
+              const responseStr = typeof existing.response === 'string' 
+                ? existing.response 
+                : JSON.stringify(existing.response);
+              const cachedResponse = JSON.parse(responseStr);
+              return res.status(200).json({ ...cachedResponse, _idempotent: true });
+            } catch {
+              return res.status(200).json({ message: "Request already processed", _idempotent: true });
+            }
           }
           return res.status(200).json({ message: "Request already processed", _idempotent: true });
         }
@@ -471,8 +485,15 @@ export async function registerRoutes(
       const existingKey = await storage.getIdempotencyKey(idempotencyKey, scope);
       if (existingKey) {
         if (existingKey.response) {
-          const cachedResponse = JSON.parse(existingKey.response);
-          return res.status(200).json({ ...cachedResponse, _idempotent: true });
+          try {
+            const responseStr = typeof existingKey.response === 'string' 
+              ? existingKey.response 
+              : JSON.stringify(existingKey.response);
+            const cachedResponse = JSON.parse(responseStr);
+            return res.status(200).json({ ...cachedResponse, _idempotent: true });
+          } catch {
+            return res.status(200).json({ message: "Request already processed", _idempotent: true });
+          }
         }
         return res.status(200).json({ message: "Request already processed", _idempotent: true });
       }
@@ -504,8 +525,15 @@ export async function registerRoutes(
         if (error.code === "23505") {
           const existing = await storage.getIdempotencyKey(idempotencyKey, scope);
           if (existing?.response) {
-            const cachedResponse = JSON.parse(existing.response);
-            return res.status(200).json({ ...cachedResponse, _idempotent: true });
+            try {
+              const responseStr = typeof existing.response === 'string' 
+                ? existing.response 
+                : JSON.stringify(existing.response);
+              const cachedResponse = JSON.parse(responseStr);
+              return res.status(200).json({ ...cachedResponse, _idempotent: true });
+            } catch {
+              return res.status(200).json({ message: "Request already processed", _idempotent: true });
+            }
           }
           return res.status(200).json({ message: "Request already processed", _idempotent: true });
         }
