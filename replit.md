@@ -123,6 +123,21 @@ AGGREGATION → SUCCESS → FULFILLMENT → RELEASED
 - `GET /api/admin/logs` - Get admin action audit log
 - `GET /api/admin/campaigns/:id/escrow` - Get escrow ledger entries
 
+### Admin Refund Planning Endpoints
+- `GET /api/admin/refunds` - List all refund entries from escrow ledger
+- `GET /api/admin/refunds/reasons/export` - Export refund reason codes reference (CSV)
+- `GET /api/admin/campaigns/:id/refunds/eligible/export` - Export eligible commitments for refund planning (CSV)
+- `GET /api/admin/campaigns/:id/refunds/template` - Download refund plan CSV template
+
+### Admin Fulfillment Endpoints
+- `GET /api/admin/deliveries` - List campaigns in fulfillment/released state
+- `GET /api/admin/campaigns/:id/fulfillment` - Get fulfillment summary for campaign
+- `GET /api/admin/campaigns/:id/fulfillment/milestone` - Get milestone events
+- `POST /api/admin/campaigns/:id/fulfillment/milestone` - Add milestone event
+- `GET /api/admin/campaigns/:id/fulfillment/export/direct` - Export direct supplier manifest (SUPPLIER_DIRECT only)
+- `GET /api/admin/campaigns/:id/fulfillment/export/bulk` - Export bulk supplier manifest
+- `GET /api/admin/fulfillment/import-template` - Download delivery updates import template
+
 ## Key Features
 
 ### 4-Step Commitment Wizard
