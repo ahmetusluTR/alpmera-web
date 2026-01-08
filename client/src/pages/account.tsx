@@ -17,11 +17,12 @@ import { apiRequest } from "@/lib/queryClient";
 import { User, Package, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 
+// Use the exact field names from the database schema
 const profileSchema = z.object({
   fullName: z.string().min(1, "Full name is required"),
   phone: z.string().min(1, "Phone is required"),
-  addressLine1: z.string().min(1, "Address is required"),
-  addressLine2: z.string().optional(),
+  defaultAddressLine1: z.string().min(1, "Address is required"),
+  defaultAddressLine2: z.string().optional(),
   city: z.string().min(1, "City is required"),
   state: z.string().min(1, "State/Province is required"),
   zip: z.string().min(1, "ZIP/Postal code is required"),
@@ -63,7 +64,7 @@ export default function Account() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { user, isAuthenticated, isLoading: authLoading } = useAuth();
+  const { user, isAuthenticated, isLoading: authLoading, refetch: refetchAuth } = useAuth();
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -76,8 +77,8 @@ export default function Account() {
     defaultValues: {
       fullName: "",
       phone: "",
-      addressLine1: "",
-      addressLine2: "",
+      defaultAddressLine1: "",
+      defaultAddressLine2: "",
       city: "",
       state: "",
       zip: "",
@@ -90,8 +91,8 @@ export default function Account() {
       form.reset({
         fullName: user.profile.fullName || "",
         phone: user.profile.phone || "",
-        addressLine1: user.profile.addressLine1 || "",
-        addressLine2: user.profile.addressLine2 || "",
+        defaultAddressLine1: user.profile.defaultAddressLine1 || "",
+        defaultAddressLine2: user.profile.defaultAddressLine2 || "",
         city: user.profile.city || "",
         state: user.profile.state || "",
         zip: user.profile.zip || "",
@@ -110,8 +111,10 @@ export default function Account() {
       const response = await apiRequest("PATCH", "/api/me/profile", data);
       return response.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/me"] });
+    onSuccess: async () => {
+      // Invalidate and refetch to ensure auth context gets updated profile
+      await queryClient.invalidateQueries({ queryKey: ["/api/me"] });
+      refetchAuth();
       toast({
         title: "Profile updated",
         description: "Your delivery profile has been saved.",
@@ -196,7 +199,7 @@ export default function Account() {
                   />
                   <FormField
                     control={form.control}
-                    name="addressLine1"
+                    name="defaultAddressLine1"
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Address line 1</FormLabel>
@@ -209,7 +212,7 @@ export default function Account() {
                   />
                   <FormField
                     control={form.control}
-                    name="addressLine2"
+                    name="defaultAddressLine2"
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Address line 2 (optional)</FormLabel>

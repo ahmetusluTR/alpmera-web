@@ -7,8 +7,8 @@ interface UserProfile {
   userId: string;
   fullName: string | null;
   phone: string | null;
-  addressLine1: string | null;
-  addressLine2: string | null;
+  defaultAddressLine1: string | null;
+  defaultAddressLine2: string | null;
   city: string | null;
   state: string | null;
   zip: string | null;
@@ -33,6 +33,8 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
+const isDev = import.meta.env.MODE !== "production";
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   
@@ -54,15 +56,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [queryClient]);
 
-  const isProfileComplete = Boolean(
-    user?.profile?.fullName &&
-    user?.profile?.phone &&
-    user?.profile?.addressLine1 &&
-    user?.profile?.city &&
-    user?.profile?.state &&
-    user?.profile?.zip &&
-    user?.profile?.country
-  );
+  // Check profile completeness using correct field names from schema
+  const requiredFields = [
+    "fullName",
+    "phone", 
+    "defaultAddressLine1",
+    "city",
+    "state",
+    "zip",
+    "country"
+  ] as const;
+
+  const profile = user?.profile;
+  const missingFields = profile 
+    ? requiredFields.filter(field => !profile[field])
+    : requiredFields;
+  
+  const isProfileComplete = Boolean(profile && missingFields.length === 0);
+
+  // Dev-only logging for debugging profile completeness
+  if (isDev && user && profile) {
+    console.debug("[Auth] Profile completeness check:", {
+      isComplete: isProfileComplete,
+      missingFields: missingFields.length > 0 ? missingFields : "none",
+      profile: {
+        fullName: profile.fullName ? "set" : "missing",
+        phone: profile.phone ? "set" : "missing",
+        defaultAddressLine1: profile.defaultAddressLine1 ? "set" : "missing",
+        city: profile.city ? "set" : "missing",
+        state: profile.state ? "set" : "missing",
+        zip: profile.zip ? "set" : "missing",
+        country: profile.country ? "set" : "missing",
+      }
+    });
+  }
 
   return (
     <AuthContext.Provider
