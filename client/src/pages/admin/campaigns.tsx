@@ -22,7 +22,7 @@ import {
   TableHeader, 
   TableRow 
 } from "@/components/ui/table";
-import { Search, RefreshCw, ArrowUpDown } from "lucide-react";
+import { Search, RefreshCw, ArrowUp, ArrowDown } from "lucide-react";
 import { format } from "date-fns";
 
 interface CampaignListItem {
@@ -47,7 +47,8 @@ export default function CampaignsListPage() {
   const [, setLocation] = useLocation();
   const [search, setSearch] = useState("");
   const [stateFilter, setStateFilter] = useState("all");
-  const [sortBy, setSortBy] = useState("createdAt");
+  const [sortBy, setSortBy] = useState("name");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
   const { data: campaigns, isLoading, error, refetch } = useQuery<CampaignListItem[]>({
     queryKey: ["/api/admin/campaigns"],
@@ -60,17 +61,20 @@ export default function CampaignsListPage() {
       return true;
     })
     .sort((a, b) => {
-      if (sortBy === "createdAt") {
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      let cmp = 0;
+      if (sortBy === "name") {
+        cmp = a.title.localeCompare(b.title);
+      } else if (sortBy === "deadline") {
+        cmp = new Date(a.aggregationDeadline).getTime() - new Date(b.aggregationDeadline).getTime();
+      } else if (sortBy === "commitments") {
+        cmp = a.participantCount - b.participantCount;
       }
-      if (sortBy === "deadline") {
-        return new Date(a.aggregationDeadline).getTime() - new Date(b.aggregationDeadline).getTime();
-      }
-      if (sortBy === "participants") {
-        return b.participantCount - a.participantCount;
-      }
-      return 0;
+      return sortDir === "desc" ? -cmp : cmp;
     }) || [];
+
+  const toggleSortDir = () => {
+    setSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
+  };
 
   const handleRowClick = (campaignId: string) => {
     setLocation(`/admin/campaigns/${campaignId}`);
@@ -110,15 +114,22 @@ export default function CampaignsListPage() {
           </Select>
           <Select value={sortBy} onValueChange={setSortBy}>
             <SelectTrigger className="w-[150px]" data-testid="select-sort">
-              <ArrowUpDown className="w-4 h-4 mr-2" />
               <SelectValue placeholder="Sort by" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="createdAt">Created</SelectItem>
+              <SelectItem value="name">Name</SelectItem>
               <SelectItem value="deadline">Deadline</SelectItem>
-              <SelectItem value="participants">Participants</SelectItem>
+              <SelectItem value="commitments">Commitments</SelectItem>
             </SelectContent>
           </Select>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={toggleSortDir}
+            data-testid="button-sort-dir"
+          >
+            {sortDir === "asc" ? <ArrowUp className="w-4 h-4" /> : <ArrowDown className="w-4 h-4" />}
+          </Button>
         </div>
 
         <Card>
