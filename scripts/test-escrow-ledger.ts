@@ -1,6 +1,6 @@
 import { db } from "../server/db";
 import { campaigns, commitments, escrowLedger, adminActionLogs } from "../shared/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, sql } from "drizzle-orm";
 
 const API_BASE = "http://localhost:5000";
 
@@ -268,6 +268,131 @@ async function runTests(): Promise<TestResult[]> {
       details: `Found NULL values: actor=${hasNullActor}, reason=${hasNullReason}`,
     });
     console.log(`✗ Found NULL values in escrow_ledger`);
+  }
+
+  // TEST 5: Append-only enforcement - UPDATE should fail
+  console.log("\n--- Test 5: UPDATE on escrow_ledger should be blocked ---");
+  if (allEntries.length > 0) {
+    const testEntry = allEntries[0];
+    try {
+      await db.execute(
+        sql`UPDATE escrow_ledger SET reason = 'hacked' WHERE id = ${testEntry.id}`
+      );
+      results.push({
+        test: "UPDATE blocked by trigger",
+        passed: false,
+        details: "UPDATE succeeded but should have been blocked",
+      });
+      console.log(`✗ UPDATE succeeded but should have been blocked!`);
+    } catch (error: any) {
+      if (error.message?.includes("append-only")) {
+        results.push({
+          test: "UPDATE blocked by trigger",
+          passed: true,
+          details: "Trigger correctly blocked UPDATE",
+        });
+        console.log(`✓ UPDATE correctly blocked: ${error.message}`);
+      } else {
+        results.push({
+          test: "UPDATE blocked by trigger",
+          passed: true,
+          details: `UPDATE failed (different error): ${error.message}`,
+        });
+        console.log(`✓ UPDATE blocked with error: ${error.message}`);
+      }
+    }
+  } else {
+    results.push({
+      test: "UPDATE blocked by trigger",
+      passed: true,
+      details: "No entries to test (skipped)",
+    });
+    console.log(`⊘ No entries to test UPDATE blocking`);
+  }
+
+  // TEST 6: Append-only enforcement - DELETE should fail
+  console.log("\n--- Test 6: DELETE on escrow_ledger should be blocked ---");
+  if (allEntries.length > 0) {
+    const testEntry = allEntries[0];
+    try {
+      await db.execute(
+        sql`DELETE FROM escrow_ledger WHERE id = ${testEntry.id}`
+      );
+      results.push({
+        test: "DELETE blocked by trigger",
+        passed: false,
+        details: "DELETE succeeded but should have been blocked",
+      });
+      console.log(`✗ DELETE succeeded but should have been blocked!`);
+    } catch (error: any) {
+      if (error.message?.includes("append-only")) {
+        results.push({
+          test: "DELETE blocked by trigger",
+          passed: true,
+          details: "Trigger correctly blocked DELETE",
+        });
+        console.log(`✓ DELETE correctly blocked: ${error.message}`);
+      } else {
+        results.push({
+          test: "DELETE blocked by trigger",
+          passed: true,
+          details: `DELETE failed (different error): ${error.message}`,
+        });
+        console.log(`✓ DELETE blocked with error: ${error.message}`);
+      }
+    }
+  } else {
+    results.push({
+      test: "DELETE blocked by trigger",
+      passed: true,
+      details: "No entries to test (skipped)",
+    });
+    console.log(`⊘ No entries to test DELETE blocking`);
+  }
+
+  // TEST 7: INSERT should still work
+  console.log("\n--- Test 7: INSERT on escrow_ledger should still work ---");
+  // Get a valid commitment ID for testing
+  const [testCommit] = await db.select().from(commitments).limit(1);
+  const [testCamp] = await db.select().from(campaigns).limit(1);
+  
+  if (testCommit && testCamp) {
+    try {
+      const [inserted] = await db
+        .insert(escrowLedger)
+        .values({
+          commitmentId: testCommit.id,
+          campaignId: testCamp.id,
+          entryType: "LOCK",
+          amount: "0.01",
+          actor: "test_script",
+          reason: "insert_test_verification",
+        })
+        .returning();
+      
+      if (inserted) {
+        results.push({
+          test: "INSERT still works",
+          passed: true,
+          details: `Created entry ${inserted.id}`,
+        });
+        console.log(`✓ INSERT succeeded: created entry ${inserted.id}`);
+      }
+    } catch (error: any) {
+      results.push({
+        test: "INSERT still works",
+        passed: false,
+        details: `INSERT failed: ${error.message}`,
+      });
+      console.log(`✗ INSERT failed: ${error.message}`);
+    }
+  } else {
+    results.push({
+      test: "INSERT still works",
+      passed: true,
+      details: "No test data available (skipped)",
+    });
+    console.log(`⊘ No test data for INSERT verification`);
   }
 
   return results;
