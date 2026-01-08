@@ -500,6 +500,20 @@ export async function registerRoutes(
     }
   });
 
+  // Get user's own commitments with campaign info
+  // GET /api/account/commitments
+  app.get("/api/account/commitments", requireUserAuth, async (req, res) => {
+    try {
+      const userId = (req as any).userId;
+      const userCommitments = await storage.getCommitmentsByUserId(userId);
+      
+      res.json(userCommitments);
+    } catch (error) {
+      console.error("[USER] Error fetching user commitments:", error);
+      res.status(500).json({ error: "Failed to fetch commitments" });
+    }
+  });
+
   // Get all campaigns with stats
   app.get("/api/campaigns", async (req, res) => {
     try {
@@ -647,9 +661,21 @@ export async function registerRoutes(
         throw error;
       }
 
+      // Check if user is authenticated (optional - commitment still works without auth)
+      let authenticatedUserId: string | undefined;
+      const sessionToken = req.cookies?.alpmera_user;
+      if (sessionToken) {
+        const session = await storage.getUserSession(sessionToken);
+        if (session && new Date(session.expiresAt) > new Date()) {
+          authenticatedUserId = session.userId;
+        }
+      }
+
       // Create commitment with server-calculated amount
+      // If user is authenticated, attach user_id for future account features
       const commitment = await storage.createCommitment({
         campaignId: req.params.id,
+        userId: authenticatedUserId, // nullable - only set if user is logged in
         participantName,
         participantEmail,
         amount: calculatedAmount.toFixed(2),

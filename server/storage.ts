@@ -49,6 +49,7 @@ export interface IStorage {
   
   // Commitment operations
   getCommitments(campaignId: string): Promise<Commitment[]>;
+  getCommitmentsByUserId(userId: string): Promise<(Commitment & { campaign: Campaign })[]>;
   getCommitment(id: string): Promise<Commitment | undefined>;
   getCommitmentByReference(referenceNumber: string): Promise<Commitment | undefined>;
   getCommitmentWithCampaign(referenceNumber: string): Promise<(Commitment & { campaign: Campaign }) | undefined>;
@@ -186,6 +187,23 @@ export class DatabaseStorage implements IStorage {
       .from(commitments)
       .where(eq(commitments.campaignId, campaignId))
       .orderBy(desc(commitments.createdAt));
+  }
+
+  async getCommitmentsByUserId(userId: string): Promise<(Commitment & { campaign: Campaign })[]> {
+    const results = await db
+      .select({
+        commitment: commitments,
+        campaign: campaigns,
+      })
+      .from(commitments)
+      .innerJoin(campaigns, eq(commitments.campaignId, campaigns.id))
+      .where(eq(commitments.userId, userId))
+      .orderBy(desc(commitments.createdAt));
+    
+    return results.map(r => ({
+      ...r.commitment,
+      campaign: r.campaign,
+    }));
   }
 
   async getCommitment(id: string): Promise<Commitment | undefined> {
