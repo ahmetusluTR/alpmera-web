@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
 import { Layout } from "@/components/layout";
@@ -14,6 +14,36 @@ import { AlertTriangle, ArrowLeft, ArrowRight, CheckCircle, Lock, FileCheck, Cal
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Campaign } from "@shared/schema";
+
+function generateUUID(): string {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+function getIdempotencyKeyForCommitment(
+  campaignId: string,
+  email: string,
+  quantity: number,
+  unitPrice: string
+): string {
+  const fingerprint = `${campaignId}|${email.toLowerCase().trim()}|${quantity}|${unitPrice}`;
+  const storageKey = `commit-idem-${fingerprint}`;
+  
+  const existingKey = sessionStorage.getItem(storageKey);
+  if (existingKey) {
+    return existingKey;
+  }
+  
+  const newKey = generateUUID();
+  sessionStorage.setItem(storageKey, newKey);
+  return newKey;
+}
 
 interface CampaignWithStats extends Campaign {
   participantCount: number;
@@ -48,10 +78,22 @@ export default function CommitmentWizard() {
 
   const commitMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
-      const response = await apiRequest("POST", `/api/campaigns/${id}/commit`, {
-        ...data,
-        amount: (parseFloat(campaign?.unitPrice || "0") * data.quantity).toString(),
-      });
+      const idempotencyKey = getIdempotencyKeyForCommitment(
+        id || "",
+        data.participantEmail,
+        data.quantity,
+        campaign?.unitPrice || "0"
+      );
+      
+      const response = await apiRequest(
+        "POST",
+        `/api/campaigns/${id}/commit`,
+        {
+          ...data,
+          amount: (parseFloat(campaign?.unitPrice || "0") * data.quantity).toString(),
+        },
+        { "x-idempotency-key": idempotencyKey }
+      );
       return response.json();
     },
     onSuccess: (data) => {

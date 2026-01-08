@@ -133,8 +133,17 @@ export async function registerRoutes(
       if (existingKey) {
         // Already processed - return cached response
         if (existingKey.response) {
-          const cachedResponse = JSON.parse(existingKey.response);
-          return res.status(200).json({ ...cachedResponse, _idempotent: true });
+          try {
+            const cachedResponse = JSON.parse(existingKey.response);
+            return res.status(200).json({ ...cachedResponse, _idempotent: true });
+          } catch {
+            // Malformed cached response - return generic idempotent response
+            console.warn(`[IDEMPOTENCY] Malformed cached response for key ${idempotencyKey}`);
+            return res.status(200).json({ 
+              message: "Request already processed",
+              _idempotent: true 
+            });
+          }
         }
         // Key exists but no response yet (unlikely race condition) - return safe response
         return res.status(200).json({ 
@@ -196,8 +205,12 @@ export async function registerRoutes(
         if (error.code === "23505") {
           const existing = await storage.getIdempotencyKey(idempotencyKey, scope);
           if (existing?.response) {
-            const cachedResponse = JSON.parse(existing.response);
-            return res.status(200).json({ ...cachedResponse, _idempotent: true });
+            try {
+              const cachedResponse = JSON.parse(existing.response);
+              return res.status(200).json({ ...cachedResponse, _idempotent: true });
+            } catch {
+              return res.status(200).json({ message: "Request already processed", _idempotent: true });
+            }
           }
           return res.status(200).json({ message: "Request already processed", _idempotent: true });
         }
