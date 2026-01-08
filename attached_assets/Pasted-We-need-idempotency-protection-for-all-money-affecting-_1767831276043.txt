@@ -1,0 +1,48 @@
+We need idempotency protection for all money-affecting operations in Phase 1.
+
+Goal: prevent duplicate escrow_ledger entries if the same request is retried or double-submitted.
+
+Please implement this step by step:
+
+1) Create a new SQL migration: migrations/004_idempotency_keys.sql
+
+Add a table idempotency_keys with:
+- id (uuid primary key default gen_random_uuid())
+- key TEXT NOT NULL UNIQUE
+- scope TEXT NOT NULL  (e.g., 'commitment_lock', 'refund', 'release')
+- request_hash TEXT NULL (optional)
+- created_at TIMESTAMP NOT NULL DEFAULT now()
+
+2) Update server/routes.ts so these operations require and enforce an idempotency key:
+
+A) Commitment creation (LOCK entry):
+- Require header: x-idempotency-key
+- Scope: 'commitment_lock'
+- If key already exists for this scope, return the prior successful response (or a safe 200 indicating already processed) WITHOUT inserting another ledger row.
+
+B) Refund operation:
+- Require header: x-idempotency-key
+- Scope: 'refund'
+- If already processed, return safe response without creating new REFUND entry.
+
+C) Release operation:
+- Require header: x-idempotency-key
+- Scope: 'release'
+- If already processed, return safe response without creating new RELEASE entry.
+
+Implementation detail:
+- Use a DB transaction for: check/insert idempotency key + perform ledger insert + admin log.
+- If unique constraint violation occurs, treat as "already processed" and do not insert into ledger.
+
+3) Update scripts/test-escrow-ledger.ts to add 3 tests:
+- calling commitment creation twice with same x-idempotency-key creates only ONE LOCK ledger entry
+- calling refund twice with same key creates only ONE REFUND entry
+- calling release twice with same key creates only ONE RELEASE entry (skip if no eligible campaign, but include logic to create one eligible state if needed)
+
+4) Run the script/tests and report pass/fail.
+
+Return:
+- migration file path
+- any new DB table(s)
+- file paths + line ranges in server/routes.ts where idempotency is enforced
+- test results showing duplicate protection works

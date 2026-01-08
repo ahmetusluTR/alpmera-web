@@ -8,6 +8,12 @@ import {
   insertCommitmentSchema 
 } from "@shared/schema";
 import { z } from "zod";
+import { createHash } from "crypto";
+
+// Helper to compute request hash for idempotency verification
+function computeRequestHash(body: unknown): string {
+  return createHash("sha256").update(JSON.stringify(body)).digest("hex");
+}
 
 // Commitment request schema with server-side validation
 const commitmentRequestSchema = z.object({
@@ -108,8 +114,35 @@ export async function registerRoutes(
   // Create a commitment (escrow lock)
   // CRITICAL: Amount is calculated SERVER-SIDE from quantity * unitPrice
   // Client-provided amount is ignored to prevent tampering
+  // IDEMPOTENCY: Requires x-idempotency-key header to prevent duplicate LOCK entries
   app.post("/api/campaigns/:id/commit", async (req, res) => {
     try {
+      // IDEMPOTENCY CHECK: Require x-idempotency-key header
+      const idempotencyKey = req.headers["x-idempotency-key"] as string | undefined;
+      if (!idempotencyKey) {
+        return res.status(400).json({ 
+          error: "x-idempotency-key header is required for commitment operations" 
+        });
+      }
+
+      const scope = `commitment_lock:${req.params.id}`;
+      const requestHash = computeRequestHash(req.body);
+
+      // Check if this key+scope already processed
+      const existingKey = await storage.getIdempotencyKey(idempotencyKey, scope);
+      if (existingKey) {
+        // Already processed - return cached response
+        if (existingKey.response) {
+          const cachedResponse = JSON.parse(existingKey.response);
+          return res.status(200).json({ ...cachedResponse, _idempotent: true });
+        }
+        // Key exists but no response yet (unlikely race condition) - return safe response
+        return res.status(200).json({ 
+          message: "Request already being processed",
+          _idempotent: true 
+        });
+      }
+
       const campaign = await storage.getCampaign(req.params.id);
       if (!campaign) {
         return res.status(404).json({ error: "Campaign not found" });
@@ -150,6 +183,27 @@ export async function registerRoutes(
         });
       }
 
+      // Insert idempotency key BEFORE creating commitment (catches duplicates)
+      let idempotencyRecord;
+      try {
+        idempotencyRecord = await storage.createIdempotencyKey({
+          key: idempotencyKey,
+          scope,
+          requestHash,
+        });
+      } catch (error: any) {
+        // Unique constraint violation = duplicate request
+        if (error.code === "23505") {
+          const existing = await storage.getIdempotencyKey(idempotencyKey, scope);
+          if (existing?.response) {
+            const cachedResponse = JSON.parse(existing.response);
+            return res.status(200).json({ ...cachedResponse, _idempotent: true });
+          }
+          return res.status(200).json({ message: "Request already processed", _idempotent: true });
+        }
+        throw error;
+      }
+
       // Create commitment with server-calculated amount
       const commitment = await storage.createCommitment({
         campaignId: req.params.id,
@@ -169,6 +223,9 @@ export async function registerRoutes(
         actor: participantEmail,
         reason: "commitment_created",
       });
+
+      // Store response in idempotency record for future retries
+      await storage.updateIdempotencyKeyResponse(idempotencyRecord.id, JSON.stringify(commitment));
 
       res.status(201).json(commitment);
     } catch (error) {
@@ -247,9 +304,31 @@ export async function registerRoutes(
 
   // Admin: Process refunds for failed campaign
   // CRITICAL: Guards against double-processing by checking commitment status
+  // IDEMPOTENCY: Requires x-idempotency-key header to prevent duplicate REFUND entries
   // Protected by requireAdminAuth middleware - all access is logged
   app.post("/api/admin/campaigns/:id/refund", requireAdminAuth, async (req, res) => {
     try {
+      // IDEMPOTENCY CHECK: Require x-idempotency-key header
+      const idempotencyKey = req.headers["x-idempotency-key"] as string | undefined;
+      if (!idempotencyKey) {
+        return res.status(400).json({ 
+          error: "x-idempotency-key header is required for refund operations" 
+        });
+      }
+
+      const scope = `refund:${req.params.id}`;
+      const requestHash = computeRequestHash(req.body);
+
+      // Check if this key+scope already processed
+      const existingKey = await storage.getIdempotencyKey(idempotencyKey, scope);
+      if (existingKey) {
+        if (existingKey.response) {
+          const cachedResponse = JSON.parse(existingKey.response);
+          return res.status(200).json({ ...cachedResponse, _idempotent: true });
+        }
+        return res.status(200).json({ message: "Request already processed", _idempotent: true });
+      }
+
       const { adminUsername } = req.body;
       
       if (!adminUsername) {
@@ -263,6 +342,26 @@ export async function registerRoutes(
 
       if (campaign.state !== "FAILED") {
         return res.status(400).json({ error: "Can only process refunds for campaigns in FAILED state" });
+      }
+
+      // Insert idempotency key BEFORE processing (catches duplicates)
+      let idempotencyRecord;
+      try {
+        idempotencyRecord = await storage.createIdempotencyKey({
+          key: idempotencyKey,
+          scope,
+          requestHash,
+        });
+      } catch (error: any) {
+        if (error.code === "23505") {
+          const existing = await storage.getIdempotencyKey(idempotencyKey, scope);
+          if (existing?.response) {
+            const cachedResponse = JSON.parse(existing.response);
+            return res.status(200).json({ ...cachedResponse, _idempotent: true });
+          }
+          return res.status(200).json({ message: "Request already processed", _idempotent: true });
+        }
+        throw error;
       }
 
       const commitmentsList = await storage.getCommitments(req.params.id);
@@ -316,12 +415,17 @@ export async function registerRoutes(
         reason: `Processed ${processedCount} refunds, skipped ${skippedCount} (already processed)`,
       });
 
-      res.json({ 
+      const responseData = { 
         message: "Refunds processed successfully",
         processed: processedCount,
         skipped: skippedCount,
         finalBalance: currentBalance
-      });
+      };
+
+      // Store response for future retries
+      await storage.updateIdempotencyKeyResponse(idempotencyRecord.id, JSON.stringify(responseData));
+
+      res.json(responseData);
     } catch (error) {
       console.error("Error processing refunds:", error);
       res.status(500).json({ error: "Failed to process refunds" });
@@ -330,9 +434,31 @@ export async function registerRoutes(
 
   // Admin: Release funds for completed campaign
   // CRITICAL: Guards against double-processing by checking commitment status
+  // IDEMPOTENCY: Requires x-idempotency-key header to prevent duplicate RELEASE entries
   // Protected by requireAdminAuth middleware - all access is logged
   app.post("/api/admin/campaigns/:id/release", requireAdminAuth, async (req, res) => {
     try {
+      // IDEMPOTENCY CHECK: Require x-idempotency-key header
+      const idempotencyKey = req.headers["x-idempotency-key"] as string | undefined;
+      if (!idempotencyKey) {
+        return res.status(400).json({ 
+          error: "x-idempotency-key header is required for release operations" 
+        });
+      }
+
+      const scope = `release:${req.params.id}`;
+      const requestHash = computeRequestHash(req.body);
+
+      // Check if this key+scope already processed
+      const existingKey = await storage.getIdempotencyKey(idempotencyKey, scope);
+      if (existingKey) {
+        if (existingKey.response) {
+          const cachedResponse = JSON.parse(existingKey.response);
+          return res.status(200).json({ ...cachedResponse, _idempotent: true });
+        }
+        return res.status(200).json({ message: "Request already processed", _idempotent: true });
+      }
+
       const { adminUsername } = req.body;
       
       if (!adminUsername) {
@@ -346,6 +472,26 @@ export async function registerRoutes(
 
       if (campaign.state !== "RELEASED") {
         return res.status(400).json({ error: "Can only release funds for campaigns in RELEASED state" });
+      }
+
+      // Insert idempotency key BEFORE processing (catches duplicates)
+      let idempotencyRecord;
+      try {
+        idempotencyRecord = await storage.createIdempotencyKey({
+          key: idempotencyKey,
+          scope,
+          requestHash,
+        });
+      } catch (error: any) {
+        if (error.code === "23505") {
+          const existing = await storage.getIdempotencyKey(idempotencyKey, scope);
+          if (existing?.response) {
+            const cachedResponse = JSON.parse(existing.response);
+            return res.status(200).json({ ...cachedResponse, _idempotent: true });
+          }
+          return res.status(200).json({ message: "Request already processed", _idempotent: true });
+        }
+        throw error;
       }
 
       const commitmentsList = await storage.getCommitments(req.params.id);
@@ -399,12 +545,17 @@ export async function registerRoutes(
         reason: `Released ${processedCount} commitments to supplier, skipped ${skippedCount} (already processed)`,
       });
 
-      res.json({ 
+      const responseData = { 
         message: "Funds released successfully",
         processed: processedCount,
         skipped: skippedCount,
         finalBalance: currentBalance
-      });
+      };
+
+      // Store response for future retries
+      await storage.updateIdempotencyKeyResponse(idempotencyRecord.id, JSON.stringify(responseData));
+
+      res.json(responseData);
     } catch (error) {
       console.error("Error releasing funds:", error);
       res.status(500).json({ error: "Failed to release funds" });

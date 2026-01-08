@@ -4,6 +4,7 @@ import {
   escrowLedger, 
   supplierAcceptances, 
   adminActionLogs,
+  idempotencyKeys,
   type Campaign, 
   type InsertCampaign,
   type Commitment,
@@ -14,6 +15,8 @@ import {
   type InsertSupplierAcceptance,
   type AdminActionLog,
   type InsertAdminActionLog,
+  type IdempotencyKey,
+  type InsertIdempotencyKey,
   type CampaignState,
   type CommitmentStatus,
   VALID_TRANSITIONS
@@ -53,6 +56,11 @@ export interface IStorage {
   createAdminActionLog(log: InsertAdminActionLog): Promise<AdminActionLog>;
   getAdminActionLogs(limit?: number): Promise<AdminActionLog[]>;
   getAdminActionLogsByCampaign(campaignId: string): Promise<AdminActionLog[]>;
+  
+  // Idempotency keys
+  getIdempotencyKey(key: string, scope: string): Promise<IdempotencyKey | undefined>;
+  createIdempotencyKey(data: InsertIdempotencyKey): Promise<IdempotencyKey>;
+  updateIdempotencyKeyResponse(id: string, response: string): Promise<void>;
 }
 
 // Generate unique reference number for commitments
@@ -264,6 +272,27 @@ export class DatabaseStorage implements IStorage {
       .from(adminActionLogs)
       .where(eq(adminActionLogs.campaignId, campaignId))
       .orderBy(desc(adminActionLogs.createdAt));
+  }
+
+  // Idempotency keys
+  async getIdempotencyKey(key: string, scope: string): Promise<IdempotencyKey | undefined> {
+    const [result] = await db
+      .select()
+      .from(idempotencyKeys)
+      .where(and(eq(idempotencyKeys.key, key), eq(idempotencyKeys.scope, scope)));
+    return result || undefined;
+  }
+
+  async createIdempotencyKey(data: InsertIdempotencyKey): Promise<IdempotencyKey> {
+    const [created] = await db.insert(idempotencyKeys).values(data).returning();
+    return created;
+  }
+
+  async updateIdempotencyKeyResponse(id: string, response: string): Promise<void> {
+    await db
+      .update(idempotencyKeys)
+      .set({ response })
+      .where(eq(idempotencyKeys.id, id));
   }
 }
 

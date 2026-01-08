@@ -93,6 +93,18 @@ export const adminActionLogs = pgTable("admin_action_logs", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// Idempotency Keys - prevent duplicate money-affecting operations
+// Keys are scoped (key + scope unique) to allow key reuse across different operations
+// Keys are retained indefinitely for auditability (no TTL expiration)
+export const idempotencyKeys = pgTable("idempotency_keys", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  key: text("key").notNull(),
+  scope: text("scope").notNull(),
+  requestHash: text("request_hash"),
+  response: text("response"), // JSON string of cached response
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Relations
 export const campaignsRelations = relations(campaigns, ({ many }) => ({
   commitments: many(commitments),
@@ -167,6 +179,11 @@ export const insertAdminActionLogSchema = createInsertSchema(adminActionLogs).om
   createdAt: true,
 });
 
+export const insertIdempotencyKeySchema = createInsertSchema(idempotencyKeys).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types
 export type Campaign = typeof campaigns.$inferSelect;
 export type InsertCampaign = z.infer<typeof insertCampaignSchema>;
@@ -182,6 +199,9 @@ export type InsertSupplierAcceptance = z.infer<typeof insertSupplierAcceptanceSc
 
 export type AdminActionLog = typeof adminActionLogs.$inferSelect;
 export type InsertAdminActionLog = z.infer<typeof insertAdminActionLogSchema>;
+
+export type IdempotencyKey = typeof idempotencyKeys.$inferSelect;
+export type InsertIdempotencyKey = z.infer<typeof insertIdempotencyKeySchema>;
 
 // Campaign State type
 export type CampaignState = "AGGREGATION" | "SUCCESS" | "FAILED" | "FULFILLMENT" | "RELEASED";

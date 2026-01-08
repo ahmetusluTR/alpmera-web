@@ -1,14 +1,25 @@
 import { db } from "../server/db";
-import { campaigns, commitments, escrowLedger, adminActionLogs } from "../shared/schema";
+import { campaigns, commitments, adminActionLogs } from "../shared/schema";
+import { sql, eq } from "drizzle-orm";
 
 async function seed() {
   console.log("Seeding database with 6 sample campaigns...");
 
-  // Clear existing data
-  await db.delete(escrowLedger);
-  await db.delete(commitments);
-  await db.delete(adminActionLogs);
-  await db.delete(campaigns);
+  // Note: escrow_ledger is append-only (protected by triggers) and cannot be deleted
+  // We'll check if campaigns exist and only seed if empty to avoid FK issues
+  
+  const existingCampaigns = await db.select().from(campaigns).limit(1);
+  
+  if (existingCampaigns.length > 0) {
+    console.log("Database already has campaigns. Skipping seed to preserve escrow ledger integrity.");
+    console.log("To fully reseed, drop and recreate the database.");
+    return;
+  }
+
+  // Clear auxiliary tables that don't have FK dependencies from escrow_ledger
+  await db.execute(sql`TRUNCATE TABLE idempotency_keys CASCADE`);
+  await db.execute(sql`TRUNCATE TABLE admin_action_logs CASCADE`);
+  await db.execute(sql`TRUNCATE TABLE supplier_acceptances CASCADE`);
 
   const now = new Date();
   const futureDate = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // 30 days from now
