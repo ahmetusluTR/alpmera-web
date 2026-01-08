@@ -30,26 +30,19 @@ const transitionRequestSchema = z.object({
 });
 
 // Admin authentication middleware
-// SECURITY: In production, validates admin API key from environment variable
+// SECURITY: Validates admin API key when ADMIN_API_KEY is configured (any environment)
+// In development WITHOUT ADMIN_API_KEY: allows dev access for testing
+// In production WITHOUT ADMIN_API_KEY: rejects all admin requests
 // All admin access attempts are logged for audit trail
 const requireAdminAuth = (req: Request, res: Response, next: NextFunction) => {
   const adminHeader = req.headers["x-admin-auth"] as string | undefined;
   const adminUsername = req.body?.adminUsername;
   const isReadOnly = req.method === "GET";
   const adminApiKey = process.env.ADMIN_API_KEY;
+  const isDevelopment = process.env.NODE_ENV === "development";
   
-  // In development mode:
-  // - GET requests are allowed (read-only, no state mutation)
-  // - POST requests require adminUsername in body (which is already required for audit trail)
-  if (process.env.NODE_ENV === "development") {
-    if (isReadOnly || adminUsername || adminHeader === "development-admin") {
-      return next();
-    }
-    // POST without adminUsername will be caught by route-level validation
-    return next();
-  }
-  
-  // PRODUCTION: Validate admin API key if configured
+  // PRIORITY 1: If ADMIN_API_KEY is configured, ALWAYS enforce it (any environment)
+  // This allows testing production-like security in development
   if (adminApiKey) {
     if (adminHeader !== adminApiKey) {
       console.warn(`[SECURITY] Invalid admin API key attempt: ${req.method} ${req.path} from ${req.ip}`);
@@ -62,7 +55,18 @@ const requireAdminAuth = (req: Request, res: Response, next: NextFunction) => {
     return next();
   }
   
-  // PRODUCTION without ADMIN_API_KEY configured: reject all admin requests
+  // PRIORITY 2: Development mode without ADMIN_API_KEY - allow dev access
+  if (isDevelopment) {
+    // GET requests allowed (read-only, no state mutation)
+    // POST requests require adminUsername or dev header
+    if (isReadOnly || adminUsername || adminHeader === "development-admin") {
+      return next();
+    }
+    // POST without adminUsername will be caught by route-level validation
+    return next();
+  }
+  
+  // PRIORITY 3: Production without ADMIN_API_KEY configured - reject all
   console.error(`[SECURITY] ADMIN_API_KEY not configured - admin endpoints disabled in production`);
   return res.status(503).json({ 
     error: "Admin endpoints unavailable",
