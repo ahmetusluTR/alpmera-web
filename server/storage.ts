@@ -95,7 +95,7 @@ export interface IStorage {
   // Auth code operations
   createAuthCode(code: InsertAuthCode): Promise<AuthCode>;
   getValidAuthCode(email: string): Promise<AuthCode | undefined>;
-  markAuthCodeUsed(id: string): Promise<void>;
+  markAuthCodeUsed(id: string): Promise<boolean>; // Returns true if marked, false if already used
   cleanupExpiredAuthCodes(): Promise<number>;
 }
 
@@ -408,13 +408,16 @@ export class DatabaseStorage implements IStorage {
   }
   
   async getValidAuthCode(email: string): Promise<AuthCode | undefined> {
+    // SECURITY: Filter by email, unused, and not expired - all in SQL
+    const now = new Date();
     const [code] = await db
       .select()
       .from(authCodes)
       .where(
         and(
           eq(authCodes.email, email.toLowerCase()),
-          eq(authCodes.used, false)
+          eq(authCodes.used, false),
+          sql`${authCodes.expiresAt} > ${now}` // Must not be expired
         )
       )
       .orderBy(desc(authCodes.createdAt))
@@ -422,8 +425,21 @@ export class DatabaseStorage implements IStorage {
     return code || undefined;
   }
   
-  async markAuthCodeUsed(id: string): Promise<void> {
-    await db.update(authCodes).set({ used: true }).where(eq(authCodes.id, id));
+  // SECURITY: Atomic mark-as-used with optimistic locking
+  // Returns true if successfully marked (code was still unused)
+  // Returns false if code was already used (race condition prevented)
+  async markAuthCodeUsed(id: string): Promise<boolean> {
+    const result = await db
+      .update(authCodes)
+      .set({ used: true })
+      .where(
+        and(
+          eq(authCodes.id, id),
+          eq(authCodes.used, false) // Only update if still unused
+        )
+      )
+      .returning();
+    return result.length > 0;
   }
   
   async cleanupExpiredAuthCodes(): Promise<number> {

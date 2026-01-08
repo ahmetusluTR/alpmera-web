@@ -287,6 +287,7 @@ export async function registerRoutes(
       // Get the latest valid auth code for this email
       const authCode = await storage.getValidAuthCode(email);
       
+      // SECURITY: getValidAuthCode already filters by email, used=false, and expiresAt > now in SQL
       if (!authCode) {
         console.warn(`[AUTH] No valid code found for ${email}`);
         return res.status(401).json({ 
@@ -295,16 +296,7 @@ export async function registerRoutes(
         });
       }
       
-      // Check if code is expired
-      if (new Date(authCode.expiresAt) < new Date()) {
-        console.warn(`[AUTH] Expired code for ${email}`);
-        return res.status(401).json({ 
-          error: "Code expired",
-          message: "Please request a new verification code."
-        });
-      }
-      
-      // Verify the code
+      // Verify the code hash
       const [salt, storedHash] = authCode.codeHash.split(":");
       const providedHash = hashAuthCode(code, salt);
       
@@ -316,8 +308,16 @@ export async function registerRoutes(
         });
       }
       
-      // Mark code as used
-      await storage.markAuthCodeUsed(authCode.id);
+      // SECURITY: Atomically mark code as used with optimistic locking
+      // This prevents race conditions where same code is used twice
+      const marked = await storage.markAuthCodeUsed(authCode.id);
+      if (!marked) {
+        console.warn(`[AUTH] Code already used (race condition prevented) for ${email}`);
+        return res.status(401).json({ 
+          error: "Code already used",
+          message: "This code has already been used. Please request a new one."
+        });
+      }
       
       // Get or create user
       let user = await storage.getUserByEmail(email);

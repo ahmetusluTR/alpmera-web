@@ -1,6 +1,7 @@
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
+import cookieParser from "cookie-parser";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
@@ -33,6 +34,9 @@ app.use(
 );
 
 app.use(express.urlencoded({ extended: false }));
+
+// Cookie parser - MUST be before routes for req.cookies access
+app.use(cookieParser());
 
 const pgPool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
