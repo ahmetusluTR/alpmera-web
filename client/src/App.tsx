@@ -12,7 +12,12 @@ import StatusPage from "@/pages/status";
 import HowItWorks from "@/pages/how-it-works";
 import AdminConsole from "@/pages/admin";
 import SignIn from "@/pages/signin";
-import Account from "@/pages/account";
+import AccountIndex from "@/pages/account/index";
+import AccountProfile from "@/pages/account/profile";
+import AccountCommitments from "@/pages/account/commitments";
+import AccountPayments from "@/pages/account/payments";
+import AccountRefunds from "@/pages/account/refunds";
+import AccountSecurity from "@/pages/account/security";
 
 function Router() {
   return (
@@ -24,7 +29,12 @@ function Router() {
       <Route path="/how-it-works" component={HowItWorks} />
       <Route path="/admin" component={AdminConsole} />
       <Route path="/signin" component={SignIn} />
-      <Route path="/account" component={Account} />
+      <Route path="/account" component={AccountIndex} />
+      <Route path="/account/profile" component={AccountProfile} />
+      <Route path="/account/commitments" component={AccountCommitments} />
+      <Route path="/account/payments" component={AccountPayments} />
+      <Route path="/account/refunds" component={AccountRefunds} />
+      <Route path="/account/security" component={AccountSecurity} />
       <Route component={NotFound} />
     </Switch>
   );

@@ -58,14 +58,23 @@ AGGREGATION → SUCCESS → FULFILLMENT → RELEASED
 │   ├── components/          # Reusable UI components
 │   │   ├── layout.tsx       # Main layout with header/footer
 │   │   ├── campaign-card.tsx    # Campaign card component
-│   │   └── state-timeline.tsx   # Visual state machine timeline
+│   │   ├── state-timeline.tsx   # Visual state machine timeline
+│   │   └── timeline.tsx         # Shared timeline component for events/ledger
 │   ├── pages/
 │   │   ├── home.tsx         # Homepage with doctrine + campaign grid
 │   │   ├── campaign-detail.tsx  # Campaign detail (rules first)
 │   │   ├── commitment-wizard.tsx # 4-step commitment flow
 │   │   ├── status.tsx       # Check commitment status
 │   │   ├── how-it-works.tsx # Doctrine explanation page
-│   │   └── admin.tsx        # Admin console
+│   │   ├── admin.tsx        # Admin console
+│   │   └── account/         # Account module with navigation
+│   │       ├── layout.tsx   # Account layout shell with sidebar
+│   │       ├── index.tsx    # Redirects to /account/commitments
+│   │       ├── profile.tsx  # Delivery profile form
+│   │       ├── commitments.tsx  # User's commitments list
+│   │       ├── payments.tsx # Payments & escrow ledger
+│   │       ├── refunds.tsx  # Refund history
+│   │       └── security.tsx # Session management
 │   ├── App.tsx              # Router and providers
 │   └── index.css            # Tailwind + custom styles
 ├── server/
