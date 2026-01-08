@@ -46,6 +46,11 @@ AGGREGATION → SUCCESS → FULFILLMENT → RELEASED
 - **User Sessions:** session tokens with 30-day expiry, httpOnly cookies
 - **Auth Codes:** 6-digit passwordless login codes (hashed with salt), 10-min TTL, single-use
 
+**USA-Only Delivery (Phase 1):**
+- Country is hardcoded to "USA" (read-only display)
+- State field uses dropdown with 50 US states + DC (USPS abbreviations)
+- Backend schema unchanged - state stores abbreviation (e.g., "CA", "NY", "TX")
+
 ## File Structure
 
 ```

@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
@@ -17,16 +18,77 @@ import { apiRequest } from "@/lib/queryClient";
 import { User, Package, Loader2, ArrowLeft } from "lucide-react";
 import { format } from "date-fns";
 
+// US States with USPS abbreviations (50 states + DC)
+const US_STATES = [
+  { value: "AL", label: "Alabama" },
+  { value: "AK", label: "Alaska" },
+  { value: "AZ", label: "Arizona" },
+  { value: "AR", label: "Arkansas" },
+  { value: "CA", label: "California" },
+  { value: "CO", label: "Colorado" },
+  { value: "CT", label: "Connecticut" },
+  { value: "DE", label: "Delaware" },
+  { value: "DC", label: "District of Columbia" },
+  { value: "FL", label: "Florida" },
+  { value: "GA", label: "Georgia" },
+  { value: "HI", label: "Hawaii" },
+  { value: "ID", label: "Idaho" },
+  { value: "IL", label: "Illinois" },
+  { value: "IN", label: "Indiana" },
+  { value: "IA", label: "Iowa" },
+  { value: "KS", label: "Kansas" },
+  { value: "KY", label: "Kentucky" },
+  { value: "LA", label: "Louisiana" },
+  { value: "ME", label: "Maine" },
+  { value: "MD", label: "Maryland" },
+  { value: "MA", label: "Massachusetts" },
+  { value: "MI", label: "Michigan" },
+  { value: "MN", label: "Minnesota" },
+  { value: "MS", label: "Mississippi" },
+  { value: "MO", label: "Missouri" },
+  { value: "MT", label: "Montana" },
+  { value: "NE", label: "Nebraska" },
+  { value: "NV", label: "Nevada" },
+  { value: "NH", label: "New Hampshire" },
+  { value: "NJ", label: "New Jersey" },
+  { value: "NM", label: "New Mexico" },
+  { value: "NY", label: "New York" },
+  { value: "NC", label: "North Carolina" },
+  { value: "ND", label: "North Dakota" },
+  { value: "OH", label: "Ohio" },
+  { value: "OK", label: "Oklahoma" },
+  { value: "OR", label: "Oregon" },
+  { value: "PA", label: "Pennsylvania" },
+  { value: "RI", label: "Rhode Island" },
+  { value: "SC", label: "South Carolina" },
+  { value: "SD", label: "South Dakota" },
+  { value: "TN", label: "Tennessee" },
+  { value: "TX", label: "Texas" },
+  { value: "UT", label: "Utah" },
+  { value: "VT", label: "Vermont" },
+  { value: "VA", label: "Virginia" },
+  { value: "WA", label: "Washington" },
+  { value: "WV", label: "West Virginia" },
+  { value: "WI", label: "Wisconsin" },
+  { value: "WY", label: "Wyoming" },
+] as const;
+
+const US_STATE_CODES = US_STATES.map(s => s.value);
+
 // Use the exact field names from the database schema
+// State must be a valid USPS abbreviation, country is always "USA"
 const profileSchema = z.object({
   fullName: z.string().min(1, "Full name is required"),
   phone: z.string().min(1, "Phone is required"),
   defaultAddressLine1: z.string().min(1, "Address is required"),
   defaultAddressLine2: z.string().optional(),
   city: z.string().min(1, "City is required"),
-  state: z.string().min(1, "State/Province is required"),
-  zip: z.string().min(1, "ZIP/Postal code is required"),
-  country: z.string().min(1, "Country is required"),
+  state: z.string().min(1, "State is required").refine(
+    (val) => US_STATE_CODES.includes(val as typeof US_STATE_CODES[number]),
+    { message: "Please select a valid US state" }
+  ),
+  zip: z.string().min(1, "ZIP code is required"),
+  country: z.literal("USA"),
 });
 
 type ProfileFormData = z.infer<typeof profileSchema>;
@@ -90,21 +152,27 @@ export default function Account() {
       city: "",
       state: "",
       zip: "",
-      country: "",
+      country: "USA",
     },
   });
 
   useEffect(() => {
     if (user?.profile) {
+      // Normalize existing state values to uppercase for matching
+      const existingState = user.profile.state?.toUpperCase() || "";
+      const validState = US_STATE_CODES.includes(existingState as typeof US_STATE_CODES[number]) 
+        ? existingState 
+        : "";
+      
       form.reset({
         fullName: user.profile.fullName || "",
         phone: user.profile.phone || "",
         defaultAddressLine1: user.profile.defaultAddressLine1 || "",
         defaultAddressLine2: user.profile.defaultAddressLine2 || "",
         city: user.profile.city || "",
-        state: user.profile.state || "",
+        state: validState,
         zip: user.profile.zip || "",
-        country: user.profile.country || "",
+        country: "USA",
       });
     }
   }, [user?.profile, form]);
@@ -270,10 +338,21 @@ export default function Account() {
                       name="state"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>State/Province</FormLabel>
-                          <FormControl>
-                            <Input {...field} data-testid="input-state" />
-                          </FormControl>
+                          <FormLabel>State</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value}>
+                            <FormControl>
+                              <SelectTrigger data-testid="select-state">
+                                <SelectValue placeholder="Select state" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {US_STATES.map((state) => (
+                                <SelectItem key={state.value} value={state.value}>
+                                  {state.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                           <FormMessage />
                         </FormItem>
                       )}
@@ -285,7 +364,7 @@ export default function Account() {
                       name="zip"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>ZIP/Postal code</FormLabel>
+                          <FormLabel>ZIP code</FormLabel>
                           <FormControl>
                             <Input {...field} data-testid="input-zip" />
                           </FormControl>
@@ -293,19 +372,15 @@ export default function Account() {
                         </FormItem>
                       )}
                     />
-                    <FormField
-                      control={form.control}
-                      name="country"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Country</FormLabel>
-                          <FormControl>
-                            <Input {...field} data-testid="input-country" />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+                    <FormItem>
+                      <FormLabel>Country</FormLabel>
+                      <div 
+                        className="flex items-center h-9 px-3 rounded-md border border-input bg-muted text-muted-foreground text-sm"
+                        data-testid="text-country"
+                      >
+                        United States (USA)
+                      </div>
+                    </FormItem>
                   </div>
                   <Button
                     type="submit"
