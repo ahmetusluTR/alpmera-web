@@ -90,11 +90,15 @@ AGGREGATION → SUCCESS → FULFILLMENT → RELEASED
 
 ## API Routes
 
-### Public Endpoints
-- `GET /api/campaigns` - List all campaigns with stats
-- `GET /api/campaigns/:id` - Get single campaign with stats
-- `POST /api/campaigns/:id/commit` - Create commitment (lock funds)
+### Public Endpoints (Non-Authenticated)
+- `GET /api/campaigns` - List PUBLISHED campaigns only with redacted monetary data (shows progressPercent, hides amounts)
+- `GET /api/campaigns/:id` - Get single PUBLISHED campaign with redacted data (no pricing/amounts)
 - `GET /api/commitments/:reference` - Get commitment by reference
+
+### Member Endpoints (Authenticated)
+- `GET /api/campaigns` - List all PUBLISHED campaigns with full monetary data (amounts, pricing, participant counts)
+- `GET /api/campaigns/:id` - Get single campaign with full details (for joining flow)
+- `POST /api/campaigns/:id/commit` - Create commitment (lock funds) - requires authentication
 
 ### User Authentication Endpoints
 - `POST /api/auth/start` - Request login code (logs to console in dev)
