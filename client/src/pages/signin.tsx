@@ -13,6 +13,13 @@ import { Mail, KeyRound, ArrowLeft, Loader2 } from "lucide-react";
 
 type Step = "email" | "code";
 
+interface StartAuthResponse {
+  success?: boolean;
+  ok?: boolean;
+  message?: string;
+  devCode?: string;
+}
+
 export default function SignIn() {
   const [, setLocation] = useLocation();
   const search = useSearch();
@@ -22,8 +29,10 @@ export default function SignIn() {
   const [step, setStep] = useState<Step>("email");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
+  const [devCode, setDevCode] = useState<string | null>(null);
   
   const nextUrl = new URLSearchParams(search).get("next") || "/";
+  const isDev = import.meta.env.MODE !== "production";
   
   useEffect(() => {
     if (isAuthenticated) {
@@ -32,29 +41,33 @@ export default function SignIn() {
   }, [isAuthenticated, setLocation, nextUrl]);
 
   const startAuthMutation = useMutation({
-    mutationFn: async (email: string) => {
-      const response = await apiRequest("POST", "/api/auth/start", { email });
-      return response.json();
+    mutationFn: async (emailInput: string): Promise<StartAuthResponse> => {
+      const response = await apiRequest("POST", "/api/auth/start", { email: emailInput });
+      const data = await response.json();
+      return data;
     },
-    onSuccess: () => {
+    onSuccess: (data: StartAuthResponse) => {
+      if (data.devCode && isDev) {
+        setDevCode(data.devCode);
+      }
       setStep("code");
       toast({
         title: "Code sent",
-        description: "Check your email for a 6-digit code.",
+        description: data.message || "Check your email for a 6-digit code.",
       });
     },
     onError: (error: Error) => {
       toast({
         title: "Failed to send code",
-        description: error.message,
+        description: error.message || "Something went wrong. Please try again.",
         variant: "destructive",
       });
     },
   });
 
   const verifyCodeMutation = useMutation({
-    mutationFn: async ({ email, code }: { email: string; code: string }) => {
-      const response = await apiRequest("POST", "/api/auth/verify", { email, code });
+    mutationFn: async ({ email: emailInput, code: codeInput }: { email: string; code: string }) => {
+      const response = await apiRequest("POST", "/api/auth/verify", { email: emailInput, code: codeInput });
       return response.json();
     },
     onSuccess: () => {
@@ -68,7 +81,7 @@ export default function SignIn() {
     onError: (error: Error) => {
       toast({
         title: "Invalid code",
-        description: error.message,
+        description: error.message || "The code you entered is incorrect.",
         variant: "destructive",
       });
     },
@@ -86,6 +99,12 @@ export default function SignIn() {
     if (code.trim().length === 6) {
       verifyCodeMutation.mutate({ email, code: code.trim() });
     }
+  };
+
+  const handleChangeEmail = () => {
+    setStep("email");
+    setCode("");
+    setDevCode(null);
   };
 
   return (
@@ -155,18 +174,32 @@ export default function SignIn() {
                       data-testid="input-code"
                     />
                   </div>
-                  <p className="text-sm text-muted-foreground">
-                    Sent to {email}
-                  </p>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">
+                      Sent to {email}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-auto p-0 text-muted-foreground"
+                      onClick={handleChangeEmail}
+                      data-testid="button-change-email"
+                    >
+                      Change email
+                    </Button>
+                  </div>
+                  {isDev && devCode && (
+                    <p className="text-xs text-muted-foreground font-mono bg-muted p-2 rounded" data-testid="text-dev-code">
+                      Dev code: {devCode}
+                    </p>
+                  )}
                 </div>
                 <div className="flex gap-2">
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => {
-                      setStep("email");
-                      setCode("");
-                    }}
+                    onClick={handleChangeEmail}
                     data-testid="button-back"
                   >
                     <ArrowLeft className="w-4 h-4" />
