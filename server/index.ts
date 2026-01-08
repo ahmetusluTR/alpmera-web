@@ -1,14 +1,26 @@
 import express, { type Request, Response, NextFunction } from "express";
+import session from "express-session";
+import connectPgSimple from "connect-pg-simple";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import pg from "pg";
 
 const app = express();
 const httpServer = createServer(app);
 
+const PgSession = connectPgSimple(session);
+
 declare module "http" {
   interface IncomingMessage {
     rawBody: unknown;
+  }
+}
+
+declare module "express-session" {
+  interface SessionData {
+    isAdmin?: boolean;
+    adminUsername?: string;
   }
 }
 
@@ -21,6 +33,29 @@ app.use(
 );
 
 app.use(express.urlencoded({ extended: false }));
+
+const pgPool = new pg.Pool({
+  connectionString: process.env.DATABASE_URL,
+});
+
+app.use(
+  session({
+    store: new PgSession({
+      pool: pgPool,
+      tableName: "session",
+      createTableIfMissing: true,
+    }),
+    secret: process.env.SESSION_SECRET || "alpmera-admin-session-secret",
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: process.env.NODE_ENV === "production",
+      httpOnly: true,
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      sameSite: "lax",
+    },
+  })
+);
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {

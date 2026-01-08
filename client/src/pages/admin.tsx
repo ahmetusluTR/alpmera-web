@@ -42,7 +42,9 @@ import {
   RefreshCw,
   Clock,
   FileText,
-  Plus
+  Plus,
+  LogOut,
+  Loader2
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -75,9 +77,21 @@ function getAdminIdempotencyKey(action: "refund" | "release", campaignId: string
   return existingKey;
 }
 
-function clearAdminIdempotencyKey(action: "refund" | "release", campaignId: string): void {
-  const storageKey = `admin-idem-${action}-${campaignId}`;
+function clearAdminIdempotencyKey(action: "refund" | "release" | "transition", campaignId: string, targetState?: string): void {
+  const storageKey = targetState 
+    ? `admin-idem-${action}-${campaignId}-${targetState}`
+    : `admin-idem-${action}-${campaignId}`;
   sessionStorage.removeItem(storageKey);
+}
+
+function getTransitionIdempotencyKey(campaignId: string, targetState: string): string {
+  const storageKey = `admin-idem-transition-${campaignId}-${targetState}`;
+  let existingKey = sessionStorage.getItem(storageKey);
+  if (!existingKey) {
+    existingKey = crypto.randomUUID();
+    sessionStorage.setItem(storageKey, existingKey);
+  }
+  return existingKey;
 }
 
 // Fallback transitions in case server is unavailable
@@ -98,6 +112,55 @@ export default function AdminConsole() {
   const [targetState, setTargetState] = useState<CampaignState | null>(null);
   const [transitionReason, setTransitionReason] = useState("");
   const [adminUsername, setAdminUsername] = useState("admin");
+  const [adminApiKey, setAdminApiKey] = useState("");
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const [loginError, setLoginError] = useState("");
+  
+  // Check session status on mount
+  const { data: sessionData, isLoading: sessionLoading } = useQuery<{ authenticated: boolean; username?: string }>({
+    queryKey: ["/api/admin/session"],
+    retry: false,
+  });
+  
+  // Update auth state when session data loads
+  if (sessionData && isAuthenticated === null) {
+    setIsAuthenticated(sessionData.authenticated);
+    if (sessionData.username) {
+      setAdminUsername(sessionData.username);
+    }
+  }
+  
+  const loginMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", "/api/admin/login", {
+        apiKey: adminApiKey,
+        username: adminUsername,
+      });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      setIsAuthenticated(true);
+      setAdminApiKey(""); // Clear from memory
+      setLoginError("");
+      toast({ title: "Logged In", description: `Welcome, ${data.username}` });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/session"] });
+    },
+    onError: (error: Error) => {
+      setLoginError(error.message || "Invalid credentials");
+    },
+  });
+  
+  const logoutMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", "/api/admin/logout", {});
+      return response.json();
+    },
+    onSuccess: () => {
+      setIsAuthenticated(false);
+      toast({ title: "Logged Out", description: "You have been logged out." });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/session"] });
+    },
+  });
   
   // Create campaign form state
   const [newCampaignTitle, setNewCampaignTitle] = useState("");
@@ -136,15 +199,24 @@ export default function AdminConsole() {
 
   const transitionMutation = useMutation({
     mutationFn: async ({ campaignId, newState, reason }: { campaignId: string; newState: CampaignState; reason: string }) => {
+      const idempotencyKey = getTransitionIdempotencyKey(campaignId, newState);
       const response = await apiRequest("POST", `/api/admin/campaigns/${campaignId}/transition`, {
         newState,
         reason,
         adminUsername,
+      }, {
+        "x-idempotency-key": idempotencyKey,
       });
       return response.json();
     },
-    onSuccess: () => {
-      toast({ title: "State Transition Complete", description: "The campaign state has been updated." });
+    onSuccess: (data, variables) => {
+      const isIdempotent = data._idempotent === true;
+      if (isIdempotent) {
+        toast({ title: "Already Processed", description: "This transition was already processed. Showing current state." });
+      } else {
+        toast({ title: "State Transition Complete", description: "The campaign state has been updated." });
+      }
+      clearAdminIdempotencyKey("transition", variables.campaignId, variables.newState);
       queryClient.invalidateQueries({ queryKey: ["/api/campaigns"] });
       queryClient.invalidateQueries({ queryKey: ["/api/campaigns", selectedCampaignId] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/logs"] });
@@ -273,6 +345,84 @@ export default function AdminConsole() {
     }
   };
 
+  // Show loading while checking session
+  if (sessionLoading || isAuthenticated === null) {
+    return (
+      <Layout>
+        <div className="max-w-md mx-auto px-6 py-20">
+          <Card>
+            <CardContent className="p-8 text-center">
+              <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4" />
+              <p className="text-muted-foreground">Checking authentication...</p>
+            </CardContent>
+          </Card>
+        </div>
+      </Layout>
+    );
+  }
+
+  // Show login form if not authenticated
+  if (!isAuthenticated) {
+    return (
+      <Layout>
+        <div className="max-w-md mx-auto px-6 py-20">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Shield className="w-5 h-5" />
+                Admin Login
+              </CardTitle>
+              <CardDescription>Enter your credentials to access the admin console</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="login-username">Username</Label>
+                <Input
+                  id="login-username"
+                  value={adminUsername}
+                  onChange={(e) => setAdminUsername(e.target.value)}
+                  placeholder="admin"
+                  data-testid="input-login-username"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="login-api-key">Admin API Key</Label>
+                <Input
+                  id="login-api-key"
+                  type="password"
+                  value={adminApiKey}
+                  onChange={(e) => setAdminApiKey(e.target.value)}
+                  placeholder="Enter admin API key"
+                  data-testid="input-login-api-key"
+                />
+              </div>
+              {loginError && (
+                <div className="text-sm text-destructive" data-testid="text-login-error">
+                  {loginError}
+                </div>
+              )}
+              <Button
+                className="w-full"
+                onClick={() => loginMutation.mutate()}
+                disabled={loginMutation.isPending || !adminApiKey}
+                data-testid="button-login"
+              >
+                {loginMutation.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Logging in...
+                  </>
+                ) : (
+                  "Login"
+                )}
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </Layout>
+    );
+  }
+
   return (
     <Layout>
       <div className="max-w-7xl mx-auto px-6 py-8">
@@ -285,14 +435,16 @@ export default function AdminConsole() {
             <p className="text-muted-foreground">Manage campaigns, state transitions, and audit logs</p>
           </div>
           <div className="flex items-center gap-3">
-            <Label htmlFor="admin-name" className="text-sm text-muted-foreground">Admin:</Label>
-            <Input 
-              id="admin-name"
-              value={adminUsername} 
-              onChange={(e) => setAdminUsername(e.target.value)}
-              className="w-40"
-              data-testid="input-admin-name"
-            />
+            <span className="text-sm text-muted-foreground">Logged in as: <strong>{adminUsername}</strong></span>
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => logoutMutation.mutate()}
+              disabled={logoutMutation.isPending}
+              data-testid="button-logout"
+            >
+              {logoutMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogOut className="w-4 h-4" />}
+            </Button>
           </div>
         </div>
 

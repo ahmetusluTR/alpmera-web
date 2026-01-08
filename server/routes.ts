@@ -31,9 +31,9 @@ const transitionRequestSchema = z.object({
 
 // Admin authentication middleware
 // SECURITY: STRICT enforcement - NO dev mode bypass allowed
-// All /api/admin/* endpoints require:
-// 1. ADMIN_API_KEY must be configured in environment
-// 2. Request must include x-admin-auth header matching ADMIN_API_KEY exactly
+// All /api/admin/* endpoints require one of:
+// 1. Valid admin session (from /api/admin/login), OR
+// 2. x-admin-auth header matching ADMIN_API_KEY exactly
 // All admin access attempts are logged for audit trail
 const requireAdminAuth = (req: Request, res: Response, next: NextFunction) => {
   const adminHeader = req.headers["x-admin-auth"] as string | undefined;
@@ -48,26 +48,32 @@ const requireAdminAuth = (req: Request, res: Response, next: NextFunction) => {
     });
   }
   
-  // SECURITY CHECK 2: x-admin-auth header must be present and match
-  if (!adminHeader) {
-    console.warn(`[SECURITY] Missing x-admin-auth header: ${req.method} ${req.path} from ${req.ip}`);
-    return res.status(401).json({ 
-      error: "Admin authentication required",
-      message: "x-admin-auth header is required. This attempt has been logged."
-    });
+  // AUTH METHOD 1: Check for valid admin session
+  if (req.session?.isAdmin === true) {
+    console.log(`[ADMIN] Authenticated access via session: ${req.method} ${req.path}`);
+    return next();
   }
   
-  if (adminHeader !== adminApiKey) {
-    console.warn(`[SECURITY] Invalid admin API key attempt: ${req.method} ${req.path} from ${req.ip}`);
-    return res.status(401).json({ 
-      error: "Admin authentication failed",
-      message: "Invalid admin credentials. This attempt has been logged."
-    });
+  // AUTH METHOD 2: Check x-admin-auth header
+  if (adminHeader) {
+    if (adminHeader === adminApiKey) {
+      console.log(`[ADMIN] Authenticated access via API key: ${req.method} ${req.path}`);
+      return next();
+    } else {
+      console.warn(`[SECURITY] Invalid admin API key attempt: ${req.method} ${req.path} from ${req.ip}`);
+      return res.status(401).json({ 
+        error: "Admin authentication failed",
+        message: "Invalid admin credentials. This attempt has been logged."
+      });
+    }
   }
   
-  // Authentication successful
-  console.log(`[ADMIN] Authenticated access via API key: ${req.method} ${req.path}`);
-  return next();
+  // No valid authentication method found
+  console.warn(`[SECURITY] Missing admin auth: ${req.method} ${req.path} from ${req.ip}`);
+  return res.status(401).json({ 
+    error: "Admin authentication required",
+    message: "Please log in or provide valid admin credentials."
+  });
 };
 
 export async function registerRoutes(
@@ -75,6 +81,64 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   
+  // Admin login - validates API key and creates session
+  app.post("/api/admin/login", (req, res) => {
+    const { apiKey, username } = req.body;
+    const adminApiKey = process.env.ADMIN_API_KEY;
+    
+    if (!adminApiKey) {
+      console.error(`[SECURITY] ADMIN_API_KEY not configured`);
+      return res.status(503).json({ 
+        error: "Admin login disabled",
+        message: "Admin API key not configured"
+      });
+    }
+    
+    if (!apiKey || apiKey !== adminApiKey) {
+      console.warn(`[SECURITY] Failed admin login attempt from ${req.ip}`);
+      return res.status(401).json({ 
+        error: "Authentication failed",
+        message: "Invalid admin credentials"
+      });
+    }
+    
+    // Create admin session
+    req.session.isAdmin = true;
+    req.session.adminUsername = username || "admin";
+    
+    console.log(`[ADMIN] Successful login: ${req.session.adminUsername} from ${req.ip}`);
+    res.json({ 
+      success: true,
+      message: "Admin logged in successfully",
+      username: req.session.adminUsername
+    });
+  });
+  
+  // Admin logout - destroys session
+  app.post("/api/admin/logout", (req, res) => {
+    const username = req.session?.adminUsername || "unknown";
+    req.session.destroy((err) => {
+      if (err) {
+        console.error(`[ADMIN] Logout error:`, err);
+        return res.status(500).json({ error: "Logout failed" });
+      }
+      console.log(`[ADMIN] Logout: ${username}`);
+      res.json({ success: true, message: "Logged out successfully" });
+    });
+  });
+  
+  // Check admin session status
+  app.get("/api/admin/session", (req, res) => {
+    if (req.session?.isAdmin === true) {
+      res.json({ 
+        authenticated: true,
+        username: req.session.adminUsername
+      });
+    } else {
+      res.json({ authenticated: false });
+    }
+  });
+
   // Get all campaigns with stats
   app.get("/api/campaigns", async (req, res) => {
     try {
