@@ -61,6 +61,7 @@ async function seed() {
       unitPrice: "2500.00",
       state: "AGGREGATION" as const,
       aggregationDeadline: futureDate,
+      adminPublishStatus: "PUBLISHED" as const,
     },
     {
       title: "Organic Coffee Bean Import",
@@ -99,6 +100,7 @@ async function seed() {
       unitPrice: "75.00",
       state: "AGGREGATION" as const,
       aggregationDeadline: futureDate,
+      adminPublishStatus: "PUBLISHED" as const,
     },
     {
       title: "Electric Cargo Bikes for Local Delivery",
@@ -138,6 +140,7 @@ async function seed() {
       state: "SUCCESS" as const,
       aggregationDeadline: pastDate,
       supplierAccepted: true,
+      adminPublishStatus: "PUBLISHED" as const,
     },
     {
       title: "Artisan Olive Oil from Puglia",
@@ -176,6 +179,7 @@ async function seed() {
       unitPrice: "45.00",
       state: "AGGREGATION" as const,
       aggregationDeadline: futureDate,
+      adminPublishStatus: "PUBLISHED" as const,
     },
     {
       title: "Community Tool Library Equipment",

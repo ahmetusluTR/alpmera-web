@@ -4,15 +4,19 @@ import { CampaignCard } from "@/components/campaign-card";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Shield, Lock, FileCheck, HandCoins } from "lucide-react";
-import type { Campaign } from "@shared/schema";
 
-interface CampaignWithStats extends Campaign {
-  participantCount: number;
-  totalCommitted: number;
+interface PublicCampaign {
+  id: string;
+  title: string;
+  description: string;
+  state: string;
+  imageUrl?: string | null;
+  progressPercent: number;
+  aggregationDeadline: string;
 }
 
 export default function Home() {
-  const { data: campaigns, isLoading } = useQuery<CampaignWithStats[]>({
+  const { data: campaigns, isLoading } = useQuery<PublicCampaign[]>({
     queryKey: ["/api/campaigns"],
   });
 
@@ -85,8 +89,6 @@ export default function Home() {
                 <CampaignCard 
                   key={campaign.id} 
                   campaign={campaign}
-                  participantCount={campaign.participantCount}
-                  totalCommitted={campaign.totalCommitted}
                 />
               ))}
             </div>

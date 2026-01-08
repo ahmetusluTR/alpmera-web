@@ -8,12 +8,26 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
-import { Users, Calendar, ArrowRight, AlertTriangle, CheckCircle } from "lucide-react";
-import type { Campaign, CampaignState } from "@shared/schema";
+import { Calendar, ArrowRight, AlertTriangle, CheckCircle, Lock } from "lucide-react";
+import { useAuth } from "@/lib/auth";
+import type { CampaignState } from "@shared/schema";
 
-interface CampaignWithStats extends Campaign {
-  participantCount: number;
-  totalCommitted: number;
+interface PublicCampaignDetail {
+  id: string;
+  title: string;
+  description: string;
+  rules: string;
+  state: string;
+  imageUrl?: string | null;
+  progressPercent?: number;
+  aggregationDeadline: string;
+  createdAt: string;
+  targetAmount?: string;
+  unitPrice?: string;
+  minCommitment?: string;
+  maxCommitment?: string | null;
+  participantCount?: number;
+  totalCommitted?: number;
 }
 
 const STATE_COLORS: Record<string, string> = {
@@ -24,10 +38,31 @@ const STATE_COLORS: Record<string, string> = {
   RELEASED: "bg-green-700 dark:bg-green-800 text-white",
 };
 
+function getQualitativeLabel(percent: number): string {
+  if (percent >= 100) return "Target reached";
+  if (percent >= 70) return "Approaching target";
+  if (percent >= 40) return "Gaining traction";
+  return "Building momentum";
+}
+
+function ProgressBarWithMilestones({ value }: { value: number }) {
+  return (
+    <div className="relative">
+      <Progress value={value} className="h-3" />
+      <div className="absolute inset-0 flex items-center pointer-events-none">
+        <div className="absolute left-1/4 w-px h-4 bg-muted-foreground/30 -translate-x-1/2" />
+        <div className="absolute left-1/2 w-px h-4 bg-muted-foreground/30 -translate-x-1/2" />
+        <div className="absolute left-3/4 w-px h-4 bg-muted-foreground/30 -translate-x-1/2" />
+      </div>
+    </div>
+  );
+}
+
 export default function CampaignDetail() {
   const { id } = useParams<{ id: string }>();
+  const { isAuthenticated } = useAuth();
 
-  const { data: campaign, isLoading, error } = useQuery<CampaignWithStats>({
+  const { data: campaign, isLoading, error } = useQuery<PublicCampaignDetail>({
     queryKey: ["/api/campaigns", id],
     enabled: !!id,
   });
@@ -61,13 +96,19 @@ export default function CampaignDetail() {
     );
   }
 
-  const targetAmount = parseFloat(campaign.targetAmount);
-  const unitPrice = parseFloat(campaign.unitPrice);
-  const minCommitment = parseFloat(campaign.minCommitment);
-  const maxCommitment = campaign.maxCommitment ? parseFloat(campaign.maxCommitment) : null;
-  const progress = targetAmount > 0 ? Math.min((campaign.totalCommitted / targetAmount) * 100, 100) : 0;
+  const hasPricingData = campaign.targetAmount !== undefined;
+  const targetAmount = hasPricingData ? parseFloat(campaign.targetAmount!) : 0;
+  const unitPrice = hasPricingData ? parseFloat(campaign.unitPrice!) : 0;
+  const minCommitment = hasPricingData ? parseFloat(campaign.minCommitment!) : 0;
+  const maxCommitment = hasPricingData && campaign.maxCommitment ? parseFloat(campaign.maxCommitment) : null;
+  
+  const progress = campaign.progressPercent !== undefined 
+    ? campaign.progressPercent 
+    : (hasPricingData && targetAmount > 0 ? Math.min((campaign.totalCommitted! / targetAmount) * 100, 100) : 0);
+  
   const isFailed = campaign.state === "FAILED";
-  const canCommit = campaign.state === "AGGREGATION";
+  const canCommit = campaign.state === "AGGREGATION" && isAuthenticated;
+  const qualitativeLabel = getQualitativeLabel(progress);
 
   return (
     <Layout>
@@ -136,29 +177,31 @@ export default function CampaignDetail() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <Card data-testid="card-participation">
             <CardHeader>
-              <CardTitle>Participation Stats</CardTitle>
+              <CardTitle>Campaign Progress</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
                 <div className="flex items-center justify-between gap-4 mb-2">
-                  <span className="text-sm text-muted-foreground">Funding Progress</span>
+                  <span className="text-sm text-muted-foreground">Progress</span>
                   <span className="font-mono text-sm font-medium" data-testid="text-funding-progress">
-                    {campaign.totalCommitted.toLocaleString('en-US', { style: 'currency', currency: 'USD' })} / {targetAmount.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
+                    {Math.round(progress)}%
                   </span>
                 </div>
-                <Progress value={progress} className="h-3" />
-                <p className="text-xs text-muted-foreground mt-1">{progress.toFixed(1)}% of target</p>
+                <ProgressBarWithMilestones value={progress} />
+                <p className="text-xs text-muted-foreground mt-2">{qualitativeLabel}</p>
               </div>
               
-              <Separator />
-              
-              <div className="flex items-center gap-3">
-                <Users className="w-5 h-5 text-muted-foreground" />
-                <div>
-                  <p className="font-medium" data-testid="text-participant-count">{campaign.participantCount} participants</p>
-                  <p className="text-sm text-muted-foreground">have committed to this campaign</p>
-                </div>
-              </div>
+              {hasPricingData && (
+                <>
+                  <Separator />
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">Funding</span>
+                    <span className="font-mono text-sm font-medium">
+                      {campaign.totalCommitted!.toLocaleString('en-US', { style: 'currency', currency: 'USD' })} / {targetAmount.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
+                    </span>
+                  </div>
+                </>
+              )}
               
               <Separator />
               
@@ -182,50 +225,84 @@ export default function CampaignDetail() {
 
           <Card data-testid="card-commitment">
             <CardHeader>
-              <CardTitle>Commitment Details</CardTitle>
+              <CardTitle>
+                {hasPricingData ? "Commitment Details" : "Member Terms"}
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Unit Price</span>
-                <span className="font-mono font-medium" data-testid="text-unit-price">
-                  {unitPrice.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Minimum Commitment</span>
-                <span className="font-mono font-medium" data-testid="text-min-commitment">
-                  {minCommitment.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
-                </span>
-              </div>
-              {maxCommitment && (
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Maximum Commitment</span>
-                  <span className="font-mono font-medium" data-testid="text-max-commitment">
-                    {maxCommitment.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
-                  </span>
-                </div>
-              )}
-              
-              <Separator />
+              {hasPricingData ? (
+                <>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">Unit Price</span>
+                    <span className="font-mono font-medium" data-testid="text-unit-price">
+                      {unitPrice.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">Minimum Commitment</span>
+                    <span className="font-mono font-medium" data-testid="text-min-commitment">
+                      {minCommitment.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
+                    </span>
+                  </div>
+                  {maxCommitment && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">Maximum Commitment</span>
+                      <span className="font-mono font-medium" data-testid="text-max-commitment">
+                        {maxCommitment.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
+                      </span>
+                    </div>
+                  )}
+                  
+                  <Separator />
 
-              {canCommit ? (
-                <Link href={`/campaign/${id}/commit`}>
-                  <Button className="w-full" size="lg" data-testid="button-commit">
-                    Make a Commitment
-                    <ArrowRight className="w-4 h-4 ml-2" />
-                  </Button>
-                </Link>
+                  {canCommit ? (
+                    <Link href={`/campaign/${id}/commit`}>
+                      <Button className="w-full" size="lg" data-testid="button-commit">
+                        Make a Commitment
+                        <ArrowRight className="w-4 h-4 ml-2" />
+                      </Button>
+                    </Link>
+                  ) : campaign.state === "AGGREGATION" && !isAuthenticated ? (
+                    <Link href="/login">
+                      <Button className="w-full" size="lg" variant="outline" data-testid="button-login-to-commit">
+                        Sign in to Join
+                        <ArrowRight className="w-4 h-4 ml-2" />
+                      </Button>
+                    </Link>
+                  ) : (
+                    <div className="p-4 rounded-md bg-muted text-center">
+                      <p className="text-sm text-muted-foreground">
+                        {isFailed 
+                          ? "This campaign has failed. All funds will be refunded."
+                          : campaign.state === "RELEASED"
+                          ? "This campaign has been completed and funds released."
+                          : "This campaign is no longer accepting new commitments."
+                        }
+                      </p>
+                    </div>
+                  )}
+                </>
               ) : (
-                <div className="p-4 rounded-md bg-muted text-center">
-                  <p className="text-sm text-muted-foreground">
-                    {isFailed 
-                      ? "This campaign has failed. All funds will be refunded."
-                      : campaign.state === "RELEASED"
-                      ? "This campaign has been completed and funds released."
-                      : "This campaign is no longer accepting new commitments."
-                    }
-                  </p>
-                </div>
+                <>
+                  <div className="flex items-center gap-3 p-4 rounded-md bg-muted/50">
+                    <Lock className="w-5 h-5 text-muted-foreground" />
+                    <div>
+                      <p className="font-medium">Member-only terms</p>
+                      <p className="text-sm text-muted-foreground">
+                        Pricing and commitment details are available to signed-in members.
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <Separator />
+                  
+                  <Link href="/login">
+                    <Button className="w-full" size="lg" data-testid="button-login">
+                      Sign in to View Terms
+                      <ArrowRight className="w-4 h-4 ml-2" />
+                    </Button>
+                  </Link>
+                </>
               )}
             </CardContent>
           </Card>

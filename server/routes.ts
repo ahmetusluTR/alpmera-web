@@ -735,11 +735,39 @@ export async function registerRoutes(
     }
   });
 
-  // Get all campaigns with stats
+  // Get all campaigns with stats (public endpoint)
+  // Only returns PUBLISHED campaigns, redacts monetary fields for list view
   app.get("/api/campaigns", async (req, res) => {
     try {
-      const campaigns = await storage.getCampaignsWithStats();
-      res.json(campaigns);
+      const allCampaigns = await storage.getCampaignsWithStats();
+      
+      // Filter to only PUBLISHED campaigns
+      const publishedCampaigns = allCampaigns.filter(
+        (c: any) => c.adminPublishStatus === "PUBLISHED"
+      );
+      
+      // Redact monetary fields for public/list view
+      // Only expose: id, title, description, state, imageUrl, progress percentage
+      const redactedCampaigns = publishedCampaigns.map((c: any) => {
+        const targetAmount = parseFloat(c.targetAmount) || 0;
+        const totalCommitted = c.totalCommitted || 0;
+        const progressPercent = targetAmount > 0 
+          ? Math.min(Math.round((totalCommitted / targetAmount) * 100), 100)
+          : 0;
+        
+        return {
+          id: c.id,
+          title: c.title,
+          description: c.description,
+          state: c.state,
+          imageUrl: c.imageUrl,
+          progressPercent,
+          aggregationDeadline: c.aggregationDeadline,
+          createdAt: c.createdAt,
+        };
+      });
+      
+      res.json(redactedCampaigns);
     } catch (error) {
       console.error("Error fetching campaigns:", error);
       res.status(500).json({ error: "Failed to fetch campaigns" });
@@ -747,13 +775,56 @@ export async function registerRoutes(
   });
 
   // Get single campaign with stats
+  // Public users: only see PUBLISHED campaigns with limited data
+  // Authenticated members: see full details including pricing
   app.get("/api/campaigns/:id", async (req, res) => {
     try {
       const campaign = await storage.getCampaignWithStats(req.params.id);
       if (!campaign) {
         return res.status(404).json({ error: "Campaign not found" });
       }
-      res.json(campaign);
+      
+      // Check if user is authenticated via alpmera_user cookie
+      const sessionToken = req.cookies?.alpmera_user;
+      let isAuthenticated = false;
+      
+      if (sessionToken) {
+        const session = await storage.getUserSession(sessionToken);
+        if (session && new Date(session.expiresAt) > new Date()) {
+          isAuthenticated = true;
+        }
+      }
+      
+      const publishStatus = (campaign as any).adminPublishStatus || "DRAFT";
+      
+      // Non-authenticated users can only see PUBLISHED campaigns
+      if (!isAuthenticated && publishStatus !== "PUBLISHED") {
+        return res.status(404).json({ error: "Campaign not found" });
+      }
+      
+      // For authenticated members, return full campaign details (for joining flow)
+      if (isAuthenticated) {
+        return res.json(campaign);
+      }
+      
+      // For non-authenticated users, redact monetary fields but include more for detail view
+      const targetAmount = parseFloat(campaign.targetAmount) || 0;
+      const totalCommitted = campaign.totalCommitted || 0;
+      const progressPercent = targetAmount > 0 
+        ? Math.min(Math.round((totalCommitted / targetAmount) * 100), 100)
+        : 0;
+      
+      res.json({
+        id: campaign.id,
+        title: campaign.title,
+        description: campaign.description,
+        rules: campaign.rules,
+        state: campaign.state,
+        imageUrl: campaign.imageUrl,
+        progressPercent,
+        aggregationDeadline: campaign.aggregationDeadline,
+        createdAt: campaign.createdAt,
+      });
     } catch (error) {
       console.error("Error fetching campaign:", error);
       res.status(500).json({ error: "Failed to fetch campaign" });

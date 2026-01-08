@@ -2,13 +2,20 @@ import { Link } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Users } from "lucide-react";
-import type { Campaign } from "@shared/schema";
+import { useAuth } from "@/lib/auth";
+
+interface PublicCampaign {
+  id: string;
+  title: string;
+  description: string;
+  state: string;
+  imageUrl?: string | null;
+  progressPercent: number;
+  aggregationDeadline: string;
+}
 
 interface CampaignCardProps {
-  campaign: Campaign;
-  participantCount?: number;
-  totalCommitted?: number;
+  campaign: PublicCampaign;
 }
 
 const STATE_COLORS: Record<string, string> = {
@@ -19,9 +26,30 @@ const STATE_COLORS: Record<string, string> = {
   RELEASED: "bg-green-700 dark:bg-green-800 text-white",
 };
 
-export function CampaignCard({ campaign, participantCount = 0, totalCommitted = 0 }: CampaignCardProps) {
-  const targetAmount = parseFloat(campaign.targetAmount);
-  const progress = targetAmount > 0 ? Math.min((totalCommitted / targetAmount) * 100, 100) : 0;
+function getQualitativeLabel(percent: number): string {
+  if (percent >= 100) return "Target reached";
+  if (percent >= 70) return "Approaching target";
+  if (percent >= 40) return "Gaining traction";
+  return "Building momentum";
+}
+
+function ProgressBarWithMilestones({ value }: { value: number }) {
+  return (
+    <div className="relative">
+      <Progress value={value} className="h-2" />
+      <div className="absolute inset-0 flex items-center pointer-events-none">
+        <div className="absolute left-1/4 w-px h-3 bg-muted-foreground/30 -translate-x-1/2" />
+        <div className="absolute left-1/2 w-px h-3 bg-muted-foreground/30 -translate-x-1/2" />
+        <div className="absolute left-3/4 w-px h-3 bg-muted-foreground/30 -translate-x-1/2" />
+      </div>
+    </div>
+  );
+}
+
+export function CampaignCard({ campaign }: CampaignCardProps) {
+  const { isAuthenticated } = useAuth();
+  const progress = campaign.progressPercent || 0;
+  const qualitativeLabel = getQualitativeLabel(progress);
 
   return (
     <Link href={`/campaign/${campaign.id}`}>
@@ -52,17 +80,29 @@ export function CampaignCard({ campaign, participantCount = 0, totalCommitted = 
           
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-4 text-sm">
-              <span className="text-muted-foreground">Funding Progress</span>
+              <span className="text-muted-foreground">Progress</span>
               <span className="font-mono font-medium" data-testid={`text-progress-${campaign.id}`}>
-                {totalCommitted.toLocaleString('en-US', { style: 'currency', currency: 'USD' })} / {targetAmount.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
+                {progress}%
               </span>
             </div>
-            <Progress value={progress} className="h-2" />
             
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Users className="w-4 h-4" />
-              <span data-testid={`text-participants-${campaign.id}`}>{participantCount} participants</span>
-            </div>
+            <ProgressBarWithMilestones value={progress} />
+            
+            <p className="text-xs text-muted-foreground" data-testid={`text-label-${campaign.id}`}>
+              {qualitativeLabel}
+            </p>
+            
+            {isAuthenticated ? (
+              <div className="pt-2 border-t border-border/50">
+                <Badge variant="secondary" className="text-xs">
+                  Member-only terms
+                </Badge>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground pt-2 border-t border-border/50">
+                Sign in to view member terms
+              </p>
+            )}
           </div>
         </CardContent>
       </Card>
