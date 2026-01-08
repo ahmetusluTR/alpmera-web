@@ -1,59 +1,46 @@
 import { useQuery } from "@tanstack/react-query";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
-import { useAuth } from "@/lib/auth";
-import { RefreshCcw } from "lucide-react";
-import { format } from "date-fns";
+import { useLocation } from "wouter";
 import { AccountLayout } from "./layout";
-import { Timeline, TimelineEvent } from "@/components/timeline";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
+import { ArrowRight, RefreshCw, RotateCcw } from "lucide-react";
+import { format } from "date-fns";
+import { useAuth } from "@/lib/auth";
 
-interface Commitment {
+interface RefundEntry {
   id: string;
-  referenceNumber: string;
-  quantity: number;
+  entryType: "REFUND";
   amount: string;
   createdAt: string;
-  campaign: {
-    id: string;
-    title: string;
-    state: string;
-  };
+  reason: string;
+  actor: string;
+  commitmentCode: string;
+  campaignId: string;
+  campaignName: string;
 }
 
-function mapRefundsToTimelineEvents(commitments: Commitment[]): TimelineEvent[] {
-  return commitments
-    .filter(c => c.campaign.state === "FAILED")
-    .map((commitment) => ({
-      id: `refund-${commitment.id}`,
-      title: "Refund processed",
-      timestamp: new Date().toISOString(),
-      subtitle: commitment.campaign.title,
-      status: "success" as const,
-      monospaceFields: [
-        { label: "Reference", value: commitment.referenceNumber },
-        { label: "Amount", value: `$${parseFloat(commitment.amount).toFixed(2)}` },
-      ],
-      meta: [
-        { label: "Original commitment", value: format(new Date(commitment.createdAt), "MMM d, yyyy") },
-      ],
-      details: "Funds returned due to campaign failure",
-      isImmutable: true,
-    }));
+function formatReason(reason: string): string {
+  const reasonMap: Record<string, string> = {
+    campaign_failed_refund: "Campaign failed",
+    admin_refund: "Admin refund",
+  };
+  return reasonMap[reason] || reason;
 }
 
 export default function RefundsPage() {
+  const [, setLocation] = useLocation();
   const { isAuthenticated } = useAuth();
 
-  const { data: commitments, isLoading } = useQuery<Commitment[]>({
-    queryKey: ["/api/account/commitments"],
+  const { data: refunds, isLoading, error, refetch } = useQuery<RefundEntry[]>({
+    queryKey: ["/api/account/refunds"],
     enabled: isAuthenticated,
   });
 
-  const refundedCommitments = commitments?.filter(c => c.campaign.state === "FAILED") || [];
-  const refundEvents = commitments ? mapRefundsToTimelineEvents(commitments) : [];
-
-  const totalRefunded = refundedCommitments.reduce((sum, c) => sum + parseFloat(c.amount), 0);
+  const handleRowClick = (refundId: string) => {
+    setLocation(`/account/refunds/${refundId}`);
+  };
 
   return (
     <AccountLayout>
@@ -61,82 +48,80 @@ export default function RefundsPage() {
         <Card>
           <CardHeader>
             <div className="flex items-center gap-2">
-              <RefreshCcw className="w-5 h-5 text-muted-foreground" />
+              <RotateCcw className="w-5 h-5 text-muted-foreground" />
               <CardTitle className="text-lg">Refunds</CardTitle>
             </div>
             <CardDescription>
-              Refunds from failed campaigns
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <Skeleton className="h-24" />
-            ) : (
-              <div className="p-4 rounded-md border border-border mb-6">
-                <p className="text-xs text-muted-foreground mb-1">Total refunded</p>
-                <p className="text-xl font-mono font-semibold" data-testid="text-total-refunded">
-                  ${totalRefunded.toFixed(2)}
-                </p>
-                <p className="text-xs text-muted-foreground mt-2">
-                  {refundedCommitments.length} refund{refundedCommitments.length !== 1 ? "s" : ""} processed
-                </p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Refund History</CardTitle>
-            <CardDescription>
-              Append-only record of refund transactions
+              Escrow funds returned from failed campaigns
             </CardDescription>
           </CardHeader>
           <CardContent>
             {isLoading ? (
               <div className="space-y-3">
-                <Skeleton className="h-16" />
-                <Skeleton className="h-16" />
-              </div>
-            ) : refundedCommitments.length > 0 ? (
-              <div className="space-y-4">
-                {refundedCommitments.map((commitment) => (
-                  <div
-                    key={commitment.id}
-                    className="p-4 rounded-md border border-border"
-                    data-testid={`refund-item-${commitment.id}`}
-                  >
-                    <div className="flex items-start justify-between gap-2 mb-2">
-                      <div>
-                        <span className="font-medium text-sm">
-                          {commitment.campaign.title}
-                        </span>
-                        <div className="flex items-center gap-4 text-xs text-muted-foreground mt-1">
-                          <span className="font-mono">
-                            {commitment.referenceNumber}
-                          </span>
-                          <span>{format(new Date(commitment.createdAt), "MMM d, yyyy")}</span>
-                        </div>
-                      </div>
-                      <Badge variant="secondary" className="shrink-0">
-                        REFUNDED
-                      </Badge>
-                    </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">Amount refunded</span>
-                      <span className="font-mono font-medium">
-                        ${parseFloat(commitment.amount).toFixed(2)}
-                      </span>
-                    </div>
-                  </div>
+                {[1, 2, 3].map((i) => (
+                  <Skeleton key={i} className="h-16 w-full" />
                 ))}
               </div>
+            ) : error ? (
+              <div className="text-center py-8">
+                <p className="text-muted-foreground mb-4">Unable to load refunds.</p>
+                <Button variant="outline" onClick={() => refetch()} data-testid="button-retry">
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  Retry
+                </Button>
+              </div>
+            ) : !refunds || refunds.length === 0 ? (
+              <p className="text-muted-foreground text-center py-8" data-testid="text-empty-refunds">
+                No refunds yet.
+              </p>
             ) : (
-              <Timeline
-                events={refundEvents}
-                emptyStateTitle="No refunds"
-                emptyStateHint="Refunds will appear here if a campaign you committed to fails"
-              />
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm" data-testid="table-refunds">
+                  <thead>
+                    <tr className="border-b text-left text-muted-foreground">
+                      <th className="pb-2 font-medium">Date</th>
+                      <th className="pb-2 font-medium">Status</th>
+                      <th className="pb-2 font-medium">Reason</th>
+                      <th className="pb-2 font-medium">Reference</th>
+                      <th className="pb-2 font-medium sr-only">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {refunds.map((refund) => (
+                      <tr
+                        key={refund.id}
+                        className="border-b last:border-0 hover-elevate cursor-pointer"
+                        onClick={() => handleRowClick(refund.id)}
+                        data-testid={`row-refund-${refund.id}`}
+                      >
+                        <td className="py-3 font-mono text-xs">
+                          {format(new Date(refund.createdAt), "yyyy-MM-dd HH:mm")}
+                        </td>
+                        <td className="py-3">
+                          <Badge variant="outline" className="gap-1">
+                            <RotateCcw className="w-3 h-3" />
+                            Completed
+                          </Badge>
+                        </td>
+                        <td className="py-3 text-muted-foreground">
+                          {formatReason(refund.reason)}
+                        </td>
+                        <td className="py-3">
+                          <div className="flex flex-col">
+                            <span className="font-mono text-xs">{refund.commitmentCode}</span>
+                            <span className="text-xs text-muted-foreground truncate max-w-[200px]">
+                              {refund.campaignName}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="py-3 text-right">
+                          <ArrowRight className="w-4 h-4 text-muted-foreground" />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </CardContent>
         </Card>

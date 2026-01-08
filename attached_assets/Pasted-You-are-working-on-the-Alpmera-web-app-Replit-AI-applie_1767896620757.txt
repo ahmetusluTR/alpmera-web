@@ -1,0 +1,104 @@
+You are working on the Alpmera web app (Replit AI applies changes). Implement Account → Refunds (Batch 4) using the existing backend, existing auth/session system, and the shared AccountShell + shared Timeline component.
+
+STRICT RULES:
+- NEVER use store language: buy, order, checkout, cart, purchase, deal, discount, flash.
+- ONLY use: campaign, commitment, escrow, release, refund, fulfillment.
+- Do NOT change database schema, triggers, escrow ledger logic, idempotency, campaign state machine, or admin auth rules.
+- Keep changes scoped to Account module: Refunds list + refund detail page + read-only API consumption.
+- Optimize for low Replit credits: reuse existing components, patterns, types, formatting utils. No new heavy libs.
+- No prices.
+
+SCOPE OF THIS BATCH (Refunds only):
+A) Refunds list page: /account/refunds
+B) Refund detail page: /account/refunds/:refundId (or :refundCode if that exists; prefer whatever is already used in admin/refund flows)
+C) Use shared AccountShell and shared Timeline component (audit/append-only feel).
+D) Read-only UI only. No state-changing actions.
+
+AUTH GUARD:
+- All routes must require authenticated session using the existing /api/me-based guard.
+- If unauthenticated, redirect to the existing login flow (no auth logic changes).
+
+DATA REQUIREMENTS (REUSE FIRST, MINIMAL NEW IF NEEDED):
+1) Reuse existing refund endpoints already used by the admin console (search codebase):
+   - Prefer: GET /api/account/refunds (list)
+   - Prefer: GET /api/account/refunds/:refundId (detail)
+   If these do not exist, implement minimal NEW read-only endpoints under /api/account/* that:
+   - Query existing refund records / refund table(s) and/or escrow ledger entries related to refunds
+   - Return ONLY refunds belonging to the authenticated user
+   - Do NOT expose supplier-private pricing
+   - Do NOT add update/delete; do not affect idempotency logic
+
+REFUNDS LIST UI (/account/refunds):
+- Table columns:
+  - Refund date (initiatedAt or createdAt)
+  - Refund status (e.g., INITIATED / PROCESSING / COMPLETED / FAILED; use actual enums if present)
+  - Amount
+  - Currency
+  - Refund reference (refundId/refundCode)
+  - Campaign (name if available)
+  - Commitment code (if available)
+- Sorting: newest refund date first
+- Row click → refund detail
+- Empty state: “No refunds yet.”
+- Error: “Unable to load refunds.” with Retry
+
+REFUND DETAIL UI (/account/refunds/:refundId):
+1) Header:
+   - “Refund” + refund reference
+   - Current refund status
+   - Amount + currency
+2) Refund snapshot card (read-only):
+   - Fields (best-effort depending on existing data):
+     - Refund reference
+     - Status
+     - Amount + currency
+     - Initiated date
+     - Completed date (if present)
+     - Reason (if present)
+     - Related commitment code (if present)
+     - Related campaign name (if present)
+3) Refund lifecycle timeline (Timeline component):
+   - Must feel append-only and audit-style.
+   - Populate from whatever events exist (preferred sources in order):
+     a) Dedicated refund events/status history table (if exists)
+     b) Refund record timestamps (created/processed/completed/failed)
+     c) Escrow ledger entries of type REFUND that reference this refund
+   - Timeline item examples (use actual status values you have):
+     - “Refund initiated”
+     - “Refund processing”
+     - “Refund completed”
+     - “Refund failed”
+   - Each item includes:
+     - title
+     - date
+     - status (optional)
+     - description/meta: actor (SYSTEM/ADMIN if safe), reason, idempotency key (if safe), ledger entry id (if safe)
+4) Links (read-only):
+   - “View campaign” → existing campaign detail route (if campaign id/slug exists)
+   - “View commitment” → /account/commitments/:commitmentCode (if known)
+   - “View escrow movement” or “View escrow ledger” → /account/escrow/:movementId or /account/escrow (best available)
+   - Do not add any actions.
+
+LOADING/ERROR/NOT FOUND:
+- Loading: simple “Loading…” or minimal skeleton
+- Not found: “Refund not found.”
+- Error: “Unable to load refund.” with Retry
+
+IMPLEMENTATION GUIDANCE:
+- Add minimal types:
+  - RefundListItem
+  - RefundDetail (may include timeline source fields and related ids)
+- Reuse existing date/number formatting utilities and existing Table/Card components if present.
+- Ensure AccountShell nav highlights “Refunds” properly.
+
+ACCEPTANCE CHECKLIST:
+- /account/refunds shows a table with required columns, no store language.
+- Clicking a row opens /account/refunds/:refundId.
+- Detail shows refund snapshot + refund lifecycle timeline using shared Timeline.
+- Detail includes read-only links back to campaign/commitment/escrow when possible.
+- Auth guard works; unauthenticated redirects.
+- No regressions to commitments, payments & escrow, campaign pages, or admin console.
+
+After implementing:
+- Provide a short summary: files changed/added, routes, and which API endpoints were reused/created.
+- Do not output large code dumps.

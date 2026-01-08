@@ -97,7 +97,7 @@ export default function EscrowDetailPage() {
   const { isAuthenticated } = useAuth();
 
   const { data: movement, isLoading, error, refetch } = useQuery<EscrowMovementDetail>({
-    queryKey: ["/api/account/escrow", params.id],
+    queryKey: [`/api/account/escrow/${params.id}`],
     enabled: isAuthenticated && !!params.id,
   });
 

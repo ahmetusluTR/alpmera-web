@@ -650,6 +650,86 @@ export async function registerRoutes(
     }
   });
 
+  // GET /api/account/refunds - List user's refund entries (filtered escrow ledger)
+  app.get("/api/account/refunds", requireUserAuth, async (req, res) => {
+    try {
+      const userId = (req as any).userId;
+      const entries = await storage.getEscrowEntriesByUserId(userId);
+      
+      // Filter to only REFUND entries
+      const refunds = entries
+        .filter(entry => entry.entryType === "REFUND")
+        .map(entry => ({
+          id: entry.id,
+          entryType: entry.entryType,
+          amount: entry.amount,
+          createdAt: entry.createdAt,
+          reason: entry.reason,
+          actor: entry.actor,
+          commitmentCode: entry.commitment.referenceNumber,
+          campaignId: entry.campaign.id,
+          campaignName: entry.campaign.title,
+        }));
+      
+      res.json(refunds);
+    } catch (error) {
+      console.error("[USER] Error fetching refunds:", error);
+      res.status(500).json({ error: "Failed to fetch refunds" });
+    }
+  });
+
+  // GET /api/account/refunds/:id - Get single refund detail
+  app.get("/api/account/refunds/:id", requireUserAuth, async (req, res) => {
+    try {
+      const userId = (req as any).userId;
+      const refundId = req.params.id;
+      
+      const entry = await storage.getEscrowEntryById(refundId);
+      if (!entry) {
+        return res.status(404).json({ error: "Refund not found" });
+      }
+      
+      // Verify it's a REFUND type
+      if (entry.entryType !== "REFUND") {
+        return res.status(404).json({ error: "Refund not found" });
+      }
+      
+      // Verify ownership
+      if (entry.commitment.userId !== userId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
+      // Get all escrow entries for this commitment (for lifecycle timeline)
+      const relatedEntries = await storage.getEscrowEntriesByCommitment(entry.commitmentId);
+      
+      res.json({
+        id: entry.id,
+        entryType: entry.entryType,
+        amount: entry.amount,
+        createdAt: entry.createdAt,
+        reason: entry.reason,
+        actor: entry.actor,
+        commitmentCode: entry.commitment.referenceNumber,
+        commitmentId: entry.commitment.id,
+        campaignId: entry.campaign.id,
+        campaignName: entry.campaign.title,
+        campaignState: entry.campaign.state,
+        // Lifecycle timeline: all escrow entries for this commitment
+        lifecycleEntries: relatedEntries.map(e => ({
+          id: e.id,
+          entryType: e.entryType,
+          amount: e.amount,
+          createdAt: e.createdAt,
+          reason: e.reason,
+          actor: e.actor,
+        })),
+      });
+    } catch (error) {
+      console.error("[USER] Error fetching refund detail:", error);
+      res.status(500).json({ error: "Failed to fetch refund" });
+    }
+  });
+
   // Get all campaigns with stats
   app.get("/api/campaigns", async (req, res) => {
     try {

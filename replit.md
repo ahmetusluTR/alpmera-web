@@ -107,6 +107,8 @@ AGGREGATION → SUCCESS → FULFILLMENT → RELEASED
 - `GET /api/account/commitments/:code` - Get commitment detail by reference code with escrow entries and status transitions (protected)
 - `GET /api/account/escrow` - Get user's escrow movements (append-only ledger entries) (protected)
 - `GET /api/account/escrow/:id` - Get escrow movement detail with related entries timeline (protected)
+- `GET /api/account/refunds` - Get user's refund entries (filtered from escrow ledger) (protected)
+- `GET /api/account/refunds/:id` - Get refund detail with lifecycle timeline (protected)
 
 ### Commitment Linking
 - When authenticated, `POST /api/campaigns/:id/commit` attaches `user_id` to the commitment

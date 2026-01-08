@@ -19,6 +19,7 @@ import AccountCommitmentDetail from "@/pages/account/commitment-detail";
 import AccountPayments from "@/pages/account/payments";
 import AccountEscrowDetail from "@/pages/account/escrow-detail";
 import AccountRefunds from "@/pages/account/refunds";
+import AccountRefundDetail from "@/pages/account/refund-detail";
 import AccountSecurity from "@/pages/account/security";
 
 function Router() {
@@ -39,6 +40,7 @@ function Router() {
       <Route path="/account/escrow" component={AccountPayments} />
       <Route path="/account/escrow/:id" component={AccountEscrowDetail} />
       <Route path="/account/refunds" component={AccountRefunds} />
+      <Route path="/account/refunds/:id" component={AccountRefundDetail} />
       <Route path="/account/security" component={AccountSecurity} />
       <Route component={NotFound} />
     </Switch>
