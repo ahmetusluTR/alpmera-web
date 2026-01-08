@@ -31,7 +31,7 @@ import {
   TableHeader, 
   TableRow 
 } from "@/components/ui/table";
-import { Search, RefreshCw, Plus, FileUp, Loader2 } from "lucide-react";
+import { Search, RefreshCw, Plus, FileUp, Loader2, Download, ArrowUp, ArrowDown } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
@@ -59,11 +59,17 @@ const STATUS_BADGES: Record<string, { label: string; variant: "default" | "secon
   FAILED: { label: "Failed", variant: "destructive" },
 };
 
+const CSV_TEMPLATE = `commitment_code,amount,reason
+ABC123,50.00,campaign_failed_refund
+DEF456,75.50,campaign_failed_refund`;
+
 export default function RefundPlansPage() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [sortBy, setSortBy] = useState("createdAt");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
@@ -109,7 +115,19 @@ export default function RefundPlansPage() {
       }
       return true;
     })
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()) || [];
+    .sort((a, b) => {
+      let cmp = 0;
+      if (sortBy === "createdAt") {
+        cmp = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      } else if (sortBy === "status") {
+        cmp = a.status.localeCompare(b.status);
+      } else if (sortBy === "rowCount") {
+        cmp = a.rowCount - b.rowCount;
+      } else if (sortBy === "totalAmount") {
+        cmp = a.totalAmount - b.totalAmount;
+      }
+      return sortDir === "desc" ? -cmp : cmp;
+    }) || [];
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -126,6 +144,20 @@ export default function RefundPlansPage() {
     setLocation(`/admin/refund-plans/${planId}`);
   };
 
+  const handleDownloadTemplate = () => {
+    const blob = new Blob([CSV_TEMPLATE], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "refund_plan_template.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const toggleSortDir = () => {
+    setSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
+  };
+
   return (
     <AdminLayout>
       <div className="space-y-6">
@@ -134,14 +166,20 @@ export default function RefundPlansPage() {
             <h1 className="text-2xl font-semibold" data-testid="text-refund-plans-heading">Refund Plans</h1>
             <p className="text-muted-foreground text-sm">Batch refund plans for failed campaigns</p>
           </div>
-          <Button onClick={() => setImportDialogOpen(true)} data-testid="button-import-plan">
-            <Plus className="w-4 h-4 mr-2" />
-            Import Refund Plan
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={handleDownloadTemplate} data-testid="button-download-template">
+              <Download className="w-4 h-4 mr-2" />
+              CSV Template
+            </Button>
+            <Button onClick={() => setImportDialogOpen(true)} data-testid="button-import-plan">
+              <Plus className="w-4 h-4 mr-2" />
+              Import Refund Plan
+            </Button>
+          </div>
         </div>
 
-        <div className="flex flex-col sm:flex-row gap-4">
-          <div className="relative flex-1">
+        <div className="flex flex-col sm:flex-row gap-4 flex-wrap">
+          <div className="relative flex-1 min-w-[200px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
               placeholder="Search by campaign..."
@@ -162,6 +200,20 @@ export default function RefundPlansPage() {
               <SelectItem value="EXECUTED">Executed</SelectItem>
             </SelectContent>
           </Select>
+          <Select value={sortBy} onValueChange={setSortBy}>
+            <SelectTrigger className="w-[130px]" data-testid="select-sort">
+              <SelectValue placeholder="Sort by" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="createdAt">Created</SelectItem>
+              <SelectItem value="status">Status</SelectItem>
+              <SelectItem value="rowCount">Rows</SelectItem>
+              <SelectItem value="totalAmount">Amount</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button variant="outline" size="icon" onClick={toggleSortDir} data-testid="button-sort-dir">
+            {sortDir === "asc" ? <ArrowUp className="w-4 h-4" /> : <ArrowDown className="w-4 h-4" />}
+          </Button>
         </div>
 
         <Card>

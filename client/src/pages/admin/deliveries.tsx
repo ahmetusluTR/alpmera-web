@@ -24,7 +24,7 @@ import {
   TableHeader, 
   TableRow 
 } from "@/components/ui/table";
-import { Search, RefreshCw } from "lucide-react";
+import { Search, RefreshCw, ArrowUp, ArrowDown } from "lucide-react";
 import { format } from "date-fns";
 
 interface DeliveryItem {
@@ -49,6 +49,8 @@ export default function DeliveriesPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [showOverdueOnly, setShowOverdueOnly] = useState(false);
+  const [sortBy, setSortBy] = useState("campaign");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
   const { data: deliveries, isLoading, error, refetch } = useQuery<DeliveryItem[]>({
     queryKey: ["/api/admin/deliveries"],
@@ -62,13 +64,31 @@ export default function DeliveriesPage() {
       return true;
     })
     .sort((a, b) => {
-      if (a.isOverdue && !b.isOverdue) return -1;
-      if (!a.isOverdue && b.isOverdue) return 1;
-      return 0;
+      let cmp = 0;
+      if (sortBy === "campaign") {
+        cmp = a.campaignName.localeCompare(b.campaignName);
+      } else if (sortBy === "strategy") {
+        cmp = a.deliveryStrategy.localeCompare(b.deliveryStrategy);
+      } else if (sortBy === "status") {
+        cmp = a.status.localeCompare(b.status);
+      } else if (sortBy === "lastUpdate") {
+        const aTime = a.lastUpdateAt ? new Date(a.lastUpdateAt).getTime() : 0;
+        const bTime = b.lastUpdateAt ? new Date(b.lastUpdateAt).getTime() : 0;
+        cmp = aTime - bTime;
+      } else if (sortBy === "nextDue") {
+        const aTime = a.nextUpdateDueAt ? new Date(a.nextUpdateDueAt).getTime() : Infinity;
+        const bTime = b.nextUpdateDueAt ? new Date(b.nextUpdateDueAt).getTime() : Infinity;
+        cmp = aTime - bTime;
+      }
+      return sortDir === "desc" ? -cmp : cmp;
     }) || [];
 
   const handleRowClick = (campaignId: string) => {
     setLocation(`/admin/campaigns/${campaignId}/fulfillment`);
+  };
+
+  const toggleSortDir = () => {
+    setSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
   };
 
   return (
@@ -76,11 +96,13 @@ export default function DeliveriesPage() {
       <div className="space-y-6">
         <div>
           <h1 className="text-2xl font-semibold" data-testid="text-deliveries-heading">Deliveries</h1>
-          <p className="text-muted-foreground text-sm">Track fulfillment progress across campaigns</p>
+          <p className="text-muted-foreground text-sm">
+            Track fulfillment progress across campaigns. Click a row to manage fulfillment updates.
+          </p>
         </div>
 
-        <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
-          <div className="relative flex-1">
+        <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center flex-wrap">
+          <div className="relative flex-1 min-w-[200px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
               placeholder="Search campaigns..."
@@ -102,6 +124,21 @@ export default function DeliveriesPage() {
               <SelectItem value="DELAYED">Delayed</SelectItem>
             </SelectContent>
           </Select>
+          <Select value={sortBy} onValueChange={setSortBy}>
+            <SelectTrigger className="w-[130px]" data-testid="select-sort">
+              <SelectValue placeholder="Sort by" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="campaign">Campaign</SelectItem>
+              <SelectItem value="strategy">Strategy</SelectItem>
+              <SelectItem value="status">Status</SelectItem>
+              <SelectItem value="lastUpdate">Last Update</SelectItem>
+              <SelectItem value="nextDue">Next Due</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button variant="outline" size="icon" onClick={toggleSortDir} data-testid="button-sort-dir">
+            {sortDir === "asc" ? <ArrowUp className="w-4 h-4" /> : <ArrowDown className="w-4 h-4" />}
+          </Button>
           <div className="flex items-center gap-2">
             <Checkbox
               id="overdue"

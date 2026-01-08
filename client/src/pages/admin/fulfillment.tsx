@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -16,6 +17,19 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { 
   Table, 
   TableBody, 
@@ -24,7 +38,7 @@ import {
   TableHeader, 
   TableRow 
 } from "@/components/ui/table";
-import { ArrowLeft, RefreshCw, Upload, FileUp, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
+import { ArrowLeft, RefreshCw, Upload, FileUp, Loader2, MoreHorizontal, Plus, Clock } from "lucide-react";
 import { format } from "date-fns";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -43,11 +57,18 @@ interface FulfillmentSummary {
 interface CommitmentRoster {
   id: string;
   referenceNumber: string;
-  participantName: string;
   quantity: number;
   status: string;
   createdAt: string;
   deliveryId: string | null;
+}
+
+interface MilestoneEvent {
+  id: string;
+  milestone: string;
+  note: string;
+  createdAt: string;
+  actor: string;
 }
 
 interface ImportResult {
@@ -57,20 +78,36 @@ interface ImportResult {
   errors: Array<{ row: number; message: string }>;
 }
 
+const MILESTONES = [
+  { value: "SCHEDULED", label: "Fulfillment scheduled" },
+  { value: "IN_PROGRESS", label: "Fulfillment in progress" },
+  { value: "SHIPPED", label: "Shipped" },
+  { value: "DELIVERED", label: "Delivered" },
+  { value: "EXCEPTION", label: "Exception raised" },
+];
+
 export default function FulfillmentConsolePage() {
   const [, params] = useRoute("/admin/campaigns/:id/fulfillment");
   const campaignId = params?.id;
   const { toast } = useToast();
   const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [milestoneDialogOpen, setMilestoneDialogOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedMilestone, setSelectedMilestone] = useState("");
+  const [milestoneNote, setMilestoneNote] = useState("");
 
   const { data: summary, isLoading: summaryLoading } = useQuery<FulfillmentSummary>({
     queryKey: [`/api/admin/campaigns/${campaignId}/fulfillment`],
     enabled: !!campaignId,
   });
 
-  const { data: commitments, isLoading: commitmentsLoading, refetch } = useQuery<CommitmentRoster[]>({
-    queryKey: [`/api/admin/campaigns/${campaignId}/commitments`],
+  const { data: commitments, isLoading: commitmentsLoading } = useQuery<CommitmentRoster[]>({
+    queryKey: ["/api/admin/campaigns", campaignId, "commitments"],
+    enabled: !!campaignId,
+  });
+
+  const { data: milestones, isLoading: milestonesLoading } = useQuery<MilestoneEvent[]>({
+    queryKey: [`/api/admin/campaigns/${campaignId}/fulfillment/milestones`],
     enabled: !!campaignId,
   });
 
@@ -104,12 +141,33 @@ export default function FulfillmentConsolePage() {
         });
       }
       queryClient.invalidateQueries({ queryKey: [`/api/admin/campaigns/${campaignId}/fulfillment`] });
-      queryClient.invalidateQueries({ queryKey: [`/api/campaigns/${campaignId}/commitments`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/campaigns", campaignId, "commitments"] });
       setImportDialogOpen(false);
       setSelectedFile(null);
     },
     onError: (error: Error) => {
       toast({ title: "Import Failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const milestoneMutation = useMutation({
+    mutationFn: async ({ milestone, note }: { milestone: string; note: string }) => {
+      const response = await apiRequest("POST", `/api/admin/campaigns/${campaignId}/fulfillment/milestone`, {
+        milestone,
+        note,
+      });
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Milestone Updated", description: "Delivery milestone has been recorded." });
+      queryClient.invalidateQueries({ queryKey: [`/api/admin/campaigns/${campaignId}/fulfillment`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/admin/campaigns/${campaignId}/fulfillment/milestones`] });
+      setMilestoneDialogOpen(false);
+      setSelectedMilestone("");
+      setMilestoneNote("");
+    },
+    onError: (error: Error) => {
+      toast({ title: "Update Failed", description: error.message, variant: "destructive" });
     },
   });
 
@@ -124,7 +182,14 @@ export default function FulfillmentConsolePage() {
     }
   };
 
+  const handleMilestoneSubmit = () => {
+    if (selectedMilestone && milestoneNote.trim()) {
+      milestoneMutation.mutate({ milestone: selectedMilestone, note: milestoneNote.trim() });
+    }
+  };
+
   const isLoading = summaryLoading || commitmentsLoading;
+  const hasCommitments = (commitments?.length ?? 0) > 0;
 
   return (
     <AdminLayout>
@@ -143,10 +208,25 @@ export default function FulfillmentConsolePage() {
               {summary?.campaignTitle || "Loading..."}
             </p>
           </div>
-          <Button onClick={() => setImportDialogOpen(true)} data-testid="button-import-delivery">
-            <Upload className="w-4 h-4 mr-2" />
-            Import Delivery Updates
+          <Button onClick={() => setMilestoneDialogOpen(true)} data-testid="button-update-milestone">
+            <Plus className="w-4 h-4 mr-2" />
+            Update Milestone
           </Button>
+          {hasCommitments ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="icon" data-testid="button-more-actions">
+                  <MoreHorizontal className="w-4 h-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setImportDialogOpen(true)}>
+                  <Upload className="w-4 h-4 mr-2" />
+                  Import Delivery Updates
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
         </div>
 
         {isLoading ? (
@@ -190,8 +270,40 @@ export default function FulfillmentConsolePage() {
 
             <Card>
               <CardHeader>
+                <CardTitle className="text-lg">Delivery Timeline</CardTitle>
+                <CardDescription>Append-only milestone events</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {milestonesLoading ? (
+                  <Skeleton className="h-20" />
+                ) : milestones && milestones.length > 0 ? (
+                  <div className="space-y-3">
+                    {milestones.map((event) => (
+                      <div key={event.id} className="flex gap-3 items-start border-l-2 border-muted pl-4 py-2">
+                        <Clock className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Badge variant="secondary">{event.milestone}</Badge>
+                            <span className="text-xs text-muted-foreground font-mono">
+                              {format(new Date(event.createdAt), "yyyy-MM-dd HH:mm")}
+                            </span>
+                          </div>
+                          <p className="text-sm text-muted-foreground mt-1">{event.note}</p>
+                          <p className="text-xs text-muted-foreground mt-1">by {event.actor}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground text-center py-4">No delivery events yet.</p>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
                 <CardTitle className="text-lg">Commitment Roster</CardTitle>
-                <CardDescription>Participants and their delivery status</CardDescription>
+                <CardDescription>Commitments and their delivery status</CardDescription>
               </CardHeader>
               <CardContent className="p-0">
                 {commitments && commitments.length > 0 ? (
@@ -200,7 +312,6 @@ export default function FulfillmentConsolePage() {
                       <TableHeader>
                         <TableRow>
                           <TableHead>Reference</TableHead>
-                          <TableHead>Participant</TableHead>
                           <TableHead>Quantity</TableHead>
                           <TableHead>Status</TableHead>
                           <TableHead>Joined</TableHead>
@@ -210,7 +321,6 @@ export default function FulfillmentConsolePage() {
                         {commitments.map((c) => (
                           <TableRow key={c.id} data-testid={`roster-row-${c.id}`}>
                             <TableCell className="font-mono text-xs">{c.referenceNumber}</TableCell>
-                            <TableCell>{c.participantName}</TableCell>
                             <TableCell className="font-mono">{c.quantity}</TableCell>
                             <TableCell>
                               <Badge variant="outline">{c.status}</Badge>
@@ -231,6 +341,62 @@ export default function FulfillmentConsolePage() {
           </>
         )}
       </div>
+
+      <Dialog open={milestoneDialogOpen} onOpenChange={setMilestoneDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Update Milestone</DialogTitle>
+            <DialogDescription>
+              Record a delivery milestone event. This is append-only and cannot be edited.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="milestone">Milestone</Label>
+              <Select value={selectedMilestone} onValueChange={setSelectedMilestone}>
+                <SelectTrigger data-testid="select-milestone">
+                  <SelectValue placeholder="Select milestone" />
+                </SelectTrigger>
+                <SelectContent>
+                  {MILESTONES.map((m) => (
+                    <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="note">Note (required)</Label>
+              <Textarea
+                id="note"
+                placeholder="Brief reason or description..."
+                value={milestoneNote}
+                onChange={(e) => setMilestoneNote(e.target.value)}
+                className="resize-none"
+                data-testid="input-milestone-note"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMilestoneDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleMilestoneSubmit}
+              disabled={!selectedMilestone || !milestoneNote.trim() || milestoneMutation.isPending}
+              data-testid="button-confirm-milestone"
+            >
+              {milestoneMutation.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                "Record Milestone"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
         <DialogContent>

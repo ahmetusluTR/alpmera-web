@@ -1,0 +1,77 @@
+Fix Refunds, Refund Plans, Deliveries list, and Fulfillment Console operational usability with minimal changes and no heavy refactors.
+
+SCOPE (ONLY):
+A) /admin/refunds
+B) /admin/refund-plans + /admin/refund-plans/:planId (light)
+C) /admin/deliveries
+D) /admin/campaigns/:campaignId/fulfillment
+
+GUARDRAILS:
+- Do NOT add new libraries.
+- Do NOT change escrow ledger append-only rules or idempotency.
+- Do NOT show user PII (name/email) anywhere in refunds/deliveries pages.
+- Keep import workflows only where already intended:
+  - Refund Plans import
+  - Campaign Fulfillment import
+- Avoid “manual add rows” UIs; use templates + minimal manual milestone controls.
+
+A) Refunds page fixes:
+1) Filters:
+   - Ensure the status dropdown reflects actual statuses returned by backend.
+   - If backend only supports Pending/Completed, keep it but ensure filtering works.
+2) Reason display:
+   - Map reason codes to human-readable labels (admin-safe), with raw code available as secondary/tooltip.
+   - Example: campaign_failed_refund -> “Campaign failed (bulk refund)”
+3) PII guard:
+   - Ensure refunds list does not request or render user name/email.
+   - If response includes user fields, ignore them in UI.
+
+B) Refund Plans fixes:
+1) Sorting:
+   - Add a real sort control (Created, Updated, Status, Row count, Total amount).
+   - Add ASC/DESC toggle.
+2) Template download:
+   - Add a “Download CSV template” button next to “Import Refund Plan”.
+   - Provide a minimal template CSV with correct headers for import.
+   - Do NOT implement manual add rows UI.
+3) Keep import as DRAFT plan creation only.
+
+C) Deliveries list fixes:
+1) Sorting:
+   - Add sort control: Campaign, Strategy, Status, Last Update, Next Due with ASC/DESC toggle.
+2) Import discoverability:
+   - Do NOT add import here.
+   - Add clear CTA text/button: “Manage fulfillment updates” that navigates to the campaign fulfillment console when a row is selected/clicked.
+   - Make each row link to /admin/campaigns/:campaignId/fulfillment.
+
+D) Fulfillment Console fixes (/admin/campaigns/:campaignId/fulfillment):
+1) Delivery details:
+   - Add a delivery timeline section using the shared Timeline component (append-only style).
+   - If no events, show “No delivery events yet.”
+2) Manual milestone management (CRITICAL):
+   - Add a small “Update milestone” control (single select + confirm) to create a delivery milestone event for the campaign:
+     - Fulfillment scheduled
+     - Fulfillment in progress
+     - Shipped
+     - Delivered
+     - Exception raised
+   - Require a short reason note (text input) before submitting.
+   - This should call an existing endpoint if present; if none exists, create the minimal admin endpoint:
+     - POST /api/admin/campaigns/:campaignId/fulfillment/milestone
+     body: { milestone, note }
+   - Must be append-only and logged; do not edit old events.
+3) Import button behavior:
+   - Keep “Import Delivery Updates” but make it secondary:
+     - Hide or disable it when there are zero commitments.
+     - Or move under a “More actions” dropdown.
+4) Commitment roster:
+   - Fix “No commitments found” if commitments exist by ensuring correct endpoint wiring and rendering.
+   - Rename “Participants” to “Commitments” in this page text.
+
+DELIVERABLE:
+- Refunds reason labels and filter sanity; no PII.
+- Refund Plans: sort + template download.
+- Deliveries list: sort + rows link to fulfillment console.
+- Fulfillment Console: manual milestone update + delivery timeline + import contextual.
+- Short summary of changed files and any minimal new endpoint added.
+- No large code dumps.

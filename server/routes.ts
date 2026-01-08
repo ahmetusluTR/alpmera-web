@@ -1623,6 +1623,70 @@ export async function registerRoutes(
     }
   });
 
+  // In-memory milestone storage (would be database in production)
+  const campaignMilestones: Map<string, Array<{
+    id: string;
+    milestone: string;
+    note: string;
+    createdAt: string;
+    actor: string;
+  }>> = new Map();
+
+  // Admin: Get fulfillment milestones for campaign
+  app.get("/api/admin/campaigns/:id/fulfillment/milestones", requireAdminAuth, async (req, res) => {
+    try {
+      const campaignId = req.params.id;
+      const milestones = campaignMilestones.get(campaignId) || [];
+      res.json(milestones.slice().reverse()); // Most recent first
+    } catch (error) {
+      console.error("Error fetching milestones:", error);
+      res.status(500).json({ error: "Failed to fetch milestones" });
+    }
+  });
+
+  // Admin: Add fulfillment milestone (append-only)
+  app.post("/api/admin/campaigns/:id/fulfillment/milestone", requireAdminAuth, async (req, res) => {
+    try {
+      const campaignId = req.params.id;
+      const { milestone, note } = req.body;
+      
+      if (!milestone || !note) {
+        return res.status(400).json({ error: "Milestone and note are required" });
+      }
+      
+      const campaign = await storage.getCampaignWithStats(campaignId);
+      if (!campaign) {
+        return res.status(404).json({ error: "Campaign not found" });
+      }
+      
+      const newEvent = {
+        id: crypto.randomUUID(),
+        milestone,
+        note,
+        createdAt: new Date().toISOString(),
+        actor: (req as any).adminUsername || "admin",
+      };
+      
+      if (!campaignMilestones.has(campaignId)) {
+        campaignMilestones.set(campaignId, []);
+      }
+      campaignMilestones.get(campaignId)!.push(newEvent);
+      
+      // Log admin action
+      await storage.createAdminActionLog({
+        campaignId,
+        adminUsername: newEvent.actor,
+        action: "ADD_MILESTONE",
+        reason: `${milestone}: ${note}`,
+      });
+      
+      res.json({ success: true, event: newEvent });
+    } catch (error) {
+      console.error("Error adding milestone:", error);
+      res.status(500).json({ error: "Failed to add milestone" });
+    }
+  });
+
   // Admin: Import fulfillment updates (CSV)
   app.post("/api/admin/campaigns/:id/fulfillment/import", requireAdminAuth, async (req, res) => {
     try {
