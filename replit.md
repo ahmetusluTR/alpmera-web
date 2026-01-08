@@ -109,8 +109,13 @@ AGGREGATION → SUCCESS → FULFILLMENT → RELEASED
 ### 4-Step Commitment Wizard
 1. **Review Rules** - Read and accept campaign rules
 2. **Commitment Amount** - Enter details and select quantity
-3. **Review & Confirm** - Verify all information
+3. **Review & Confirm** - Verify all information (requires auth + complete profile)
 4. **Escrow Confirmation** - Receive reference number
+
+**Profile Return Path:**
+- If user needs to complete profile at step 3, clicking "Complete profile" redirects to `/account?returnTo=/campaign/{id}/commit?step=3`
+- After saving profile, user is automatically redirected back to step 3 with profile unlocked
+- Auth context is refetched on wizard mount to ensure profile completeness is up-to-date
 
 ### Escrow Ledger (Append-Only)
 - Every fund movement creates an immutable entry

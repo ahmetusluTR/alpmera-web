@@ -1,5 +1,5 @@
-import { useEffect } from "react";
-import { useLocation } from "wouter";
+import { useEffect, useMemo } from "react";
+import { useLocation, useSearch } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -14,7 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
 import { apiRequest } from "@/lib/queryClient";
-import { User, Package, Loader2 } from "lucide-react";
+import { User, Package, Loader2, ArrowLeft } from "lucide-react";
 import { format } from "date-fns";
 
 // Use the exact field names from the database schema
@@ -62,15 +62,23 @@ function getCommitmentStatus(campaignState: string): { label: string; variant: "
 
 export default function Account() {
   const [, setLocation] = useLocation();
+  const searchString = useSearch();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user, isAuthenticated, isLoading: authLoading, refetch: refetchAuth } = useAuth();
 
+  // Parse returnTo from query string for redirect after profile save
+  const returnTo = useMemo(() => {
+    const params = new URLSearchParams(searchString);
+    return params.get("returnTo");
+  }, [searchString]);
+
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
-      setLocation("/signin?next=/account");
+      const nextUrl = returnTo ? `/account?returnTo=${encodeURIComponent(returnTo)}` : "/account";
+      setLocation(`/signin?next=${encodeURIComponent(nextUrl)}`);
     }
-  }, [authLoading, isAuthenticated, setLocation]);
+  }, [authLoading, isAuthenticated, setLocation, returnTo]);
 
   const form = useForm<ProfileFormData>({
     resolver: zodResolver(profileSchema),
@@ -114,11 +122,19 @@ export default function Account() {
     onSuccess: async () => {
       // Invalidate and refetch to ensure auth context gets updated profile
       await queryClient.invalidateQueries({ queryKey: ["/api/me"] });
-      refetchAuth();
+      await refetchAuth();
+      
       toast({
-        title: "Profile updated",
-        description: "Your delivery profile has been saved.",
+        title: "Profile saved",
+        description: returnTo 
+          ? "Returning to your commitment..." 
+          : "Your delivery profile has been saved.",
       });
+      
+      // Redirect back to returnTo if present (e.g., commitment wizard)
+      if (returnTo) {
+        setLocation(returnTo);
+      }
     },
     onError: (error: Error) => {
       toast({
@@ -154,6 +170,18 @@ export default function Account() {
   return (
     <Layout>
       <div className="max-w-4xl mx-auto px-6 py-12">
+        {returnTo && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setLocation(returnTo)}
+            className="mb-4"
+            data-testid="button-back-to-wizard"
+          >
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Back to commitment
+          </Button>
+        )}
         <h1 className="text-2xl font-semibold mb-2" data-testid="text-account-heading">Account</h1>
         <p className="text-muted-foreground mb-8">{user?.email}</p>
 

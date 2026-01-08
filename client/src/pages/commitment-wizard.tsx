@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useParams, useLocation } from "wouter";
+import { useParams, useLocation, useSearch } from "wouter";
 import { Layout } from "@/components/layout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -60,11 +60,27 @@ const STEPS = [
 export default function CommitmentWizard() {
   const { id } = useParams<{ id: string }>();
   const [, navigate] = useLocation();
+  const searchString = useSearch();
   const { toast } = useToast();
-  const { user, isAuthenticated, isLoading: authLoading, isProfileComplete } = useAuth();
+  const { user, isAuthenticated, isLoading: authLoading, isProfileComplete, refetch: refetchAuth } = useAuth();
 
-  const [step, setStep] = useState(1);
-  const [rulesAccepted, setRulesAccepted] = useState(false);
+  // Parse step from query string (for returning from profile completion)
+  const initialStep = useMemo(() => {
+    const params = new URLSearchParams(searchString);
+    const stepParam = params.get("step");
+    const parsed = stepParam ? parseInt(stepParam, 10) : 1;
+    return parsed >= 1 && parsed <= 3 ? parsed : 1;
+  }, [searchString]);
+
+  // Refetch auth on mount to ensure profile completeness is up-to-date
+  // (especially after returning from profile completion)
+  useEffect(() => {
+    refetchAuth();
+  }, [refetchAuth]);
+
+  const [step, setStep] = useState(initialStep);
+  // If returning to step 3, rules were already accepted
+  const [rulesAccepted, setRulesAccepted] = useState(initialStep >= 2);
   const [formData, setFormData] = useState({
     participantName: "",
     participantEmail: "",
@@ -472,7 +488,7 @@ export default function CommitmentWizard() {
                       <Button 
                         variant="outline" 
                         size="sm" 
-                        onClick={() => navigate("/account")}
+                        onClick={() => navigate(`/account?returnTo=/campaign/${id}/commit?step=3`)}
                         data-testid="button-complete-profile-gate"
                       >
                         Complete profile
