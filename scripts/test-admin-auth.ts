@@ -32,6 +32,10 @@ const ADMIN_ROUTES = [
     description: "Transition campaign state",
     body: { newState: "FAILED", reason: "Security test", adminUsername: "security_test" }
   },
+  { method: "POST", path: "/api/admin/campaigns", 
+    description: "Create campaign",
+    body: { adminUsername: "security_test", title: "Security Test", rules: "Test", targetAmount: "1000", unitPrice: "10", aggregationDeadline: new Date(Date.now() + 86400000).toISOString() }
+  },
 ];
 
 async function makeRequest(
@@ -68,9 +72,9 @@ async function testNoAuthHeader(serverHasAdminKey: boolean): Promise<TestResult[
       passed = status === 401;
       expected = "401";
     } else {
-      // Dev mode: GET allowed, POST might be 400 for validation errors
-      passed = route.method === "GET" ? status === 200 : (status === 400 || status === 200);
-      expected = route.method === "GET" ? "200 (dev mode)" : "400/200 (dev mode)";
+      // Dev mode: GET allowed, POST might be 400 for validation errors or 200/201 for success
+      passed = route.method === "GET" ? status === 200 : (status === 400 || status === 200 || status === 201);
+      expected = route.method === "GET" ? "200 (dev mode)" : "400/200/201 (dev mode)";
     }
     
     results.push({
@@ -109,8 +113,8 @@ async function testWrongAuthHeader(serverHasAdminKey: boolean): Promise<TestResu
       expected = "401";
     } else {
       // Dev mode without key: header is ignored, falls through to dev logic
-      passed = route.method === "GET" ? status === 200 : (status === 400 || status === 200);
-      expected = route.method === "GET" ? "200 (dev mode)" : "400/200 (dev mode)";
+      passed = route.method === "GET" ? status === 200 : (status === 400 || status === 200 || status === 201);
+      expected = route.method === "GET" ? "200 (dev mode)" : "400/200/201 (dev mode)";
     }
     
     results.push({

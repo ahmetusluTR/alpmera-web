@@ -41,7 +41,8 @@ import {
   CheckCircle,
   RefreshCw,
   Clock,
-  FileText
+  FileText,
+  Plus
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -78,9 +79,19 @@ export default function AdminConsole() {
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [stateFilter, setStateFilter] = useState<string>("all");
   const [transitionDialogOpen, setTransitionDialogOpen] = useState(false);
+  const [createCampaignDialogOpen, setCreateCampaignDialogOpen] = useState(false);
   const [targetState, setTargetState] = useState<CampaignState | null>(null);
   const [transitionReason, setTransitionReason] = useState("");
   const [adminUsername, setAdminUsername] = useState("admin");
+  
+  // Create campaign form state
+  const [newCampaignTitle, setNewCampaignTitle] = useState("");
+  const [newCampaignDescription, setNewCampaignDescription] = useState("");
+  const [newCampaignRules, setNewCampaignRules] = useState("");
+  const [newCampaignImageUrl, setNewCampaignImageUrl] = useState("");
+  const [newCampaignTargetAmount, setNewCampaignTargetAmount] = useState("");
+  const [newCampaignUnitPrice, setNewCampaignUnitPrice] = useState("");
+  const [newCampaignDeadline, setNewCampaignDeadline] = useState("");
 
   const { data: campaigns, isLoading: campaignsLoading } = useQuery<CampaignWithStats[]>({
     queryKey: ["/api/campaigns"],
@@ -167,6 +178,55 @@ export default function AdminConsole() {
     },
   });
 
+  const createCampaignMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", `/api/admin/campaigns`, {
+        adminUsername,
+        title: newCampaignTitle,
+        description: newCampaignDescription,
+        rules: newCampaignRules,
+        imageUrl: newCampaignImageUrl || null,
+        targetAmount: newCampaignTargetAmount,
+        unitPrice: newCampaignUnitPrice,
+        minCommitment: newCampaignUnitPrice,
+        aggregationDeadline: newCampaignDeadline,
+      });
+      return response.json();
+    },
+    onSuccess: (campaign) => {
+      toast({ title: "Campaign Created", description: `Campaign "${campaign.title}" has been created in AGGREGATION state.` });
+      queryClient.invalidateQueries({ queryKey: ["/api/campaigns"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/logs"] });
+      setCreateCampaignDialogOpen(false);
+      resetCreateCampaignForm();
+      setSelectedCampaignId(campaign.id);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to Create Campaign", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const resetCreateCampaignForm = () => {
+    setNewCampaignTitle("");
+    setNewCampaignDescription("");
+    setNewCampaignRules("");
+    setNewCampaignImageUrl("");
+    setNewCampaignTargetAmount("");
+    setNewCampaignUnitPrice("");
+    setNewCampaignDeadline("");
+  };
+
+  const isCreateFormValid = () => {
+    return (
+      newCampaignTitle.trim() !== "" &&
+      newCampaignRules.trim() !== "" &&
+      parseFloat(newCampaignTargetAmount) > 0 &&
+      parseFloat(newCampaignUnitPrice) > 0 &&
+      newCampaignDeadline !== "" &&
+      new Date(newCampaignDeadline) > new Date()
+    );
+  };
+
   const filteredCampaigns = campaigns?.filter(c => stateFilter === "all" || c.state === stateFilter) || [];
 
   const openTransitionDialog = (state: CampaignState) => {
@@ -207,7 +267,17 @@ export default function AdminConsole() {
           <div className="lg:col-span-1 space-y-6">
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-base">Campaigns</CardTitle>
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <CardTitle className="text-base">Campaigns</CardTitle>
+                  <Button 
+                    size="sm" 
+                    onClick={() => setCreateCampaignDialogOpen(true)}
+                    data-testid="button-create-campaign"
+                  >
+                    <Plus className="w-4 h-4 mr-1" />
+                    Create
+                  </Button>
+                </div>
                 <Select value={stateFilter} onValueChange={setStateFilter}>
                   <SelectTrigger data-testid="select-state-filter">
                     <SelectValue placeholder="Filter by state" />
@@ -519,6 +589,126 @@ export default function AdminConsole() {
               data-testid="button-confirm-transition"
             >
               {transitionMutation.isPending ? "Processing..." : `Transition to ${targetState}`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={createCampaignDialogOpen} onOpenChange={setCreateCampaignDialogOpen}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Plus className="w-5 h-5 text-chart-1" />
+              Create New Campaign
+            </DialogTitle>
+            <DialogDescription>
+              Create a new campaign in AGGREGATION state. All fields marked with * are required.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="campaign-title">Title *</Label>
+              <Input
+                id="campaign-title"
+                placeholder="Enter campaign title"
+                value={newCampaignTitle}
+                onChange={(e) => setNewCampaignTitle(e.target.value)}
+                data-testid="input-campaign-title"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="campaign-rules">Rules *</Label>
+              <Textarea
+                id="campaign-rules"
+                placeholder="Enter the explicit rules participants must understand and agree to"
+                value={newCampaignRules}
+                onChange={(e) => setNewCampaignRules(e.target.value)}
+                className="min-h-[100px]"
+                data-testid="input-campaign-rules"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="campaign-target">Target Amount *</Label>
+                <Input
+                  id="campaign-target"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="10000"
+                  value={newCampaignTargetAmount}
+                  onChange={(e) => setNewCampaignTargetAmount(e.target.value)}
+                  data-testid="input-campaign-target"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="campaign-unit-price">Unit Price *</Label>
+                <Input
+                  id="campaign-unit-price"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="99.99"
+                  value={newCampaignUnitPrice}
+                  onChange={(e) => setNewCampaignUnitPrice(e.target.value)}
+                  data-testid="input-campaign-unit-price"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="campaign-deadline">Aggregation Deadline *</Label>
+              <Input
+                id="campaign-deadline"
+                type="datetime-local"
+                value={newCampaignDeadline}
+                onChange={(e) => setNewCampaignDeadline(e.target.value)}
+                data-testid="input-campaign-deadline"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="campaign-description">Description (optional)</Label>
+              <Textarea
+                id="campaign-description"
+                placeholder="Brief campaign description"
+                value={newCampaignDescription}
+                onChange={(e) => setNewCampaignDescription(e.target.value)}
+                data-testid="input-campaign-description"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="campaign-image">Image URL (optional)</Label>
+              <Input
+                id="campaign-image"
+                type="url"
+                placeholder="https://example.com/image.jpg"
+                value={newCampaignImageUrl}
+                onChange={(e) => setNewCampaignImageUrl(e.target.value)}
+                data-testid="input-campaign-image"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setCreateCampaignDialogOpen(false);
+                resetCreateCampaignForm();
+              }}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={() => createCampaignMutation.mutate()}
+              disabled={!isCreateFormValid() || createCampaignMutation.isPending}
+              data-testid="button-submit-campaign"
+            >
+              {createCampaignMutation.isPending ? "Creating..." : "Create Campaign"}
             </Button>
           </DialogFooter>
         </DialogContent>

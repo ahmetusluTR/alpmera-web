@@ -566,6 +566,72 @@ export async function registerRoutes(
     }
   });
 
+  // Admin: Create new campaign
+  // Protected by requireAdminAuth middleware
+  // ALWAYS creates campaigns in AGGREGATION state only
+  app.post("/api/admin/campaigns", requireAdminAuth, async (req, res) => {
+    try {
+      const { adminUsername, title, description, rules, imageUrl, targetAmount, minCommitment, maxCommitment, unitPrice, aggregationDeadline } = req.body;
+
+      if (!adminUsername) {
+        return res.status(400).json({ error: "Admin username is required for audit trail" });
+      }
+
+      // Validate required fields
+      if (!title || !title.trim()) {
+        return res.status(400).json({ error: "Title is required" });
+      }
+      if (!rules || !rules.trim()) {
+        return res.status(400).json({ error: "Rules text is required" });
+      }
+      if (!targetAmount || parseFloat(targetAmount) <= 0) {
+        return res.status(400).json({ error: "Target amount must be positive" });
+      }
+      if (!unitPrice || parseFloat(unitPrice) <= 0) {
+        return res.status(400).json({ error: "Unit price must be positive" });
+      }
+      if (!aggregationDeadline) {
+        return res.status(400).json({ error: "Aggregation deadline is required" });
+      }
+
+      const deadlineDate = new Date(aggregationDeadline);
+      if (isNaN(deadlineDate.getTime()) || deadlineDate <= new Date()) {
+        return res.status(400).json({ error: "Aggregation deadline must be a valid future date" });
+      }
+
+      // Create campaign - ALWAYS starts in AGGREGATION state
+      const campaign = await storage.createCampaign({
+        title: title.trim(),
+        description: description?.trim() || "",
+        rules: rules.trim(),
+        imageUrl: imageUrl?.trim() || null,
+        targetAmount: targetAmount.toString(),
+        minCommitment: minCommitment?.toString() || unitPrice.toString(),
+        maxCommitment: maxCommitment?.toString() || null,
+        unitPrice: unitPrice.toString(),
+        state: "AGGREGATION", // ALWAYS AGGREGATION
+        aggregationDeadline: deadlineDate,
+        supplierAccepted: false,
+      });
+
+      // Log admin action - CAMPAIGN_CREATE
+      await storage.createAdminActionLog({
+        campaignId: campaign.id,
+        adminUsername,
+        action: "CAMPAIGN_CREATE",
+        previousState: null,
+        newState: "AGGREGATION",
+        reason: "admin_create_campaign",
+      });
+
+      console.log(`[ADMIN] Campaign created: ${campaign.id} by ${adminUsername}`);
+      res.status(201).json(campaign);
+    } catch (error) {
+      console.error("Error creating campaign:", error);
+      res.status(500).json({ error: "Failed to create campaign" });
+    }
+  });
+
   // Admin: Get action logs (append-only audit trail)
   // Protected by requireAdminAuth middleware
   app.get("/api/admin/logs", requireAdminAuth, async (req, res) => {
