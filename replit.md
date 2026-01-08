@@ -89,6 +89,12 @@ AGGREGATION → SUCCESS → FULFILLMENT → RELEASED
 - `POST /api/auth/logout` - Destroy session and clear cookie
 - `GET /api/me` - Get current user and profile (protected)
 - `PATCH /api/me/profile` - Update user profile (protected)
+- `GET /api/account/commitments` - Get user's own commitments with campaign details (protected)
+
+### Commitment Linking
+- When authenticated, `POST /api/campaigns/:id/commit` attaches `user_id` to the commitment
+- Anonymous commitments still work (user_id is null) - backward compatible
+- `participantEmail` is always stored for audit/legacy purposes
 
 ### Admin Endpoints
 - `GET /api/campaigns/:id/commitments` - List campaign commitments
