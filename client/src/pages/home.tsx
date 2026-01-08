@@ -25,7 +25,7 @@ export default function Home() {
           </h1>
           <p className="text-xl text-muted-foreground leading-relaxed max-w-2xl mx-auto" data-testid="hero-description">
             Alpmera is not a marketplace. It is a platform where communities form commitments 
-            to purchase together. Your funds are locked in escrow until campaign conditions are 
+            to participate together. Your funds are locked in escrow until campaign conditions are 
             met. No pressure. No urgency. Just verified collective action.
           </p>
         </div>

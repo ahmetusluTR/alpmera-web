@@ -78,7 +78,7 @@ export default function HowItWorks() {
                 number="2a"
                 title="SUCCESS"
                 status="success"
-                description="The target was met. The supplier is notified and has the opportunity to accept the aggregated order. Funds remain locked pending fulfillment."
+                description="The target was met. The supplier is notified and has the opportunity to accept the aggregated commitment. Funds remain locked pending fulfillment."
               />
               <LifecycleStep 
                 number="2b"
@@ -94,7 +94,7 @@ export default function HowItWorks() {
               number="3"
               title="FULFILLMENT"
               status="active"
-              description="The supplier has accepted and is fulfilling the order. Participants receive their goods. Funds remain locked until fulfillment is confirmed."
+              description="The supplier has accepted and is fulfilling the commitment. Participants receive their goods. Funds remain locked until fulfillment is confirmed."
             />
             <div className="flex justify-center">
               <ArrowRight className="w-5 h-5 text-muted-foreground rotate-90" />
