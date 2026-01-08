@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
 import { Layout } from "@/components/layout";
@@ -9,10 +9,10 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Progress } from "@/components/ui/progress";
-import { AlertTriangle, ArrowLeft, ArrowRight, CheckCircle, Lock, FileCheck, Calculator, ClipboardCheck } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ArrowRight, CheckCircle, Lock, FileCheck, Calculator, ClipboardCheck, User } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useAuth } from "@/lib/auth";
 import type { Campaign } from "@shared/schema";
 
 function generateUUID(): string {
@@ -61,6 +61,7 @@ export default function CommitmentWizard() {
   const { id } = useParams<{ id: string }>();
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  const { user, isAuthenticated, isLoading: authLoading, isProfileComplete } = useAuth();
 
   const [step, setStep] = useState(1);
   const [rulesAccepted, setRulesAccepted] = useState(false);
@@ -76,6 +77,16 @@ export default function CommitmentWizard() {
     queryKey: ["/api/campaigns", id],
     enabled: !!id,
   });
+
+  useEffect(() => {
+    if (user?.profile && !formData.participantName && !formData.participantEmail) {
+      setFormData(prev => ({
+        ...prev,
+        participantName: user.profile?.fullName || prev.participantName,
+        participantEmail: user.email || prev.participantEmail,
+      }));
+    }
+  }, [user]);
 
   const commitMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
@@ -178,6 +189,9 @@ export default function CommitmentWizard() {
 
   const handleNext = () => {
     if (step === 3) {
+      if (!isAuthenticated || !isProfileComplete) {
+        return;
+      }
       commitMutation.mutate(formData);
     } else {
       setStep(step + 1);
@@ -427,12 +441,56 @@ export default function CommitmentWizard() {
                   </p>
                 </div>
                 
+                {!isAuthenticated && !authLoading && (
+                  <div className="flex items-start gap-3 p-4 border border-border rounded-md bg-muted/30">
+                    <User className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium mb-1">Sign in required</p>
+                      <p className="text-sm text-muted-foreground mb-3">
+                        You must sign in to confirm your commitment. Your delivery profile is needed for fulfillment.
+                      </p>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => navigate(`/signin?next=/campaign/${id}/commit`)}
+                        data-testid="button-signin-gate"
+                      >
+                        Sign in to continue
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                
+                {isAuthenticated && !isProfileComplete && (
+                  <div className="flex items-start gap-3 p-4 border border-border rounded-md bg-muted/30">
+                    <User className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium mb-1">Delivery profile required</p>
+                      <p className="text-sm text-muted-foreground mb-3">
+                        Please complete your delivery profile before confirming. This information is required for fulfillment.
+                      </p>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => navigate("/account")}
+                        data-testid="button-complete-profile-gate"
+                      >
+                        Complete profile
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                
                 <div className="flex justify-between gap-4">
                   <Button variant="outline" onClick={handleBack} data-testid="button-back-step-3">
                     <ArrowLeft className="w-4 h-4 mr-2" />
                     Back
                   </Button>
-                  <Button onClick={handleNext} disabled={commitMutation.isPending} data-testid="button-confirm-commitment">
+                  <Button 
+                    onClick={handleNext} 
+                    disabled={commitMutation.isPending || !isAuthenticated || !isProfileComplete} 
+                    data-testid="button-confirm-commitment"
+                  >
                     {commitMutation.isPending ? "Processing..." : "Confirm Commitment"}
                   </Button>
                 </div>
