@@ -500,17 +500,81 @@ export async function registerRoutes(
     }
   });
 
-  // Get user's own commitments with campaign info
+  // Get user's own commitments with campaign info and last status update
   // GET /api/account/commitments
   app.get("/api/account/commitments", requireUserAuth, async (req, res) => {
     try {
       const userId = (req as any).userId;
       const userCommitments = await storage.getCommitmentsByUserId(userId);
       
-      res.json(userCommitments);
+      // Enrich with last campaign status update timestamp
+      const enrichedCommitments = await Promise.all(
+        userCommitments.map(async (commitment) => {
+          // Get last status transition from admin logs
+          const adminLogs = await storage.getAdminActionLogsByCampaign(commitment.campaignId);
+          const lastTransition = adminLogs
+            .filter(log => log.action === "state_transition" && log.newState)
+            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+          
+          return {
+            ...commitment,
+            lastCampaignStatusUpdate: lastTransition?.createdAt || commitment.campaign.createdAt,
+          };
+        })
+      );
+      
+      res.json(enrichedCommitments);
     } catch (error) {
       console.error("[USER] Error fetching user commitments:", error);
       res.status(500).json({ error: "Failed to fetch commitments" });
+    }
+  });
+
+  // Get single commitment detail by reference number (for user's own commitment)
+  // GET /api/account/commitments/:code
+  app.get("/api/account/commitments/:code", requireUserAuth, async (req, res) => {
+    try {
+      const userId = (req as any).userId;
+      const code = req.params.code;
+
+      // Get commitment with campaign
+      const commitment = await storage.getCommitmentWithCampaign(code);
+      if (!commitment) {
+        return res.status(404).json({ error: "Commitment not found" });
+      }
+
+      // Verify ownership
+      if (commitment.userId !== userId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      // Get escrow entries for this commitment
+      const escrowEntries = await storage.getEscrowEntriesByCommitment(commitment.id);
+
+      // Get admin action logs for campaign status history (status transitions)
+      const adminLogs = await storage.getAdminActionLogsByCampaign(commitment.campaignId);
+      const statusTransitions = adminLogs
+        .filter(log => log.action === "state_transition" && log.newState)
+        .map(log => ({
+          state: log.newState!,
+          timestamp: log.createdAt,
+          reason: log.reason || undefined,
+        }));
+      
+      // Compute last status update timestamp
+      const lastStatusUpdate = statusTransitions.length > 0
+        ? statusTransitions.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0].timestamp
+        : commitment.campaign.createdAt;
+
+      res.json({
+        ...commitment,
+        escrowEntries,
+        statusTransitions,
+        lastCampaignStatusUpdate: lastStatusUpdate,
+      });
+    } catch (error) {
+      console.error("[USER] Error fetching commitment detail:", error);
+      res.status(500).json({ error: "Failed to fetch commitment" });
     }
   });
 

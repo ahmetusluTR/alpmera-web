@@ -15,6 +15,7 @@ import SignIn from "@/pages/signin";
 import AccountIndex from "@/pages/account/index";
 import AccountProfile from "@/pages/account/profile";
 import AccountCommitments from "@/pages/account/commitments";
+import AccountCommitmentDetail from "@/pages/account/commitment-detail";
 import AccountPayments from "@/pages/account/payments";
 import AccountRefunds from "@/pages/account/refunds";
 import AccountSecurity from "@/pages/account/security";
@@ -32,6 +33,7 @@ function Router() {
       <Route path="/account" component={AccountIndex} />
       <Route path="/account/profile" component={AccountProfile} />
       <Route path="/account/commitments" component={AccountCommitments} />
+      <Route path="/account/commitments/:code" component={AccountCommitmentDetail} />
       <Route path="/account/payments" component={AccountPayments} />
       <Route path="/account/refunds" component={AccountRefunds} />
       <Route path="/account/security" component={AccountSecurity} />

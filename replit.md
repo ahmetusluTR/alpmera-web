@@ -103,7 +103,8 @@ AGGREGATION → SUCCESS → FULFILLMENT → RELEASED
 - `POST /api/auth/logout` - Destroy session and clear cookie
 - `GET /api/me` - Get current user and profile (protected)
 - `PATCH /api/me/profile` - Update user profile (protected)
-- `GET /api/account/commitments` - Get user's own commitments with campaign details (protected)
+- `GET /api/account/commitments` - Get user's own commitments with campaign details and lastCampaignStatusUpdate (protected)
+- `GET /api/account/commitments/:code` - Get commitment detail by reference code with escrow entries and status transitions (protected)
 
 ### Commitment Linking
 - When authenticated, `POST /api/campaigns/:id/commit` attaches `user_id` to the commitment
