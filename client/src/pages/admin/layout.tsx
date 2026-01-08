@@ -202,42 +202,40 @@ export function AdminLayout({ children }: AdminLayoutProps) {
     <Layout>
       <div className="flex min-h-[calc(100vh-4rem)]">
         <nav className="w-56 border-r bg-muted/30 p-4 hidden md:block">
-          <div className="space-y-6">
+          <div className="flex flex-col gap-1">
             {navSections.map((section, sectionIdx) => (
-              <div key={sectionIdx}>
+              <div key={sectionIdx} className={section.label ? "mt-4" : ""}>
                 {section.label && (
-                  <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2 px-2">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1 px-2">
                     {section.label}
                   </p>
                 )}
-                <div className="space-y-1">
-                  {section.items.map((item) => {
-                    const isActive = location === item.path || location.startsWith(item.path + "/");
-                    const Icon = item.icon;
-                    return (
-                      <Link key={item.path} href={item.path}>
-                        <Button
-                          variant="ghost"
-                          className={cn(
-                            "w-full justify-start gap-2",
-                            isActive && "bg-muted"
-                          )}
-                          data-testid={`nav-${item.path.split("/").pop()}`}
-                        >
-                          <Icon className="w-4 h-4" />
-                          <span>{item.label}</span>
-                        </Button>
-                      </Link>
-                    );
-                  })}
-                </div>
+                {section.items.map((item) => {
+                  const isActive = location === item.path || location.startsWith(item.path + "/");
+                  const Icon = item.icon;
+                  return (
+                    <Link key={item.path} href={item.path}>
+                      <Button
+                        variant="ghost"
+                        className={cn(
+                          "w-full justify-start gap-2 h-9",
+                          isActive && "bg-muted"
+                        )}
+                        data-testid={`nav-${item.path.split("/").pop()}`}
+                      >
+                        <Icon className="w-4 h-4" />
+                        <span>{item.label}</span>
+                      </Button>
+                    </Link>
+                  );
+                })}
               </div>
             ))}
 
-            <div className="border-t pt-4">
+            <div className="border-t mt-4 pt-3">
               <Button
                 variant="ghost"
-                className="w-full justify-start gap-2 text-muted-foreground"
+                className="w-full justify-start gap-2 h-9 text-muted-foreground"
                 onClick={() => logoutMutation.mutate()}
                 data-testid="button-admin-logout"
               >

@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { AdminLayout } from "./layout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -41,9 +41,14 @@ interface ControlRoomData {
 }
 
 export default function ControlRoomPage() {
+  const [, setLocation] = useLocation();
   const { data, isLoading, error, refetch } = useQuery<ControlRoomData>({
     queryKey: ["/api/admin/control-room"],
   });
+
+  const navigateToCampaign = (campaignId: string) => {
+    setLocation(`/admin/campaigns/${campaignId}`);
+  };
 
   return (
     <AdminLayout>
@@ -72,7 +77,7 @@ export default function ControlRoomPage() {
         ) : (
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <Card>
+              <Card className="min-h-[100px]">
                 <CardHeader className="pb-2">
                   <CardDescription className="flex items-center gap-2">
                     <FileStack className="w-4 h-4" />
@@ -86,7 +91,7 @@ export default function ControlRoomPage() {
                 </CardContent>
               </Card>
 
-              <Card>
+              <Card className="min-h-[100px]">
                 <CardHeader className="pb-2">
                   <CardDescription className="flex items-center gap-2">
                     <AlertTriangle className="w-4 h-4 text-amber-500" />
@@ -100,7 +105,7 @@ export default function ControlRoomPage() {
                 </CardContent>
               </Card>
 
-              <Card>
+              <Card className="min-h-[100px]">
                 <CardHeader className="pb-2">
                   <CardDescription className="flex items-center gap-2">
                     <RotateCcw className="w-4 h-4" />
@@ -114,7 +119,7 @@ export default function ControlRoomPage() {
                 </CardContent>
               </Card>
 
-              <Card>
+              <Card className="min-h-[100px]">
                 <CardHeader className="pb-2">
                   <CardDescription className="flex items-center gap-2">
                     <Wallet className="w-4 h-4" />
@@ -122,7 +127,7 @@ export default function ControlRoomPage() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-2xl font-semibold font-mono" data-testid="tile-escrow-locked">
+                  <p className="text-3xl font-semibold font-mono" data-testid="tile-escrow-locked">
                     ${(data?.tiles.totalEscrowLocked ?? 0).toLocaleString()}
                   </p>
                 </CardContent>
@@ -153,7 +158,12 @@ export default function ControlRoomPage() {
                       </TableHeader>
                       <TableBody>
                         {data.queues.needsAction.slice(0, 5).map((item) => (
-                          <TableRow key={item.id} data-testid={`queue-row-${item.id}`}>
+                          <TableRow 
+                            key={item.id} 
+                            className="cursor-pointer hover-elevate"
+                            onClick={() => navigateToCampaign(item.id)}
+                            data-testid={`queue-row-${item.id}`}
+                          >
                             <TableCell className="font-medium truncate max-w-[150px]">{item.title}</TableCell>
                             <TableCell><Badge variant="outline">{item.state}</Badge></TableCell>
                             <TableCell className="text-sm text-muted-foreground">
