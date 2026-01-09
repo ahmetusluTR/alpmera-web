@@ -72,6 +72,7 @@ export default function SignIn() {
     },
     onSuccess: () => {
       refetch();
+      window.dispatchEvent(new Event("alpmera-auth-changed"));
       toast({
         title: "Signed in",
         description: "Welcome to Alpmera.",

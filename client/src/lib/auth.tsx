@@ -1,4 +1,4 @@
-import { createContext, useContext, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useCallback, useEffect, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "./queryClient";
 
@@ -44,6 +44,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     staleTime: 1000 * 60 * 5,
     refetchOnWindowFocus: true,
   });
+
+  useEffect(() => {
+    const handleAuthChanged = () => {
+      refetch();
+    };
+    window.addEventListener("alpmera-auth-changed", handleAuthChanged);
+    return () => {
+      window.removeEventListener("alpmera-auth-changed", handleAuthChanged);
+    };
+  }, [refetch]);
 
   const signOut = useCallback(async () => {
     try {
