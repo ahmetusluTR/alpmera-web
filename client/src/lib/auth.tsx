@@ -48,12 +48,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const handleAuthChanged = () => {
       refetch();
+      // Also invalidate campaign queries since they return different data based on auth state
+      // Use exact: false to match both ["/api/campaigns"] and ["/api/campaigns", id]
+      queryClient.invalidateQueries({ queryKey: ["/api/campaigns"], exact: false });
     };
     window.addEventListener("alpmera-auth-changed", handleAuthChanged);
     return () => {
       window.removeEventListener("alpmera-auth-changed", handleAuthChanged);
     };
-  }, [refetch]);
+  }, [refetch, queryClient]);
 
   const signOut = useCallback(async () => {
     try {
