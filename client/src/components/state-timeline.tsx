@@ -9,11 +9,11 @@ interface StateTimelineProps {
 const STATES: CampaignState[] = ["AGGREGATION", "SUCCESS", "FULFILLMENT", "RELEASED"];
 
 const STATE_LABELS: Record<CampaignState, string> = {
-  AGGREGATION: "Aggregation",
-  SUCCESS: "Target Met",
-  FAILED: "Failed",
-  FULFILLMENT: "Fulfillment",
-  RELEASED: "Released",
+  AGGREGATION: "Building momentum",
+  SUCCESS: "Target reached",
+  FAILED: "Not completed",
+  FULFILLMENT: "In fulfillment",
+  RELEASED: "Completed",
 };
 
 export function StateTimeline({ currentState, isFailed = false }: StateTimelineProps) {
