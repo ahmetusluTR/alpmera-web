@@ -1,0 +1,101 @@
+You are a Replit AI agent working on Alpmera. Apply changes directly. The user does NOT manually edit code.
+
+BATCH: Campaign Detail UI fixes + copy refinement (public/member-facing)
+
+GOAL:
+Fix remaining campaign detail UI leaks and improve wording to better match Alpmera’s trust-first, non-charity, non-store positioning.
+
+STRICT GUARDRAILS:
+- Do NOT change backend escrow, ledger, pricing logic, or campaign state machine.
+- Do NOT add libraries.
+- Do NOT change admin pages.
+- Do NOT expose funding/target amounts publicly.
+- Keep pricing visible ONLY where a user explicitly takes action (join/commit flow).
+- Avoid store language (buy/order/cart/checkout).
+- Avoid charity language (donate/help).
+
+SCOPE (ONLY):
+- Public/member Campaign Detail page (non-admin view)
+- UI labels, copy, and conditional rendering
+- No routing changes
+
+--------------------------------------------------
+FIXES (IN ORDER)
+--------------------------------------------------
+
+1) REMOVE funding + target amounts from Campaign Progress (CRITICAL)
+- On the Campaign Detail page, remove:
+  - “Funding $X / $Y”
+  - Any numeric target or total dollar amounts
+- Keep:
+  - Progress bar
+  - Percentage (if present)
+  - Qualitative progress label (“Building momentum”, etc.)
+- This applies to ALL non-admin users (public + signed-in members).
+
+2) FIX status pill at top-left (“AGGREGATION”)
+- Do NOT show raw internal status codes.
+- Replace with UI-friendly label using the same mapping already agreed:
+  - AGGREGATION → “Building momentum”
+  - SUCCESS → “Target reached”
+  - FULFILLMENT / RELEASED → “In fulfillment”
+  - FAILED → “Not completed”
+- Ensure this applies to:
+  - Status pill at top-left
+  - Any other status text on the page
+
+3) RENAME “Aggregation deadline”
+- Replace label text:
+  - From: “Aggregation deadline”
+  - To: “Campaign closes”
+- Keep the date/time exactly as-is.
+Reason:
+- “Aggregation” is system language
+- “Campaign closes” is human, neutral, non-commercial
+
+4) REPLACE “Commitment” wording with a better alternative
+The word “commitment” currently feels:
+- charity-like (“donate”)
+- vague
+- emotionally misaligned
+
+DO NOT change backend terminology or API fields.
+This is UI copy only.
+
+Apply the following replacements on Campaign Detail page:
+- Button text:
+  - From: “Make a Commitment”
+  - To: “Join campaign”
+- Section title:
+  - From: “Commitment Details”
+  - To: “Participation details”
+- Line items:
+  - “Minimum Commitment” → “Minimum participation”
+  - “Unit Price” can remain IF this page is explicitly behind sign-in and action intent; otherwise hide until join flow.
+
+If the page is visible before sign-in:
+- Hide price fields entirely
+- Show a neutral line:
+  - “Participation terms shown after joining”
+
+--------------------------------------------------
+CONTENT CONSISTENCY CHECKS
+--------------------------------------------------
+- Ensure no $ amounts appear unless the user is:
+  - signed in AND
+  - explicitly in the join/participation flow
+- Ensure no raw internal state names appear anywhere
+- Ensure wording feels:
+  - neutral
+  - professional
+  - non-charity
+  - non-store
+
+--------------------------------------------------
+DELIVERABLE:
+- Campaign detail page no longer leaks funding/target amounts.
+- Status labels are human-friendly.
+- Deadline label is improved.
+- “Commitment” wording replaced with “Join campaign / Participation”.
+- Brief list of files changed and what was adjusted (no large code dump).
+

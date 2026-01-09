@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { Calendar, ArrowRight, AlertTriangle, CheckCircle, Lock } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import { getStatusLabel, getStatusColor } from "@/lib/campaign-status";
 import type { CampaignState } from "@shared/schema";
 
 interface PublicCampaignDetail {
@@ -30,13 +31,6 @@ interface PublicCampaignDetail {
   totalCommitted?: number;
 }
 
-const STATE_COLORS: Record<string, string> = {
-  AGGREGATION: "bg-chart-1 text-white",
-  SUCCESS: "bg-green-600 dark:bg-green-700 text-white",
-  FAILED: "bg-destructive text-destructive-foreground",
-  FULFILLMENT: "bg-amber-600 dark:bg-amber-700 text-white",
-  RELEASED: "bg-green-700 dark:bg-green-800 text-white",
-};
 
 function getQualitativeLabel(percent: number): string {
   if (percent >= 100) return "Target reached";
@@ -124,8 +118,8 @@ export default function CampaignDetail() {
       >
         <div className="max-w-4xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
-            <Badge className={`text-sm px-3 py-1 ${STATE_COLORS[campaign.state]}`} data-testid="badge-campaign-state">
-              {campaign.state}
+            <Badge className={`text-sm px-3 py-1 ${getStatusColor(campaign.state)}`} data-testid="badge-campaign-state">
+              {getStatusLabel(campaign.state)}
             </Badge>
             <h1 className="text-xl font-semibold" data-testid="campaign-title">{campaign.title}</h1>
           </div>
@@ -191,18 +185,6 @@ export default function CampaignDetail() {
                 <p className="text-xs text-muted-foreground mt-2">{qualitativeLabel}</p>
               </div>
               
-              {hasPricingData && (
-                <>
-                  <Separator />
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Funding</span>
-                    <span className="font-mono text-sm font-medium">
-                      {campaign.totalCommitted!.toLocaleString('en-US', { style: 'currency', currency: 'USD' })} / {targetAmount.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
-                    </span>
-                  </div>
-                </>
-              )}
-              
               <Separator />
               
               <div className="flex items-center gap-3">
@@ -217,7 +199,7 @@ export default function CampaignDetail() {
                       minute: '2-digit'
                     })}
                   </p>
-                  <p className="text-sm text-muted-foreground">Aggregation deadline</p>
+                  <p className="text-sm text-muted-foreground">Campaign closes</p>
                 </div>
               </div>
             </CardContent>
@@ -226,7 +208,7 @@ export default function CampaignDetail() {
           <Card data-testid="card-commitment">
             <CardHeader>
               <CardTitle>
-                {hasPricingData ? "Commitment Details" : "Member Terms"}
+                {hasPricingData ? "Participation details" : "Participation terms"}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -239,14 +221,14 @@ export default function CampaignDetail() {
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Minimum Commitment</span>
+                    <span className="text-sm text-muted-foreground">Minimum participation</span>
                     <span className="font-mono font-medium" data-testid="text-min-commitment">
                       {minCommitment.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
                     </span>
                   </div>
                   {maxCommitment && (
                     <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">Maximum Commitment</span>
+                      <span className="text-sm text-muted-foreground">Maximum participation</span>
                       <span className="font-mono font-medium" data-testid="text-max-commitment">
                         {maxCommitment.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}
                       </span>
@@ -258,7 +240,7 @@ export default function CampaignDetail() {
                   {canCommit ? (
                     <Link href={`/campaign/${id}/commit`}>
                       <Button className="w-full" size="lg" data-testid="button-commit">
-                        Make a Commitment
+                        Join campaign
                         <ArrowRight className="w-4 h-4 ml-2" />
                       </Button>
                     </Link>
@@ -287,9 +269,9 @@ export default function CampaignDetail() {
                   <div className="flex items-center gap-3 p-4 rounded-md bg-muted/50">
                     <Lock className="w-5 h-5 text-muted-foreground" />
                     <div>
-                      <p className="font-medium">Member-only terms</p>
+                      <p className="font-medium">Participation terms shown after joining</p>
                       <p className="text-sm text-muted-foreground">
-                        Pricing and commitment details are available to signed-in members.
+                        Pricing and details are available to signed-in members.
                       </p>
                     </div>
                   </div>
@@ -298,7 +280,7 @@ export default function CampaignDetail() {
                   
                   <Link href="/login">
                     <Button className="w-full" size="lg" data-testid="button-login">
-                      Sign in to View Terms
+                      Sign in to join
                       <ArrowRight className="w-4 h-4 ml-2" />
                     </Button>
                   </Link>
