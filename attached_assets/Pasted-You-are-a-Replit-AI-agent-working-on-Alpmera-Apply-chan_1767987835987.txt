@@ -1,0 +1,76 @@
+You are a Replit AI agent working on Alpmera. Apply changes directly. The user does NOT manually edit code.
+
+BATCH: Campaign Detail “Join” CTA routing + auth state refresh + back navigation
+
+GOAL:
+Fix Campaign Detail page flow so:
+- Unauthenticated users clicking “Sign in to join” are taken to the correct sign-in route (no 404), then returned to the same campaign detail.
+- After successful login, the campaign detail page updates CTA from “Sign in to join” to “Join campaign” (or equivalent) without requiring manual refresh.
+- Add a back button on campaign detail page to return to previous page (or campaigns list fallback).
+
+GUARDRAILS:
+- Do NOT change escrow/ledger/idempotency/campaign state machine.
+- Do NOT introduce store language (buy/order/cart/checkout).
+- Do NOT refactor routing broadly; fix only what’s needed.
+- Keep changes minimal and localized to campaign detail + auth redirect handling.
+
+SCOPE (ONLY):
+- Campaign Detail page component (public/member)
+- Router configuration for sign-in route (only if missing or misnamed)
+- Auth state refresh logic used by campaign detail
+- No admin pages
+
+ISSUES TO FIX:
+
+1) 404 when clicking “Sign in to join”
+- The CTA currently navigates to a route that does not exist in the router.
+- Find the actual sign-in route in the app (examples: /signin, /login, /auth, /account/signin).
+- Update the CTA to navigate to the correct existing sign-in route.
+- Add a “returnTo” query param so the app can return the user to the same campaign detail page after login:
+  - returnTo = current pathname + search (e.g., /campaigns/:id)
+Example:
+  navigate(`/sign-in?returnTo=${encodeURIComponent(location.pathname + location.search)}`)
+
+If there is no sign-in page route at all:
+- Add the minimal route entry that maps the existing sign-in page component (already used elsewhere) to the path you navigate to.
+- Prefer using the route already linked from the header “Sign in” button; reuse that path.
+
+2) After login, CTA still shows “Sign in to join”
+- Campaign detail page must re-check auth state after login.
+Implement one of these minimal fixes (choose the smallest given the current app):
+A) If there is an auth hook/context:
+   - Ensure campaign detail reads auth state from the shared source (e.g., useAuth()) not from a stale local state.
+   - After successful login, auth context should update and rerender.
+B) If auth state is derived from /api/me:
+   - On campaign detail mount, fetch /api/me and store in state.
+   - Also re-fetch /api/me when the page becomes visible again (on focus) OR when a “loggedIn” event occurs.
+   - Minimal approach: add a window event dispatched by sign-in success (e.g., window.dispatchEvent(new Event("alpmera-auth-changed"))) and have campaign detail listen and refetch /api/me.
+C) If sign-in redirects back to campaign detail:
+   - On load, campaign detail should fetch /api/me; this should be enough if rerender happens on navigation.
+Make sure the CTA condition becomes:
+- if not logged in -> show “Sign in to join”
+- if logged in -> show “Join campaign” (and route to the commitment wizard entry point)
+
+3) Add back button on campaign detail page
+- Add a back arrow button near the page title area.
+Behavior:
+- If there is navigation history, go back (navigate(-1)).
+- If not, fallback to /campaigns.
+Label: “Back” (simple).
+
+4) Ensure “Join campaign” CTA routes correctly for logged-in users
+- When logged-in user clicks “Join campaign”, route to the existing commitment wizard start for that campaign.
+- Reuse the route already used elsewhere (from campaign cards or wizard), do not create a new flow.
+- If the wizard route is something like /campaigns/:id/join or /campaigns/:id/commit, use that.
+- If uncertain, search in codebase for the button label or navigate calls used in the wizard entry.
+
+REGRESSION CHECKS:
+- Clicking header “Sign in” still works.
+- Clicking “Sign in to join” never 404s.
+- After login, returning to campaign detail shows “Join campaign” and not “Sign in to join”.
+- Back button works and never navigates to admin routes.
+- No store language introduced.
+
+DELIVERABLE:
+- Fix routing + auth refresh + add back button with minimal code changes.
+- Provide a short list of files changed and what was modified (no large code dump).

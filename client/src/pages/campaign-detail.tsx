@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useParams, Link } from "wouter";
+import { useParams, Link, useLocation } from "wouter";
 import { Layout } from "@/components/layout";
 import { StateTimeline } from "@/components/state-timeline";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
-import { Calendar, ArrowRight, AlertTriangle, CheckCircle, Lock } from "lucide-react";
+import { Calendar, ArrowRight, ArrowLeft, AlertTriangle, CheckCircle, Lock } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { getStatusLabel, getStatusColor } from "@/lib/campaign-status";
 import type { CampaignState } from "@shared/schema";
@@ -54,7 +54,18 @@ function ProgressBarWithMilestones({ value }: { value: number }) {
 
 export default function CampaignDetail() {
   const { id } = useParams<{ id: string }>();
+  const [, setLocation] = useLocation();
   const { isAuthenticated } = useAuth();
+  
+  const signInUrl = `/signin?next=${encodeURIComponent(`/campaign/${id}`)}`;
+  
+  const handleBack = () => {
+    if (window.history.length > 1) {
+      window.history.back();
+    } else {
+      setLocation("/campaigns");
+    }
+  };
 
   const { data: campaign, isLoading, error } = useQuery<PublicCampaignDetail>({
     queryKey: ["/api/campaigns", id],
@@ -118,6 +129,14 @@ export default function CampaignDetail() {
       >
         <div className="max-w-4xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              onClick={handleBack}
+              data-testid="button-back"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </Button>
             <Badge className={`text-sm px-3 py-1 ${getStatusColor(campaign.state)}`} data-testid="badge-campaign-state">
               {getStatusLabel(campaign.state)}
             </Badge>
@@ -245,9 +264,9 @@ export default function CampaignDetail() {
                       </Button>
                     </Link>
                   ) : campaign.state === "AGGREGATION" && !isAuthenticated ? (
-                    <Link href="/login">
+                    <Link href={signInUrl}>
                       <Button className="w-full" size="lg" variant="outline" data-testid="button-login-to-commit">
-                        Sign in to Join
+                        Sign in to join
                         <ArrowRight className="w-4 h-4 ml-2" />
                       </Button>
                     </Link>
@@ -278,7 +297,7 @@ export default function CampaignDetail() {
                   
                   <Separator />
                   
-                  <Link href="/login">
+                  <Link href={signInUrl}>
                     <Button className="w-full" size="lg" data-testid="button-login">
                       Sign in to join
                       <ArrowRight className="w-4 h-4 ml-2" />
