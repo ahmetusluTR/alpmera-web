@@ -69,7 +69,10 @@ export default function Home() {
 
       <section className="py-12 px-6">
         <div className="max-w-6xl mx-auto">
-          <h2 className="text-2xl font-semibold mb-8">Active Campaigns</h2>
+          <h2 className="text-2xl font-semibold mb-2">Campaigns in progress</h2>
+          <p className="text-muted-foreground mb-8">
+            Campaigns are built through collective participation. Details are private to members.
+          </p>
           
           {isLoading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

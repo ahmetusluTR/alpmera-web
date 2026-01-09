@@ -23,15 +23,17 @@ const STATE_COLORS: Record<string, string> = {
   SUCCESS: "bg-green-600 dark:bg-green-700 text-white",
   FAILED: "bg-destructive text-destructive-foreground",
   FULFILLMENT: "bg-amber-600 dark:bg-amber-700 text-white",
-  RELEASED: "bg-green-700 dark:bg-green-800 text-white",
+  RELEASED: "bg-amber-600 dark:bg-amber-700 text-white",
 };
 
-function getQualitativeLabel(percent: number): string {
-  if (percent >= 100) return "Target reached";
-  if (percent >= 70) return "Approaching target";
-  if (percent >= 40) return "Gaining traction";
-  return "Building momentum";
-}
+const STATE_LABELS: Record<string, string> = {
+  AGGREGATION: "Building momentum",
+  SUCCESS: "Target reached",
+  FAILED: "Not completed",
+  FULFILLMENT: "In fulfillment",
+  RELEASED: "In fulfillment",
+};
+
 
 function ProgressBarWithMilestones({ value }: { value: number }) {
   return (
@@ -49,7 +51,6 @@ function ProgressBarWithMilestones({ value }: { value: number }) {
 export function CampaignCard({ campaign }: CampaignCardProps) {
   const { isAuthenticated } = useAuth();
   const progress = campaign.progressPercent || 0;
-  const qualitativeLabel = getQualitativeLabel(progress);
 
   return (
     <Link href={`/campaign/${campaign.id}`}>
@@ -70,7 +71,7 @@ export function CampaignCard({ campaign }: CampaignCardProps) {
           <div className="flex items-start justify-between gap-2 mb-3">
             <h3 className="font-medium text-lg leading-tight">{campaign.title}</h3>
             <Badge className={`shrink-0 ${STATE_COLORS[campaign.state]}`} data-testid={`badge-state-${campaign.id}`}>
-              {campaign.state}
+              {STATE_LABELS[campaign.state] || campaign.state}
             </Badge>
           </div>
           
@@ -88,21 +89,16 @@ export function CampaignCard({ campaign }: CampaignCardProps) {
             
             <ProgressBarWithMilestones value={progress} />
             
-            <p className="text-xs text-muted-foreground" data-testid={`text-label-${campaign.id}`}>
-              {qualitativeLabel}
-            </p>
-            
-            {isAuthenticated ? (
-              <div className="pt-2 border-t border-border/50">
-                <Badge variant="secondary" className="text-xs">
-                  Member-only terms
-                </Badge>
-              </div>
-            ) : (
-              <p className="text-xs text-muted-foreground pt-2 border-t border-border/50">
-                Sign in to view member terms
-              </p>
-            )}
+            <div className="pt-2 border-t border-border/50">
+              <Badge variant="secondary" className="text-xs">
+                Member-only details
+              </Badge>
+              {!isAuthenticated && (
+                <p className="text-xs text-muted-foreground mt-2">
+                  Sign in to view campaign details
+                </p>
+              )}
+            </div>
           </div>
         </CardContent>
       </Card>
