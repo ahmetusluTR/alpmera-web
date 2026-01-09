@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/lib/auth";
 import NotFound from "@/pages/not-found";
 import Home from "@/pages/home";
+import Campaigns from "@/pages/campaigns";
 import CampaignDetail from "@/pages/campaign-detail";
 import CommitmentWizard from "@/pages/commitment-wizard";
 import StatusPage from "@/pages/status";
@@ -37,6 +38,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/" component={Home} />
+      <Route path="/campaigns" component={Campaigns} />
       <Route path="/campaign/:id" component={CampaignDetail} />
       <Route path="/campaign/:id/commit" component={CommitmentWizard} />
       <Route path="/status" component={StatusPage} />

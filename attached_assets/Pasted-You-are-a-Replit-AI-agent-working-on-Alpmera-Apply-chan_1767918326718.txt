@@ -1,0 +1,69 @@
+You are a Replit AI agent working on Alpmera. Apply changes directly. The user does NOT manually edit code.
+
+BATCH: UI polish + copy fixes (start with LAST bug: status labels)
+
+GOAL:
+Improve public/member UI wording and status labels without changing backend logic or escrow rules. Fix the “Active Campaign” header, refine homepage campaign visibility, add list/tile toggle on campaigns page, and replace awkward copy. Keep pricing behavior doctrine-safe: do not show numeric price on list cards; show price only inside authenticated campaign detail/join flow.
+
+STRICT GUARDRAILS:
+- Do NOT change database schema, escrow ledger, idempotency, admin logic, or campaign state machine codes.
+- Do NOT add new libraries.
+- Do NOT use store language: buy/order/cart/checkout/purchase/deal/discount/flash.
+- Keep changes minimal and localized (prefer 3–6 files).
+- Do NOT expose draft/hidden campaigns to non-admins (assume already fixed; do not regress).
+- Pricing on list cards remains hidden; pricing stays visible in authenticated campaign detail/join flow ONLY.
+
+Status names are not attractive (UI label mapping)
+1) Add a single shared mapping for campaign status display labels (UI-only).
+   - Keep internal codes unchanged (AGGREGATION, SUCCESS, FULFILLMENT, RELEASED, FAILED).
+   - Introduce human-friendly labels:
+     - AGGREGATION -> "Building momentum"
+     - SUCCESS -> "Target reached"
+     - FULFILLMENT -> "In fulfillment"
+     - RELEASED -> "In fulfillment"
+     - FAILED -> "Not completed"
+   - Ensure any UI that displays campaign status uses this mapping instead of raw codes:
+     - Home campaign cards
+     - Campaigns list/cards
+     - Any public campaign header/status pill
+   - If there is already a status label helper, update it rather than adding duplicates.
+
+THEN FIXES/IMPROVEMENTS (same batch, still low-credit):
+
+2) Bug: Logged-in users still see “Member-only terms”
+   - Keep behavior: DO NOT show numeric price on list/tile cards (public or member).
+   - Replace the text “Member-only terms” with “View campaign details” everywhere it appears on Home/campaign list cards.
+   - Ensure the CTA does not imply shopping; keep it neutral.
+
+3) Bug: Header says “Active Campaign”
+   - Change section header to “Campaigns” (remove “Active”).
+   - Do this on Home page and any campaigns listing header where it appears.
+
+4) Homepage content strategy (minimal implementation):
+   - Show “Campaigns in progress” section containing only campaigns in AGGREGATION (and optionally SUCCESS if already included in data).
+   - Add an optional second section “Recently completed” showing up to 3 campaigns with SUCCESS/RELEASED/FULFILLMENT (choose those that represent completion as your app defines it).
+   - Keep it simple: no complex filters on homepage.
+   - Add a small “View all campaigns” link/button to go to the campaigns page.
+   - Ensure this remains non-distracting: cap completed campaigns to 3.
+
+5) Add list/tile layout toggle on the campaigns page (NOT on homepage)
+   - On the campaigns listing page, add a simple toggle: Grid (tile) vs List.
+   - Default to Grid.
+   - Store user preference in localStorage only (no backend).
+   - Both views must use the same underlying campaign data and the same status label mapping.
+   - In both layouts, display only:
+     - progress bar + percentage
+     - status pill (using friendly labels)
+     - optional time remaining if already present
+   - Do NOT show $ amounts, units, or commitment counts on cards.
+
+REGRESSION CHECKS:
+- No public/member list views show numeric prices or $ funding totals.
+- Status codes are never shown raw; friendly labels appear everywhere.
+- Homepage shows in-progress campaigns and a capped “Recently completed” section.
+- Campaigns page has grid/list toggle and persists choice.
+- Admin pages are unaffected.
+
+DELIVERABLE:
+- Implement above with minimal file changes.
+- Briefly list files changed and what was updated (no large code dump).

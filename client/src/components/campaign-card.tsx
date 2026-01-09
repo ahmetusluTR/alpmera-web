@@ -3,6 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { useAuth } from "@/lib/auth";
+import { getStatusLabel, getStatusColor } from "@/lib/campaign-status";
 
 interface PublicCampaign {
   id: string;
@@ -17,22 +18,6 @@ interface PublicCampaign {
 interface CampaignCardProps {
   campaign: PublicCampaign;
 }
-
-const STATE_COLORS: Record<string, string> = {
-  AGGREGATION: "bg-chart-1 text-white",
-  SUCCESS: "bg-green-600 dark:bg-green-700 text-white",
-  FAILED: "bg-destructive text-destructive-foreground",
-  FULFILLMENT: "bg-amber-600 dark:bg-amber-700 text-white",
-  RELEASED: "bg-amber-600 dark:bg-amber-700 text-white",
-};
-
-const STATE_LABELS: Record<string, string> = {
-  AGGREGATION: "Building momentum",
-  SUCCESS: "Target reached",
-  FAILED: "Not completed",
-  FULFILLMENT: "In fulfillment",
-  RELEASED: "In fulfillment",
-};
 
 
 function ProgressBarWithMilestones({ value }: { value: number }) {
@@ -70,8 +55,8 @@ export function CampaignCard({ campaign }: CampaignCardProps) {
         <CardContent className="p-6">
           <div className="flex items-start justify-between gap-2 mb-3">
             <h3 className="font-medium text-lg leading-tight">{campaign.title}</h3>
-            <Badge className={`shrink-0 ${STATE_COLORS[campaign.state]}`} data-testid={`badge-state-${campaign.id}`}>
-              {STATE_LABELS[campaign.state] || campaign.state}
+            <Badge className={`shrink-0 ${getStatusColor(campaign.state)}`} data-testid={`badge-state-${campaign.id}`}>
+              {getStatusLabel(campaign.state)}
             </Badge>
           </div>
           
@@ -90,12 +75,12 @@ export function CampaignCard({ campaign }: CampaignCardProps) {
             <ProgressBarWithMilestones value={progress} />
             
             <div className="pt-2 border-t border-border/50">
-              <Badge variant="secondary" className="text-xs">
-                Member-only details
-              </Badge>
+              <span className="text-xs text-muted-foreground">
+                View campaign details
+              </span>
               {!isAuthenticated && (
-                <p className="text-xs text-muted-foreground mt-2">
-                  Sign in to view campaign details
+                <p className="text-xs text-muted-foreground mt-1 italic">
+                  Sign in to join
                 </p>
               )}
             </div>

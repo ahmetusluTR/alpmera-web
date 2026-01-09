@@ -1,9 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "wouter";
 import { Layout } from "@/components/layout";
 import { CampaignCard } from "@/components/campaign-card";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Shield, Lock, FileCheck, HandCoins } from "lucide-react";
+import { Shield, Lock, FileCheck, HandCoins, ArrowRight } from "lucide-react";
 
 interface PublicCampaign {
   id: string;
@@ -19,6 +21,14 @@ export default function Home() {
   const { data: campaigns, isLoading } = useQuery<PublicCampaign[]>({
     queryKey: ["/api/campaigns"],
   });
+
+  const inProgressCampaigns = campaigns?.filter(c => 
+    c.state === "AGGREGATION" || c.state === "SUCCESS"
+  ) || [];
+  
+  const completedCampaigns = campaigns?.filter(c => 
+    c.state === "FULFILLMENT" || c.state === "RELEASED"
+  ).slice(0, 3) || [];
 
   return (
     <Layout>
@@ -69,7 +79,15 @@ export default function Home() {
 
       <section className="py-12 px-6">
         <div className="max-w-6xl mx-auto">
-          <h2 className="text-2xl font-semibold mb-2">Campaigns in progress</h2>
+          <div className="flex items-center justify-between gap-4 mb-2 flex-wrap">
+            <h2 className="text-2xl font-semibold">Campaigns in progress</h2>
+            <Link href="/campaigns">
+              <Button variant="ghost" size="sm" data-testid="link-view-all">
+                View all campaigns
+                <ArrowRight className="w-4 h-4 ml-1" />
+              </Button>
+            </Link>
+          </div>
           <p className="text-muted-foreground mb-8">
             Campaigns are built through collective participation. Details are private to members.
           </p>
@@ -86,9 +104,9 @@ export default function Home() {
                 </Card>
               ))}
             </div>
-          ) : campaigns && campaigns.length > 0 ? (
+          ) : inProgressCampaigns.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" data-testid="campaigns-grid">
-              {campaigns.map((campaign) => (
+              {inProgressCampaigns.map((campaign) => (
                 <CampaignCard 
                   key={campaign.id} 
                   campaign={campaign}
@@ -98,14 +116,34 @@ export default function Home() {
           ) : (
             <Card className="p-12 text-center">
               <Shield className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-medium mb-2">No Active Campaigns</h3>
+              <h3 className="text-lg font-medium mb-2">No campaigns in progress</h3>
               <p className="text-muted-foreground">
-                There are no campaigns available at this time. Check back later.
+                There are no campaigns accepting commitments at this time. Check back later.
               </p>
             </Card>
           )}
         </div>
       </section>
+
+      {completedCampaigns.length > 0 && (
+        <section className="py-12 px-6 bg-muted/30">
+          <div className="max-w-6xl mx-auto">
+            <h2 className="text-2xl font-semibold mb-2">Recently completed</h2>
+            <p className="text-muted-foreground mb-8">
+              These campaigns reached their target and moved to fulfillment.
+            </p>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" data-testid="completed-campaigns-grid">
+              {completedCampaigns.map((campaign) => (
+                <CampaignCard 
+                  key={campaign.id} 
+                  campaign={campaign}
+                />
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
     </Layout>
   );
 }
