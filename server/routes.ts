@@ -590,7 +590,8 @@ export async function registerRoutes(
         id: user.id,
         email: user.email,
         createdAt: user.createdAt,
-        profile: user.profile
+        profile: user.profile,
+        isAdmin: req.session?.isAdmin === true
       });
     } catch (error) {
       console.error("[USER] Error fetching user:", error);
