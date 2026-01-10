@@ -40,15 +40,29 @@ interface CampaignDetail {
   aggregationDeadline: string;
   targetAmount: string;
   unitPrice: string;
+  minCommitment: string;
   participantCount: number;
   totalCommitted: number;
   createdAt: string;
   supplierAcceptedAt: string | null;
   sku: string | null;
   productName: string | null;
+  // Product Details
+  brand: string | null;
+  modelNumber: string | null;
+  variant: string | null;
+  shortDescription: string | null;
+  specs: string | null;
+  primaryImageUrl: string | null;
+  galleryImageUrls: string | null;
+  referencePrices: string | null;
+  // Delivery
   deliveryStrategy: string;
+  deliveryCostHandling: string | null;
+  supplierDirectConfirmed: boolean;
   consolidationContactName: string | null;
   consolidationCompany: string | null;
+  consolidationContactEmail: string | null;
   consolidationAddressLine1: string | null;
   consolidationAddressLine2: string | null;
   consolidationCity: string | null;
@@ -58,6 +72,23 @@ interface CampaignDetail {
   consolidationPhone: string | null;
   deliveryWindow: string | null;
   fulfillmentNotes: string | null;
+  // Edit permissions
+  hasCommitments: boolean;
+  commitmentCount: number;
+}
+
+interface SpecEntry {
+  key: string;
+  value: string;
+}
+
+interface ReferencePriceEntry {
+  amount: number;
+  currency?: string;
+  source: string;
+  url?: string;
+  capturedAt?: string;
+  note?: string;
 }
 
 interface TimelineEntry {
@@ -266,9 +297,9 @@ export default function CampaignDetailPage() {
                     </p>
                   </div>
                   <div>
-                    <p className="text-muted-foreground text-xs mb-1">Target</p>
-                    <p className="text-xl font-mono font-semibold">
-                      ${parseFloat(campaign.targetAmount).toLocaleString()}
+                    <p className="text-muted-foreground text-xs mb-1">Target Units</p>
+                    <p className="text-xl font-mono font-semibold" data-testid="stat-target-units">
+                      {Math.floor(parseFloat(campaign.targetAmount) / parseFloat(campaign.unitPrice)).toLocaleString()}
                     </p>
                   </div>
                   <div>
@@ -292,48 +323,230 @@ export default function CampaignDetailPage() {
               </CardContent>
             </Card>
 
-            {campaign.deliveryStrategy === "BULK_TO_CONSOLIDATION" && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">Consolidation Settings</CardTitle>
-                  <CardDescription>
-                    Delivery settings for bulk consolidation
-                    {isPublished && !isFulfillmentPhase && " (editable)"}
-                    {isFulfillmentPhase && " (locked)"}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Product Details</CardTitle>
+                <CardDescription>
+                  Product information used for transparency and fulfillment. This is not a store listing.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                  <div>
+                    <p className="text-muted-foreground text-xs mb-1">Brand</p>
+                    <p className="font-medium" data-testid="text-brand">{campaign.brand || "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground text-xs mb-1">Model / MPN</p>
+                    <p className="font-medium" data-testid="text-model">{campaign.modelNumber || "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground text-xs mb-1">Variant</p>
+                    <p className="font-medium" data-testid="text-variant">{campaign.variant || "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground text-xs mb-1">SKU</p>
+                    <p className="font-mono text-sm" data-testid="text-sku">{campaign.sku || "—"}</p>
+                  </div>
+                </div>
+
+                {campaign.shortDescription && (
+                  <div>
+                    <p className="text-muted-foreground text-xs mb-1">Short Description</p>
+                    <p className="text-sm" data-testid="text-short-description">{campaign.shortDescription}</p>
+                  </div>
+                )}
+
+                {campaign.specs && (() => {
+                  try {
+                    const specs: SpecEntry[] = JSON.parse(campaign.specs);
+                    if (specs.length > 0) {
+                      return (
+                        <div>
+                          <p className="text-muted-foreground text-xs mb-2">Specifications</p>
+                          <div className="space-y-1 text-sm">
+                            {specs.map((spec, i) => (
+                              <div key={i} className="flex gap-2">
+                                <span className="text-muted-foreground min-w-[120px]">{spec.key}:</span>
+                                <span>{spec.value}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  } catch {
+                    return null;
+                  }
+                })()}
+
+                <Separator />
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-muted-foreground text-xs mb-2">Primary Image</p>
+                    {campaign.primaryImageUrl ? (
+                      <div className="space-y-1">
+                        <img 
+                          src={campaign.primaryImageUrl} 
+                          alt="Primary product" 
+                          className="w-24 h-24 object-cover rounded border"
+                          data-testid="img-primary"
+                        />
+                        <a 
+                          href={campaign.primaryImageUrl} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-xs text-blue-600 hover:underline"
+                        >
+                          View full size
+                        </a>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">No image</p>
+                    )}
+                  </div>
+                  {campaign.galleryImageUrls && (() => {
+                    try {
+                      const gallery: string[] = JSON.parse(campaign.galleryImageUrls);
+                      if (gallery.length > 0) {
+                        return (
+                          <div>
+                            <p className="text-muted-foreground text-xs mb-2">Gallery</p>
+                            <div className="flex flex-wrap gap-2">
+                              {gallery.map((url, i) => (
+                                <img 
+                                  key={i}
+                                  src={url} 
+                                  alt={`Gallery ${i + 1}`} 
+                                  className="w-16 h-16 object-cover rounded border"
+                                  data-testid={`img-gallery-${i}`}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      }
+                      return null;
+                    } catch {
+                      return null;
+                    }
+                  })()}
+                </div>
+
+                {campaign.referencePrices && (() => {
+                  try {
+                    const prices: ReferencePriceEntry[] = JSON.parse(campaign.referencePrices);
+                    if (prices.length > 0) {
+                      return (
+                        <div>
+                          <p className="text-muted-foreground text-xs mb-2">Reference Price (Transparency Only)</p>
+                          <div className="space-y-2 text-sm">
+                            {prices.map((price, i) => (
+                              <div key={i} className="flex items-center gap-3 p-2 bg-muted/30 rounded">
+                                <span className="font-mono font-medium">
+                                  {price.currency || "USD"} {price.amount.toLocaleString()}
+                                </span>
+                                <Badge variant="outline" className="text-xs">
+                                  {price.source === "MSRP" && "Manufacturer MSRP"}
+                                  {price.source === "RETAILER_LISTING" && "Retailer listing"}
+                                  {price.source === "SUPPLIER_QUOTE" && "Supplier quote"}
+                                  {price.source === "OTHER" && "Other"}
+                                </Badge>
+                                {price.url && (
+                                  <a 
+                                    href={price.url} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="text-xs text-blue-600 hover:underline"
+                                  >
+                                    Source
+                                  </a>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  } catch {
+                    return null;
+                  }
+                })()}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Delivery Settings</CardTitle>
+                <CardDescription>
+                  {campaign.deliveryStrategy === "CONSOLIDATION_POINT" || campaign.deliveryStrategy === "BULK_TO_CONSOLIDATION"
+                    ? "Bulk delivery to consolidation point"
+                    : "Supplier direct fulfillment to participants"}
+                  {isPublished && !isFulfillmentPhase && " (editable)"}
+                  {isFulfillmentPhase && " (locked)"}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {campaign.deliveryStrategy === "SUPPLIER_DIRECT" ? (
+                  <div className="p-4 bg-muted/30 rounded text-sm">
+                    <p>Supplier is responsible for direct fulfillment to participants.</p>
+                    {campaign.supplierDirectConfirmed && (
+                      <p className="mt-2 text-green-600 dark:text-green-400 flex items-center gap-2">
+                        <span className="w-2 h-2 bg-green-500 rounded-full" />
+                        Supplier has confirmed direct delivery capability
+                      </p>
+                    )}
+                  </div>
+                ) : (
                   <div className="grid grid-cols-2 gap-4 text-sm">
                     <div>
-                      <p className="text-muted-foreground text-xs mb-1">Contact Name</p>
-                      <p className="font-medium">{campaign.consolidationContactName || "-"}</p>
+                      <p className="text-muted-foreground text-xs mb-1">Company / Organization</p>
+                      <p className="font-medium" data-testid="text-consolidation-company">{campaign.consolidationCompany || "—"}</p>
                     </div>
                     <div>
-                      <p className="text-muted-foreground text-xs mb-1">Company</p>
-                      <p className="font-medium">{campaign.consolidationCompany || "-"}</p>
+                      <p className="text-muted-foreground text-xs mb-1">Contact Name</p>
+                      <p className="font-medium" data-testid="text-consolidation-contact">{campaign.consolidationContactName || "—"}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground text-xs mb-1">Contact Email</p>
+                      <p className="font-medium" data-testid="text-consolidation-email">{campaign.consolidationContactEmail || "—"}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground text-xs mb-1">Contact Phone</p>
+                      <p className="font-medium" data-testid="text-consolidation-phone">{campaign.consolidationPhone || "—"}</p>
                     </div>
                     <div className="col-span-2">
                       <p className="text-muted-foreground text-xs mb-1">Address</p>
                       <p className="font-medium">
-                        {campaign.consolidationAddressLine1 || "-"}
+                        {campaign.consolidationAddressLine1 || "—"}
                         {campaign.consolidationAddressLine2 && `, ${campaign.consolidationAddressLine2}`}
                       </p>
-                      <p className="text-muted-foreground">
-                        {campaign.consolidationCity}, {campaign.consolidationState} {campaign.consolidationPostalCode}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground text-xs mb-1">Phone</p>
-                      <p className="font-medium">{campaign.consolidationPhone || "-"}</p>
+                      {(campaign.consolidationCity || campaign.consolidationState || campaign.consolidationPostalCode) && (
+                        <p className="text-muted-foreground">
+                          {[campaign.consolidationCity, campaign.consolidationState, campaign.consolidationPostalCode]
+                            .filter(Boolean)
+                            .join(", ")}
+                          {campaign.consolidationCountry && ` ${campaign.consolidationCountry}`}
+                        </p>
+                      )}
                     </div>
                     <div>
                       <p className="text-muted-foreground text-xs mb-1">Delivery Window</p>
-                      <p className="font-medium">{campaign.deliveryWindow || "-"}</p>
+                      <p className="font-medium">{campaign.deliveryWindow || "—"}</p>
                     </div>
+                    {campaign.fulfillmentNotes && (
+                      <div>
+                        <p className="text-muted-foreground text-xs mb-1">Fulfillment Notes</p>
+                        <p className="text-sm">{campaign.fulfillmentNotes}</p>
+                      </div>
+                    )}
                   </div>
-                </CardContent>
-              </Card>
-            )}
+                )}
+              </CardContent>
+            </Card>
 
             <Card>
               <CardHeader>

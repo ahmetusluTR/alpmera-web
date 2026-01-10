@@ -1,0 +1,209 @@
+You are the Replit Agent working on Alpmera Admin Panel.
+
+STRICT LANGUAGE RULES (NON-NEGOTIABLE):
+- NEVER use: buy, order, checkout, cart, purchase, deal, discount, flash
+- ALWAYS use: campaign, commitment, escrow, release, refund, fulfillment
+
+IMPORTANT WORKING MODE:
+- Work step by step
+- Optimize for LOW Replit credit usage
+- Prefer PATCHES over rewrites
+- Reuse existing components and layout
+- Assume user does NOT manually edit code
+
+====================================================
+CONTEXT (CURRENT STATE — DO NOT BREAK)
+====================================================
+
+Admin → Campaign Detail page currently shows:
+- Campaign Summary (Commitments, Escrow Locked, Target, Deadline)
+- Consolidation Settings (basic, incomplete)
+- Campaign Timeline (audit log)
+
+KNOWN PROBLEMS TO FIX:
+1) DRAFT campaigns are NOT editable (BUG)
+2) Product details do NOT exist on campaign detail page
+3) Target is shown as money ($10) instead of UNIT COUNT
+4) Consolidation section is incomplete (missing company/contact clarity)
+
+DO NOT redesign layout. Extend it.
+
+====================================================
+BATCH P0 — FIX TARGET SEMANTICS (SERVER + UI)
+====================================================
+
+A) Target is UNITS, not money
+- Replace any usage of “Target” as currency.
+- Ensure Campaign model uses:
+  - targetQuantity: INTEGER (units)
+- If an old numeric/money field exists:
+  - keep it temporarily
+  - UI must read/write ONLY targetQuantity
+
+B) UI label changes (Admin only)
+- Replace label “Target” with:
+  - “Target Units”
+- Display as integer (no $ sign, no currency formatting)
+
+Example in Campaign Summary:
+- “Target Units: 10”
+
+DO NOT change escrow calculations unless already implemented.
+
+====================================================
+BATCH P1 — FIX EDITABILITY BY STATUS (CRITICAL)
+====================================================
+
+A) Read campaign.status from backend (DRAFT | PUBLISHED)
+
+B) Edit rules (must be enforced BOTH UI + API):
+
+IF status == DRAFT:
+- Entire page is editable:
+  - campaign basics
+  - numbers
+  - delivery
+  - product details
+- Show primary button: “Save Draft”
+
+IF status == PUBLISHED:
+- LOCK (read-only):
+  - Campaign Name
+  - SKU
+  - Product Name
+  - Aggregation Deadline
+  - Target Units
+  - Unit Price
+  - Min Commitment
+- ALLOW editing:
+  - Delivery / Consolidation fields
+  - Product Details (new section)
+- Show button: “Save Changes”
+
+C) Fix current bug:
+- Remove any blanket `disabled={true}` or readOnly logic tied incorrectly to campaign existence.
+- Editability must be driven ONLY by campaign.status.
+
+====================================================
+BATCH P2 — ADD PRODUCT DETAILS SECTION (ADMIN)
+====================================================
+
+Insert a new section BETWEEN:
+- Campaign Summary
+- Consolidation Settings
+
+Section title:
+“Product Details”
+
+Subtext:
+“Product information used for transparency and fulfillment. This is not a store listing.”
+
+FIELDS (all editable in DRAFT, editable in PUBLISHED):
+
+1) Core Info
+- Brand
+- Model / MPN
+- Variant (e.g. size, color, capacity)
+- Short Description (max ~500 chars)
+
+2) Specifications
+- Render as key/value list
+- UI:
+  - rows: [Spec Name] [Spec Value]
+  - buttons: “Add specification”, “Remove”
+- Store as JSON array:
+  [{ key: string, value: string }]
+
+3) Images
+LOW-CREDIT APPROACH:
+- Use URL inputs (do NOT build uploader unless already exists)
+
+Fields:
+- Primary Image URL
+- Gallery Image URLs (repeatable)
+
+UI:
+- If URL present, show small thumbnail preview
+- Otherwise show link text only
+
+4) Reference Price (for transparency)
+Title:
+“Reference Price (Transparency Only)”
+
+Repeatable entries:
+- Amount (number)
+- Currency (default USD)
+- Source dropdown:
+  - Manufacturer MSRP
+  - Retailer listing
+  - Supplier quote
+  - Other
+- URL (optional)
+- Captured date (optional)
+- Internal note (optional, admin-only)
+
+IMPORTANT COPY RULE:
+- Do NOT show “discount”, “savings”, “compare”
+- This is contextual reference only.
+
+====================================================
+BATCH P3 — FIX CONSOLIDATION SETTINGS (PATCH)
+====================================================
+
+Current Consolidation Settings card is incomplete.
+
+Extend existing section (do NOT create new one).
+
+If deliveryStrategy == CONSOLIDATION_POINT:
+
+REQUIRED DISPLAY FIELDS:
+- Company / Organization Name
+- Contact Name
+- Contact Email
+- Contact Phone
+- Address (Line 1, City, State, Postal Code, Country)
+
+If missing values:
+- Show “—” placeholder
+- In DRAFT, fields editable
+- In PUBLISHED, fields editable
+
+If deliveryStrategy == SUPPLIER_DIRECT:
+- Replace section content with:
+  “Supplier is responsible for direct fulfillment to participants.”
+
+====================================================
+BATCH P4 — CAMPAIGN SUMMARY FIXES
+====================================================
+
+In Campaign Summary card:
+
+- Commitments: OK
+- Escrow Locked: OK
+- Target:
+  - Change label to “Target Units”
+  - Display integer
+- Deadline: OK
+
+DO NOT show:
+- “Total value”
+- “Order value”
+- Any store language
+
+====================================================
+DONE CHECKLIST (YOU MUST VERIFY)
+====================================================
+
+1) Open DRAFT campaign:
+   - ALL fields editable
+   - Can add product specs, images, reference prices
+2) Open PUBLISHED campaign:
+   - Core identity fields locked
+   - Product Details editable
+   - Consolidation fields editable
+3) Target shown as units everywhere (no $)
+4) No forbidden words in UI
+5) No layout rewrite; only section additions
+
+IMPLEMENT IN ORDER: P0 → P1 → P2 → P3 → P4
+Stop if a batch fails; do not cascade errors.
