@@ -26,7 +26,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { ArrowLeft, RefreshCw, Truck, Eye, EyeOff, Send, Lock, AlertTriangle } from "lucide-react";
+import { ArrowLeft, RefreshCw, Truck, Eye, EyeOff, Send, Lock, AlertTriangle, CheckCircle, XCircle, Users, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -100,6 +100,68 @@ interface TimelineEntry {
   createdAt: string;
 }
 
+interface CommitmentRow {
+  id: string;
+  participantEmail: string;
+  participantName: string;
+  quantity: number;
+  amount: string;
+  status: string;
+  createdAt: string;
+}
+
+interface AdminAction {
+  actionCode: string;
+  enabled: boolean;
+  label: string;
+}
+
+// Helper to determine available admin actions based on campaign state
+function getAvailableActions(campaign: CampaignDetail): AdminAction[] {
+  const state = campaign.state;
+  const publishStatus = campaign.adminPublishStatus || "DRAFT";
+  const hasCommitments = campaign.hasCommitments;
+  const targetMet = campaign.totalCommitted >= parseFloat(campaign.targetAmount);
+
+  const actions: AdminAction[] = [];
+
+  // PUBLISH: Only available in DRAFT
+  if (publishStatus === "DRAFT") {
+    actions.push({ actionCode: "PUBLISH", enabled: true, label: "Publish Campaign" });
+  }
+
+  // MARK_FUNDED: Available when AGGREGATION + target met
+  if (state === "AGGREGATION" && publishStatus === "PUBLISHED" && targetMet) {
+    actions.push({ actionCode: "MARK_FUNDED", enabled: true, label: "Mark as Funded" });
+  }
+
+  // START_FULFILLMENT: Available when SUCCESS (funded) and supplier accepted
+  if (state === "SUCCESS" && campaign.supplierAcceptedAt) {
+    actions.push({ actionCode: "START_FULFILLMENT", enabled: true, label: "Start Fulfillment" });
+  }
+
+  // RELEASE_ESCROW: Available when FULFILLMENT
+  if (state === "FULFILLMENT") {
+    actions.push({ actionCode: "RELEASE_ESCROW", enabled: true, label: "Release Escrow" });
+  }
+
+  // FAIL_CAMPAIGN: Available before RELEASED
+  if (state !== "RELEASED" && state !== "FAILED") {
+    actions.push({ actionCode: "FAIL_CAMPAIGN", enabled: true, label: "Fail Campaign" });
+  }
+
+  return actions;
+}
+
+// Map internal states to spec terminology
+const STATE_DISPLAY_LABELS: Record<string, string> = {
+  AGGREGATION: "Active",
+  SUCCESS: "Funded",
+  FAILED: "Failed",
+  FULFILLMENT: "Fulfillment",
+  RELEASED: "Released",
+};
+
 const STATE_COLORS: Record<string, string> = {
   AGGREGATION: "bg-blue-500 text-white",
   SUCCESS: "bg-green-600 text-white",
@@ -143,6 +205,49 @@ export default function CampaignDetailPage() {
     enabled: !!campaignId,
     select: (logs) => logs.filter((log: any) => log.campaignId === campaignId),
   });
+
+  const { data: commitments } = useQuery<CommitmentRow[]>({
+    queryKey: [`/api/admin/campaigns/${campaignId}/commitments`],
+    enabled: !!campaignId,
+  });
+
+  const [actionDialogOpen, setActionDialogOpen] = useState(false);
+  const [pendingAction, setPendingAction] = useState<AdminAction | null>(null);
+
+  const adminActionMutation = useMutation({
+    mutationFn: async (actionCode: string) => {
+      return await apiRequest("POST", `/api/admin/campaigns/${campaignId}/action`, { actionCode });
+    },
+    onSuccess: (_, actionCode) => {
+      const actionLabels: Record<string, string> = {
+        MARK_FUNDED: "Campaign marked as funded",
+        START_FULFILLMENT: "Fulfillment started",
+        RELEASE_ESCROW: "Escrow released",
+        FAIL_CAMPAIGN: "Campaign marked as failed",
+      };
+      toast({ title: "Success", description: actionLabels[actionCode] || "Action completed" });
+      queryClient.invalidateQueries({ queryKey: [`/api/admin/campaigns/${campaignId}/detail`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/campaigns"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/logs"] });
+      setActionDialogOpen(false);
+      setPendingAction(null);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Action Failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const handleAdminAction = (action: AdminAction) => {
+    if (action.actionCode === "PUBLISH") {
+      setPublishDialogOpen(true);
+    } else if (action.actionCode === "FAIL_CAMPAIGN") {
+      setPendingAction(action);
+      setActionDialogOpen(true);
+    } else {
+      setPendingAction(action);
+      setActionDialogOpen(true);
+    }
+  };
 
   const publishMutation = useMutation({
     mutationFn: async () => {
@@ -205,7 +310,7 @@ export default function CampaignDetailPage() {
                   {publishBadge.label}
                 </Badge>
                 <Badge className={STATE_COLORS[campaign.state] || "bg-muted"} data-testid="badge-campaign-state">
-                  {campaign.state}
+                  {STATE_DISPLAY_LABELS[campaign.state] || campaign.state}
                 </Badge>
               </>
             )}
@@ -319,6 +424,134 @@ export default function CampaignDetailPage() {
                       Open Fulfillment Console
                     </Button>
                   </Link>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between gap-4">
+                <div>
+                  <CardTitle className="text-lg">Admin Actions</CardTitle>
+                  <CardDescription>
+                    State-guarded actions based on campaign lifecycle
+                  </CardDescription>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {(() => {
+                  const actions = getAvailableActions(campaign);
+                  if (actions.length === 0) {
+                    return (
+                      <p className="text-sm text-muted-foreground">
+                        No actions available for current campaign state.
+                      </p>
+                    );
+                  }
+                  return (
+                    <div className="flex flex-wrap gap-2">
+                      {actions.map((action) => (
+                        <Button
+                          key={action.actionCode}
+                          variant={action.actionCode === "FAIL_CAMPAIGN" ? "destructive" : "default"}
+                          onClick={() => handleAdminAction(action)}
+                          data-testid={`button-action-${action.actionCode.toLowerCase()}`}
+                        >
+                          {action.actionCode === "MARK_FUNDED" && <CheckCircle className="w-4 h-4 mr-2" />}
+                          {action.actionCode === "FAIL_CAMPAIGN" && <XCircle className="w-4 h-4 mr-2" />}
+                          {action.actionCode === "PUBLISH" && <Send className="w-4 h-4 mr-2" />}
+                          {action.label}
+                        </Button>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Users className="w-5 h-5" />
+                  Buyer Commitments
+                </CardTitle>
+                <CardDescription>
+                  Read-only list of all commitments for this campaign
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {!commitments || commitments.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    No commitments yet.
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b">
+                          <th className="text-left py-2 px-2 font-medium text-muted-foreground">Participant</th>
+                          <th className="text-left py-2 px-2 font-medium text-muted-foreground">Email</th>
+                          <th className="text-right py-2 px-2 font-medium text-muted-foreground">Units</th>
+                          <th className="text-right py-2 px-2 font-medium text-muted-foreground">Amount</th>
+                          <th className="text-left py-2 px-2 font-medium text-muted-foreground">Status</th>
+                          <th className="text-left py-2 px-2 font-medium text-muted-foreground">Date</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {commitments.map((c) => (
+                          <tr key={c.id} className="border-b last:border-0" data-testid={`row-commitment-${c.id}`}>
+                            <td className="py-2 px-2">{c.participantName}</td>
+                            <td className="py-2 px-2 text-muted-foreground">
+                              {c.participantEmail.replace(/(.{2})(.*)(@.*)/, "$1***$3")}
+                            </td>
+                            <td className="py-2 px-2 text-right font-mono">{c.quantity}</td>
+                            <td className="py-2 px-2 text-right font-mono">${parseFloat(c.amount).toLocaleString()}</td>
+                            <td className="py-2 px-2">
+                              <Badge variant={c.status === "LOCKED" ? "secondary" : c.status === "REFUNDED" ? "destructive" : "default"}>
+                                {c.status}
+                              </Badge>
+                            </td>
+                            <td className="py-2 px-2 text-muted-foreground">
+                              {format(new Date(c.createdAt), "MMM d, yyyy")}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Supplier Interaction</CardTitle>
+                <CardDescription>
+                  Track supplier quotes and acceptance status
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                  <div>
+                    <p className="text-muted-foreground text-xs mb-1">Supplier Accepted</p>
+                    <p className="font-medium" data-testid="text-supplier-accepted">
+                      {campaign.supplierAcceptedAt ? (
+                        <span className="text-green-600 dark:text-green-400 flex items-center gap-1">
+                          <CheckCircle className="w-4 h-4" />
+                          Yes
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">Not yet</span>
+                      )}
+                    </p>
+                  </div>
+                  {campaign.supplierAcceptedAt && (
+                    <div>
+                      <p className="text-muted-foreground text-xs mb-1">Accepted At</p>
+                      <p className="font-medium">
+                        {format(new Date(campaign.supplierAcceptedAt), "MMM d, yyyy HH:mm")}
+                      </p>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -612,6 +845,44 @@ export default function CampaignDetailPage() {
               data-testid="button-confirm-hide"
             >
               {hideMutation.isPending ? "Hiding..." : "Hide Campaign"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={actionDialogOpen} onOpenChange={setActionDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {pendingAction?.actionCode === "FAIL_CAMPAIGN" ? "Fail Campaign" : "Confirm Action"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingAction?.actionCode === "MARK_FUNDED" && 
+                "This will transition the campaign to FUNDED state. Supplier confirmation will be required before fulfillment can begin."}
+              {pendingAction?.actionCode === "START_FULFILLMENT" && 
+                "This will start the fulfillment phase. Campaign fields will be locked and delivery can begin."}
+              {pendingAction?.actionCode === "RELEASE_ESCROW" && 
+                "This will release all locked funds to the supplier. This action cannot be undone."}
+              {pendingAction?.actionCode === "FAIL_CAMPAIGN" && 
+                "This will mark the campaign as failed. All locked funds will be available for refund."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => pendingAction && adminActionMutation.mutate(pendingAction.actionCode)}
+              disabled={adminActionMutation.isPending}
+              className={pendingAction?.actionCode === "FAIL_CAMPAIGN" ? "bg-destructive text-destructive-foreground hover:bg-destructive/90" : ""}
+              data-testid="button-confirm-action"
+            >
+              {adminActionMutation.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Processing...
+                </>
+              ) : (
+                pendingAction?.label || "Confirm"
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -1,0 +1,335 @@
+Admin → Campaigns — Functional Specification
+
+Base Route: /admin/campaigns
+Purpose:
+Manage the full lifecycle of campaigns, from draft definition to completion/failure, including commitments, supplier coordination, escrow readiness, and fulfillment planning.
+
+1. Campaign List Page
+
+Route: /admin/campaigns
+
+Purpose
+
+Provide a single operational list of all campaigns, filterable by lifecycle groupings and searchable/sortable across key fields.
+
+1.1 Data Requirements (Campaign List Row)
+export type CampaignLifecycleState =
+  | "DRAFT"
+  | "ACTIVE"
+  | "FUNDED"
+  | "FULFILLMENT_IN_PROGRESS"
+  | "RELEASED"
+  | "FAILED";
+
+export interface CampaignListRow {
+  campaignId: string;
+  name: string;
+
+  publishStatus: "DRAFT" | "PUBLISHED";
+  lifecycleState: CampaignLifecycleState;
+
+  deadline: string | null; // ISO date
+  commitmentCount: number; // integer ≥ 0
+  escrowLockedAmount: {
+    currency: "USD";
+    amount: number;
+  };
+
+  createdAt: string; // ISO datetime
+  updatedAt: string; // ISO datetime
+}
+
+1.2 Groupings (Logical, Not Separate Pages)
+
+Campaigns must be filterable by lifecycle state:
+
+Draft
+
+Active
+
+Funded
+
+Fulfillment-In-Progress
+
+Released
+
+Failed
+
+This is a filter, not separate routes.
+
+1.3 Search & Sort (Global Requirement)
+Search Fields (case-insensitive)
+
+Campaign name
+
+Campaign ID
+
+Sortable Fields (asc/desc)
+
+Name
+
+Deadline
+
+Commitment Count
+
+Escrow Locked Amount
+
+Created At
+
+Updated At
+
+Lifecycle State
+
+export interface CampaignListQuery {
+  search?: string;
+  lifecycleState?: CampaignLifecycleState;
+  publishStatus?: "DRAFT" | "PUBLISHED";
+  sortBy?:
+    | "name"
+    | "deadline"
+    | "commitmentCount"
+    | "escrowLockedAmount"
+    | "createdAt"
+    | "updatedAt"
+    | "lifecycleState";
+  sortDirection?: "asc" | "desc";
+}
+
+1.4 Primary Actions
+
+Create Campaign → /admin/campaigns/new
+
+Click Row → /admin/campaigns/:id
+
+Filter by State
+
+Search
+
+Sort
+
+1.5 Validation Logic
+
+commitmentCount ≥ 0
+
+escrowLockedAmount.amount ≥ 0
+
+deadline may be null for drafts
+
+Lifecycle state must be one of canonical enum values
+
+1.6 State Handling
+State	UI Behavior
+Loading	Skeleton rows
+Empty	“No campaigns found”
+Filtered Empty	“No campaigns match filters”
+Error	Inline error, list hidden
+2. Campaign Detail Page
+
+Route: /admin/campaigns/:id
+
+Purpose:
+Act as the single source of truth for a campaign. All admin actions and decisions happen here.
+
+2.1 Campaign Metadata Section
+Data Requirements
+export interface CampaignMetadata {
+  campaignId: string;
+  name: string;
+  description?: string;
+
+  publishStatus: "DRAFT" | "PUBLISHED";
+  lifecycleState: CampaignLifecycleState;
+
+  createdAt: string;
+  updatedAt: string;
+}
+
+Primary Actions
+
+Edit name/description (only if DRAFT)
+
+Publish / Unpublish (guarded)
+
+Validation
+
+Name required
+
+Cannot unpublish if commitments exist
+
+State Handling
+
+Read-only once campaign is ACTIVE or beyond
+
+2.2 Product Definition
+2.2.1 Specifications
+export interface ProductSpecification {
+  key: string;
+  value: string;
+}
+
+
+Editable only in DRAFT
+
+Required before publish
+
+2.2.2 Variations
+export interface ProductVariation {
+  variationId: string;
+  name: string;
+  attributes: Record<string, string>;
+}
+
+
+Optional
+
+Immutable after publish
+
+2.2.3 Media
+export interface ProductMedia {
+  mediaId: string;
+  type: "IMAGE" | "VIDEO";
+  url: string;
+}
+
+
+At least one image required to publish
+
+2.3 Target & Progress (Units)
+Data Requirements
+export interface CampaignTarget {
+  targetUnits: number; // integer > 0
+  committedUnits: number; // integer ≥ 0
+}
+
+Validation
+
+targetUnits > 0
+
+committedUnits ≤ targetUnits (unless overcommit allowed by rule)
+
+State Handling
+
+Progress read-only once ACTIVE
+
+2.4 Buyer Commitments (Read-Only)
+Data Requirements
+export interface BuyerCommitmentRow {
+  userId: string;
+  emailMasked: string;
+  committedUnits: number;
+  committedAt: string;
+}
+
+Actions
+
+None (read-only)
+
+State Handling
+
+Empty state if no commitments
+
+2.5 Supplier Interaction
+Data Requirements
+export interface SupplierInteraction {
+  supplierId?: string;
+  supplierName?: string;
+
+  softQuoteReceived: boolean;
+  finalAcceptance: boolean;
+
+  acceptedAt?: string;
+}
+
+Primary Actions
+
+Attach supplier
+
+Mark soft quote received
+
+Mark final acceptance
+
+Validation
+
+Final acceptance only allowed after FUNDED
+
+2.6 Fulfillment Plan
+Data Requirements
+export type DeliveryMode = "SUPPLIER_DIRECT" | "CP_BASED";
+
+export interface FulfillmentPlan {
+  deliveryMode: DeliveryMode;
+  consolidationPointId?: string;
+}
+
+Validation
+
+CP required if deliveryMode = CP_BASED
+
+Cannot change after fulfillment starts
+
+2.7 Campaign Timeline (Append-Only)
+Data Requirements
+export interface CampaignTimelineEvent {
+  eventId: string;
+  type:
+    | "CREATED"
+    | "PUBLISHED"
+    | "STATE_CHANGED"
+    | "SUPPLIER_ACCEPTED"
+    | "ESCROW_LOCKED"
+    | "FULFILLMENT_STARTED"
+    | "RELEASED"
+    | "FAILED";
+  metadata?: Record<string, any>;
+  createdAt: string;
+}
+
+Rules
+
+Append-only
+
+No deletion or edits
+
+2.8 Admin Actions
+Possible Actions (Guarded by State)
+Action	Allowed When
+Publish	DRAFT
+Open Campaign	PUBLISHED
+Mark Funded	ACTIVE + target met
+Start Fulfillment	FUNDED
+Release Escrow	FULFILLMENT_IN_PROGRESS
+Fail Campaign	Any pre-release
+export interface AdminCampaignAction {
+  actionCode:
+    | "PUBLISH"
+    | "OPEN"
+    | "MARK_FUNDED"
+    | "START_FULFILLMENT"
+    | "RELEASE_ESCROW"
+    | "FAIL_CAMPAIGN";
+  enabled: boolean;
+}
+
+3. Cross-Section Integrity Rules
+
+Commitments cannot exist before publish
+
+Escrow locked amount must equal commitments × unit price (if modeled)
+
+Timeline must reflect every lifecycle change
+
+No destructive edits after ACTIVE
+
+4. API Contract (Recommended)
+export interface AdminCampaignDetailResponse {
+  metadata: CampaignMetadata;
+  productSpecifications: ProductSpecification[];
+  variations: ProductVariation[];
+  media: ProductMedia[];
+  target: CampaignTarget;
+  commitments: BuyerCommitmentRow[];
+  supplierInteraction: SupplierInteraction;
+  fulfillmentPlan: FulfillmentPlan;
+  timeline: CampaignTimelineEvent[];
+  availableActions: AdminCampaignAction[];
+}

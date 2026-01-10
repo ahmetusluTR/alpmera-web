@@ -1912,6 +1912,7 @@ export async function registerRoutes(
         participantName: c.participantName,
         participantEmail: c.participantEmail,
         quantity: c.quantity,
+        amount: c.amount,
         status: c.status,
         createdAt: c.createdAt,
         deliveryId: null,
@@ -1919,6 +1920,102 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching admin commitments:", error);
       res.status(500).json({ error: "Failed to fetch commitments" });
+    }
+  });
+
+  // Admin: Perform campaign action (unified action endpoint)
+  // Maps action codes to state transitions
+  app.post("/api/admin/campaigns/:id/action", requireAdminAuth, async (req, res) => {
+    try {
+      const campaignId = req.params.id;
+      const { actionCode } = req.body;
+      const adminUsername = (req as any).adminUsername || "admin";
+
+      if (!actionCode) {
+        return res.status(400).json({ error: "actionCode is required" });
+      }
+
+      const campaign = await storage.getCampaign(campaignId);
+      if (!campaign) {
+        return res.status(404).json({ error: "Campaign not found" });
+      }
+
+      const currentState = campaign.state as CampaignState;
+      let newState: CampaignState | null = null;
+      let reason = "";
+
+      // Map action codes to state transitions
+      switch (actionCode) {
+        case "MARK_FUNDED":
+          if (currentState !== "AGGREGATION") {
+            return res.status(400).json({ error: "Campaign must be in AGGREGATION state to mark as funded" });
+          }
+          newState = "SUCCESS";
+          reason = "Target met, campaign marked as funded by admin";
+          break;
+
+        case "START_FULFILLMENT":
+          if (currentState !== "SUCCESS") {
+            return res.status(400).json({ error: "Campaign must be in SUCCESS (funded) state to start fulfillment" });
+          }
+          if (!campaign.supplierAcceptedAt) {
+            return res.status(400).json({ error: "Supplier must accept before fulfillment can start" });
+          }
+          newState = "FULFILLMENT";
+          reason = "Fulfillment started by admin";
+          break;
+
+        case "RELEASE_ESCROW":
+          if (currentState !== "FULFILLMENT") {
+            return res.status(400).json({ error: "Campaign must be in FULFILLMENT state to release escrow" });
+          }
+          newState = "RELEASED";
+          reason = "Escrow released by admin after fulfillment";
+          break;
+
+        case "FAIL_CAMPAIGN":
+          if (currentState === "RELEASED" || currentState === "FAILED") {
+            return res.status(400).json({ error: "Cannot fail a campaign that is already released or failed" });
+          }
+          newState = "FAILED";
+          reason = "Campaign failed by admin";
+          break;
+
+        default:
+          return res.status(400).json({ error: `Unknown action code: ${actionCode}` });
+      }
+
+      // Check valid transitions
+      const validTransitions = VALID_TRANSITIONS[currentState];
+      if (!validTransitions.includes(newState)) {
+        return res.status(400).json({ 
+          error: `Invalid transition: ${currentState} -> ${newState}`,
+          allowedTransitions: validTransitions 
+        });
+      }
+
+      // Perform the transition
+      await storage.updateCampaignState(campaignId, newState);
+
+      // Log the action
+      await storage.createAdminActionLog({
+        campaignId,
+        adminUsername,
+        action: "state_transition",
+        previousState: currentState,
+        newState,
+        reason,
+      });
+
+      res.json({ 
+        success: true, 
+        previousState: currentState, 
+        newState,
+        message: `Campaign transitioned from ${currentState} to ${newState}`
+      });
+    } catch (error) {
+      console.error("Error performing admin action:", error);
+      res.status(500).json({ error: "Failed to perform action" });
     }
   });
 
