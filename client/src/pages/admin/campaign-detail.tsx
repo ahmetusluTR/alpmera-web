@@ -45,6 +45,7 @@ interface CampaignDetail {
   id: string;
   title: string;
   description: string;
+  rules: string;
   state: string;
   adminPublishStatus: string;
   aggregationDeadline: string;
@@ -678,119 +679,235 @@ export default function CampaignDetailPage() {
             </Card>
 
             <Card>
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Users className="w-5 h-5" />
-                  Buyer Commitments
-                </CardTitle>
-                <CardDescription>
-                  Read-only list of all commitments for this campaign
-                </CardDescription>
+              <CardHeader className="flex flex-row items-center justify-between gap-4">
+                <div>
+                  <CardTitle className="text-lg">Supplier Interaction</CardTitle>
+                  <CardDescription>
+                    {!isPublished ? "Configure supplier settings" : "Track supplier quotes and acceptance status"}
+                  </CardDescription>
+                </div>
+                {!isPublished && editingSection !== "supplier" && (
+                  <Button onClick={() => {
+                    setEditingSection("supplier");
+                    setEditForm({
+                      supplierDirectConfirmed: campaign.supplierDirectConfirmed || false,
+                      rules: campaign.rules || "",
+                    });
+                  }} data-testid="button-edit-supplier">
+                    <Edit className="w-4 h-4 mr-2" />
+                    Edit Supplier
+                  </Button>
+                )}
               </CardHeader>
               <CardContent>
-                {!commitments || commitments.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-4">
-                    No commitments yet.
-                  </p>
+                {editingSection === "supplier" ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="checkbox"
+                        id="edit-supplier-confirmed"
+                        checked={editForm.supplierDirectConfirmed || false}
+                        onChange={(e) => setEditForm({...editForm, supplierDirectConfirmed: e.target.checked})}
+                        className="w-4 h-4"
+                        data-testid="checkbox-supplier-confirmed"
+                      />
+                      <Label htmlFor="edit-supplier-confirmed">Supplier has confirmed direct delivery capability</Label>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-rules">Campaign Rules</Label>
+                      <Textarea
+                        id="edit-rules"
+                        value={editForm.rules || ""}
+                        onChange={(e) => setEditForm({...editForm, rules: e.target.value})}
+                        rows={3}
+                        placeholder="Describe participation rules, refund policies, etc."
+                        data-testid="input-edit-rules"
+                      />
+                    </div>
+                    <div className="flex gap-2 pt-2">
+                      <Button 
+                        onClick={() => saveMutation.mutate({
+                          supplierDirectConfirmed: editForm.supplierDirectConfirmed,
+                          rules: editForm.rules,
+                        })}
+                        disabled={saveMutation.isPending}
+                        data-testid="button-save-supplier"
+                      >
+                        {saveMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                        <Save className="w-4 h-4 mr-2" />
+                        Save
+                      </Button>
+                      <Button variant="outline" onClick={() => { setEditingSection(null); setEditForm({}); }} data-testid="button-cancel-supplier">
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b">
-                          <th className="text-left py-2 px-2 font-medium text-muted-foreground">Participant</th>
-                          <th className="text-left py-2 px-2 font-medium text-muted-foreground">Email</th>
-                          <th className="text-right py-2 px-2 font-medium text-muted-foreground">Units</th>
-                          <th className="text-right py-2 px-2 font-medium text-muted-foreground">Amount</th>
-                          <th className="text-left py-2 px-2 font-medium text-muted-foreground">Status</th>
-                          <th className="text-left py-2 px-2 font-medium text-muted-foreground">Date</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {commitments.map((c) => (
-                          <tr key={c.id} className="border-b last:border-0" data-testid={`row-commitment-${c.id}`}>
-                            <td className="py-2 px-2">{c.participantName}</td>
-                            <td className="py-2 px-2 text-muted-foreground">
-                              {c.participantEmail.replace(/(.{2})(.*)(@.*)/, "$1***$3")}
-                            </td>
-                            <td className="py-2 px-2 text-right font-mono">{c.quantity}</td>
-                            <td className="py-2 px-2 text-right font-mono">${parseFloat(c.amount).toLocaleString()}</td>
-                            <td className="py-2 px-2">
-                              <Badge variant={c.status === "LOCKED" ? "secondary" : c.status === "REFUNDED" ? "destructive" : "default"}>
-                                {c.status}
-                              </Badge>
-                            </td>
-                            <td className="py-2 px-2 text-muted-foreground">
-                              {format(new Date(c.createdAt), "MMM d, yyyy")}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    <div>
+                      <p className="text-muted-foreground text-xs mb-1">Supplier Accepted</p>
+                      <p className="font-medium" data-testid="text-supplier-accepted">
+                        {campaign.supplierAcceptedAt ? (
+                          <span className="text-green-600 dark:text-green-400 flex items-center gap-1">
+                            <CheckCircle className="w-4 h-4" />
+                            Yes
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">Not yet</span>
+                        )}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground text-xs mb-1">Direct Delivery Confirmed</p>
+                      <p className="font-medium" data-testid="text-supplier-direct">
+                        {campaign.supplierDirectConfirmed ? (
+                          <span className="text-green-600 dark:text-green-400 flex items-center gap-1">
+                            <CheckCircle className="w-4 h-4" />
+                            Yes
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">No</span>
+                        )}
+                      </p>
+                    </div>
+                    {campaign.supplierAcceptedAt && (
+                      <div>
+                        <p className="text-muted-foreground text-xs mb-1">Accepted At</p>
+                        <p className="font-medium">
+                          {format(new Date(campaign.supplierAcceptedAt), "MMM d, yyyy HH:mm")}
+                        </p>
+                      </div>
+                    )}
+                    {campaign.rules && campaign.rules !== "Standard campaign rules apply." && (
+                      <div className="col-span-2">
+                        <p className="text-muted-foreground text-xs mb-1">Campaign Rules</p>
+                        <p className="text-sm">{campaign.rules}</p>
+                      </div>
+                    )}
                   </div>
                 )}
               </CardContent>
             </Card>
 
             <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Supplier Interaction</CardTitle>
-                <CardDescription>
-                  Track supplier quotes and acceptance status
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground text-xs mb-1">Supplier Accepted</p>
-                    <p className="font-medium" data-testid="text-supplier-accepted">
-                      {campaign.supplierAcceptedAt ? (
-                        <span className="text-green-600 dark:text-green-400 flex items-center gap-1">
-                          <CheckCircle className="w-4 h-4" />
-                          Yes
-                        </span>
-                      ) : (
-                        <span className="text-muted-foreground">Not yet</span>
-                      )}
-                    </p>
-                  </div>
-                  {campaign.supplierAcceptedAt && (
-                    <div>
-                      <p className="text-muted-foreground text-xs mb-1">Accepted At</p>
-                      <p className="font-medium">
-                        {format(new Date(campaign.supplierAcceptedAt), "MMM d, yyyy HH:mm")}
-                      </p>
-                    </div>
-                  )}
+              <CardHeader className="flex flex-row items-center justify-between gap-4">
+                <div>
+                  <CardTitle className="text-lg">Product Details</CardTitle>
+                  <CardDescription>
+                    {!isPublished ? "Product information for transparency and fulfillment" : "Core product fields locked after publishing"}
+                  </CardDescription>
                 </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Product Details</CardTitle>
-                <CardDescription>
-                  Product information used for transparency and fulfillment. This is not a store listing.
-                </CardDescription>
+                {!isPublished && editingSection !== "product" && (
+                  <Button onClick={() => {
+                    setEditingSection("product");
+                    setEditForm({
+                      brand: campaign.brand || "",
+                      modelNumber: campaign.modelNumber || "",
+                      variant: campaign.variant || "",
+                      shortDescription: campaign.shortDescription || "",
+                      primaryImageUrl: campaign.primaryImageUrl || "",
+                    });
+                  }} data-testid="button-edit-product">
+                    <Edit className="w-4 h-4 mr-2" />
+                    Edit Product
+                  </Button>
+                )}
               </CardHeader>
               <CardContent className="space-y-6">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground text-xs mb-1">Brand</p>
-                    <p className="font-medium" data-testid="text-brand">{campaign.brand || "—"}</p>
+                {editingSection === "product" ? (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-brand">Brand</Label>
+                        <Input
+                          id="edit-brand"
+                          value={editForm.brand || ""}
+                          onChange={(e) => setEditForm({...editForm, brand: e.target.value})}
+                          data-testid="input-edit-brand"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-model">Model / MPN</Label>
+                        <Input
+                          id="edit-model"
+                          value={editForm.modelNumber || ""}
+                          onChange={(e) => setEditForm({...editForm, modelNumber: e.target.value})}
+                          data-testid="input-edit-model"
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-variant">Variant</Label>
+                        <Input
+                          id="edit-variant"
+                          value={editForm.variant || ""}
+                          onChange={(e) => setEditForm({...editForm, variant: e.target.value})}
+                          data-testid="input-edit-variant"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-primary-image">Primary Image URL</Label>
+                        <Input
+                          id="edit-primary-image"
+                          value={editForm.primaryImageUrl || ""}
+                          onChange={(e) => setEditForm({...editForm, primaryImageUrl: e.target.value})}
+                          placeholder="https://..."
+                          data-testid="input-edit-primary-image"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-short-description">Short Description</Label>
+                      <Textarea
+                        id="edit-short-description"
+                        value={editForm.shortDescription || ""}
+                        onChange={(e) => setEditForm({...editForm, shortDescription: e.target.value})}
+                        rows={2}
+                        data-testid="input-edit-short-description"
+                      />
+                    </div>
+                    <div className="flex gap-2 pt-2">
+                      <Button 
+                        onClick={() => saveMutation.mutate({
+                          brand: editForm.brand,
+                          modelNumber: editForm.modelNumber,
+                          variant: editForm.variant,
+                          shortDescription: editForm.shortDescription,
+                          primaryImageUrl: editForm.primaryImageUrl,
+                        })}
+                        disabled={saveMutation.isPending}
+                        data-testid="button-save-product"
+                      >
+                        {saveMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                        <Save className="w-4 h-4 mr-2" />
+                        Save
+                      </Button>
+                      <Button variant="outline" onClick={() => { setEditingSection(null); setEditForm({}); }} data-testid="button-cancel-product">
+                        Cancel
+                      </Button>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-muted-foreground text-xs mb-1">Model / MPN</p>
-                    <p className="font-medium" data-testid="text-model">{campaign.modelNumber || "—"}</p>
+                ) : (
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    <div>
+                      <p className="text-muted-foreground text-xs mb-1">Brand</p>
+                      <p className="font-medium" data-testid="text-brand">{campaign.brand || "—"}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground text-xs mb-1">Model / MPN</p>
+                      <p className="font-medium" data-testid="text-model">{campaign.modelNumber || "—"}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground text-xs mb-1">Variant</p>
+                      <p className="font-medium" data-testid="text-variant">{campaign.variant || "—"}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground text-xs mb-1">SKU</p>
+                      <p className="font-mono text-sm" data-testid="text-sku">{campaign.sku || "—"}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-muted-foreground text-xs mb-1">Variant</p>
-                    <p className="font-medium" data-testid="text-variant">{campaign.variant || "—"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground text-xs mb-1">SKU</p>
-                    <p className="font-mono text-sm" data-testid="text-sku">{campaign.sku || "—"}</p>
-                  </div>
-                </div>
+                )}
 
                 {campaign.shortDescription && (
                   <div>
@@ -921,18 +1038,188 @@ export default function CampaignDetailPage() {
             </Card>
 
             <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Delivery Settings</CardTitle>
-                <CardDescription>
-                  {campaign.deliveryStrategy === "CONSOLIDATION_POINT" || campaign.deliveryStrategy === "BULK_TO_CONSOLIDATION"
-                    ? "Bulk delivery to consolidation point"
-                    : "Supplier direct fulfillment to participants"}
-                  {isPublished && !isFulfillmentPhase && " (editable)"}
-                  {isFulfillmentPhase && " (locked)"}
-                </CardDescription>
+              <CardHeader className="flex flex-row items-center justify-between gap-4">
+                <div>
+                  <CardTitle className="text-lg">Delivery Settings</CardTitle>
+                  <CardDescription>
+                    {campaign.deliveryStrategy === "CONSOLIDATION_POINT" || campaign.deliveryStrategy === "BULK_TO_CONSOLIDATION"
+                      ? "Bulk delivery to consolidation point"
+                      : "Supplier direct fulfillment to participants"}
+                    {isFulfillmentPhase && " (locked)"}
+                  </CardDescription>
+                </div>
+                {!isPublished && !isFulfillmentPhase && editingSection !== "delivery" && (
+                  <Button onClick={() => {
+                    setEditingSection("delivery");
+                    setEditForm({
+                      deliveryStrategy: campaign.deliveryStrategy || "SUPPLIER_DIRECT",
+                      deliveryWindow: campaign.deliveryWindow || "",
+                      fulfillmentNotes: campaign.fulfillmentNotes || "",
+                      consolidationContactName: campaign.consolidationContactName || "",
+                      consolidationCompany: campaign.consolidationCompany || "",
+                      consolidationContactEmail: campaign.consolidationContactEmail || "",
+                      consolidationAddressLine1: campaign.consolidationAddressLine1 || "",
+                      consolidationCity: campaign.consolidationCity || "",
+                      consolidationState: campaign.consolidationState || "",
+                      consolidationPostalCode: campaign.consolidationPostalCode || "",
+                      consolidationPhone: campaign.consolidationPhone || "",
+                    });
+                  }} data-testid="button-edit-delivery">
+                    <Edit className="w-4 h-4 mr-2" />
+                    Edit Delivery
+                  </Button>
+                )}
               </CardHeader>
               <CardContent>
-                {campaign.deliveryStrategy === "SUPPLIER_DIRECT" ? (
+                {editingSection === "delivery" ? (
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-delivery-strategy">Delivery Strategy</Label>
+                      <select
+                        id="edit-delivery-strategy"
+                        value={editForm.deliveryStrategy || "SUPPLIER_DIRECT"}
+                        onChange={(e) => setEditForm({...editForm, deliveryStrategy: e.target.value})}
+                        className="w-full p-2 border rounded"
+                        data-testid="select-delivery-strategy"
+                      >
+                        <option value="SUPPLIER_DIRECT">Supplier Direct</option>
+                        <option value="CONSOLIDATION_POINT">Consolidation Point</option>
+                        <option value="BULK_TO_CONSOLIDATION">Bulk to Consolidation</option>
+                      </select>
+                    </div>
+                    {(editForm.deliveryStrategy === "CONSOLIDATION_POINT" || editForm.deliveryStrategy === "BULK_TO_CONSOLIDATION") && (
+                      <>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="edit-consolidation-company">Company / Organization</Label>
+                            <Input
+                              id="edit-consolidation-company"
+                              value={editForm.consolidationCompany || ""}
+                              onChange={(e) => setEditForm({...editForm, consolidationCompany: e.target.value})}
+                              data-testid="input-edit-consolidation-company"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="edit-consolidation-contact">Contact Name</Label>
+                            <Input
+                              id="edit-consolidation-contact"
+                              value={editForm.consolidationContactName || ""}
+                              onChange={(e) => setEditForm({...editForm, consolidationContactName: e.target.value})}
+                              data-testid="input-edit-consolidation-contact"
+                            />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="edit-consolidation-email">Contact Email</Label>
+                            <Input
+                              id="edit-consolidation-email"
+                              type="email"
+                              value={editForm.consolidationContactEmail || ""}
+                              onChange={(e) => setEditForm({...editForm, consolidationContactEmail: e.target.value})}
+                              data-testid="input-edit-consolidation-email"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="edit-consolidation-phone">Contact Phone</Label>
+                            <Input
+                              id="edit-consolidation-phone"
+                              value={editForm.consolidationPhone || ""}
+                              onChange={(e) => setEditForm({...editForm, consolidationPhone: e.target.value})}
+                              data-testid="input-edit-consolidation-phone"
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-consolidation-address">Address Line 1</Label>
+                          <Input
+                            id="edit-consolidation-address"
+                            value={editForm.consolidationAddressLine1 || ""}
+                            onChange={(e) => setEditForm({...editForm, consolidationAddressLine1: e.target.value})}
+                            data-testid="input-edit-consolidation-address"
+                          />
+                        </div>
+                        <div className="grid grid-cols-3 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="edit-consolidation-city">City</Label>
+                            <Input
+                              id="edit-consolidation-city"
+                              value={editForm.consolidationCity || ""}
+                              onChange={(e) => setEditForm({...editForm, consolidationCity: e.target.value})}
+                              data-testid="input-edit-consolidation-city"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="edit-consolidation-state">State</Label>
+                            <Input
+                              id="edit-consolidation-state"
+                              value={editForm.consolidationState || ""}
+                              onChange={(e) => setEditForm({...editForm, consolidationState: e.target.value})}
+                              data-testid="input-edit-consolidation-state"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="edit-consolidation-postal">Postal Code</Label>
+                            <Input
+                              id="edit-consolidation-postal"
+                              value={editForm.consolidationPostalCode || ""}
+                              onChange={(e) => setEditForm({...editForm, consolidationPostalCode: e.target.value})}
+                              data-testid="input-edit-consolidation-postal"
+                            />
+                          </div>
+                        </div>
+                      </>
+                    )}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-delivery-window">Delivery Window</Label>
+                        <Input
+                          id="edit-delivery-window"
+                          value={editForm.deliveryWindow || ""}
+                          onChange={(e) => setEditForm({...editForm, deliveryWindow: e.target.value})}
+                          placeholder="e.g., 2-3 weeks"
+                          data-testid="input-edit-delivery-window"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-fulfillment-notes">Fulfillment Notes</Label>
+                      <Textarea
+                        id="edit-fulfillment-notes"
+                        value={editForm.fulfillmentNotes || ""}
+                        onChange={(e) => setEditForm({...editForm, fulfillmentNotes: e.target.value})}
+                        rows={2}
+                        data-testid="input-edit-fulfillment-notes"
+                      />
+                    </div>
+                    <div className="flex gap-2 pt-2">
+                      <Button 
+                        onClick={() => saveMutation.mutate({
+                          deliveryStrategy: editForm.deliveryStrategy,
+                          deliveryWindow: editForm.deliveryWindow,
+                          fulfillmentNotes: editForm.fulfillmentNotes,
+                          consolidationContactName: editForm.consolidationContactName,
+                          consolidationCompany: editForm.consolidationCompany,
+                          consolidationContactEmail: editForm.consolidationContactEmail,
+                          consolidationAddressLine1: editForm.consolidationAddressLine1,
+                          consolidationCity: editForm.consolidationCity,
+                          consolidationState: editForm.consolidationState,
+                          consolidationPostalCode: editForm.consolidationPostalCode,
+                          consolidationPhone: editForm.consolidationPhone,
+                        })}
+                        disabled={saveMutation.isPending}
+                        data-testid="button-save-delivery"
+                      >
+                        {saveMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                        <Save className="w-4 h-4 mr-2" />
+                        Save
+                      </Button>
+                      <Button variant="outline" onClick={() => { setEditingSection(null); setEditForm({}); }} data-testid="button-cancel-delivery">
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                ) : campaign.deliveryStrategy === "SUPPLIER_DIRECT" ? (
                   <div className="p-4 bg-muted/30 rounded text-sm">
                     <p>Supplier is responsible for direct fulfillment to participants.</p>
                     {campaign.supplierDirectConfirmed && (
@@ -985,6 +1272,60 @@ export default function CampaignDetailPage() {
                         <p className="text-sm">{campaign.fulfillmentNotes}</p>
                       </div>
                     )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Users className="w-5 h-5" />
+                  Buyer Commitments
+                </CardTitle>
+                <CardDescription>
+                  Read-only list of all commitments for this campaign
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {!commitments || commitments.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    No commitments yet.
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b">
+                          <th className="text-left py-2 px-2 font-medium text-muted-foreground">Participant</th>
+                          <th className="text-left py-2 px-2 font-medium text-muted-foreground">Email</th>
+                          <th className="text-right py-2 px-2 font-medium text-muted-foreground">Units</th>
+                          <th className="text-right py-2 px-2 font-medium text-muted-foreground">Amount</th>
+                          <th className="text-left py-2 px-2 font-medium text-muted-foreground">Status</th>
+                          <th className="text-left py-2 px-2 font-medium text-muted-foreground">Date</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {commitments.map((c) => (
+                          <tr key={c.id} className="border-b last:border-0" data-testid={`row-commitment-${c.id}`}>
+                            <td className="py-2 px-2">{c.participantName}</td>
+                            <td className="py-2 px-2 text-muted-foreground">
+                              {c.participantEmail.replace(/(.{2})(.*)(@.*)/, "$1***$3")}
+                            </td>
+                            <td className="py-2 px-2 text-right font-mono">{c.quantity}</td>
+                            <td className="py-2 px-2 text-right font-mono">${parseFloat(c.amount).toLocaleString()}</td>
+                            <td className="py-2 px-2">
+                              <Badge variant={c.status === "LOCKED" ? "secondary" : c.status === "REFUNDED" ? "destructive" : "default"}>
+                                {c.status}
+                              </Badge>
+                            </td>
+                            <td className="py-2 px-2 text-muted-foreground">
+                              {format(new Date(c.createdAt), "MMM d, yyyy")}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 )}
               </CardContent>
