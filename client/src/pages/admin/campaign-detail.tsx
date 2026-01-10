@@ -455,7 +455,7 @@ export default function CampaignDetailPage() {
                   </CardDescription>
                 </div>
                 {!isPublished && editingSection !== "metadata" && (
-                  <Button variant="outline" size="sm" onClick={() => {
+                  <Button onClick={() => {
                     setEditingSection("metadata");
                     setEditForm({
                       title: campaign.title,
@@ -467,7 +467,7 @@ export default function CampaignDetailPage() {
                     });
                   }} data-testid="button-edit-metadata">
                     <Edit className="w-4 h-4 mr-2" />
-                    Edit
+                    Edit Campaign
                   </Button>
                 )}
               </CardHeader>
