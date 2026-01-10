@@ -15,7 +15,6 @@ import {
   ArrowLeft, 
   AlertTriangle, 
   Shield,
-  Clock,
   CheckCircle,
   Target,
   History,
@@ -292,68 +291,7 @@ export default function CampaignDetail() {
           {/* Left Column: Main Content */}
           <div className="lg:col-span-2 space-y-8">
             
-            {/* C. Trust & Transparency Section */}
-            <section>
-              <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-                <Shield className="w-5 h-5 text-chart-1" />
-                Trust & transparency
-              </h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Campaign Status Card */}
-                <Card data-testid="card-status">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                      <Clock className="w-4 h-4" />
-                      Current Status
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-2">
-                        <Badge className={`text-xs ${getStatusColor(campaign.state)}`}>
-                          {getStatusLabel(campaign.state)}
-                        </Badge>
-                      </div>
-                      <div className="space-y-2 text-sm">
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Created</span>
-                          <span className="font-mono text-xs">{new Date(campaign.createdAt).toLocaleDateString()}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Deadline</span>
-                          <span className="font-mono text-xs">{new Date(campaign.aggregationDeadline).toLocaleDateString()}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Protections Card - uses shared constants */}
-                <Card data-testid="card-protections">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                      <Shield className="w-4 h-4" />
-                      Your protections
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <ul className="space-y-3 text-sm">
-                      {CAMPAIGN_PROTECTIONS.map((protection) => (
-                        <li key={protection.id} className="flex items-start gap-2">
-                          <CheckCircle className="w-3.5 h-3.5 text-green-600 mt-0.5 flex-shrink-0" />
-                          <div>
-                            <span className="font-medium text-foreground">{protection.title}</span>
-                            <p className="text-muted-foreground text-xs mt-0.5">{protection.description}</p>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  </CardContent>
-                </Card>
-              </div>
-            </section>
-
-            {/* D. Product Section */}
+            {/* 1. Product Section (first after header) */}
             <section>
               <h2 className="text-xl font-semibold mb-4">Product</h2>
               <Card data-testid="card-product">
@@ -405,8 +343,31 @@ export default function CampaignDetail() {
                 </CardContent>
               </Card>
             </section>
+
+            {/* 2. Trust & Transparency Section */}
+            <section>
+              <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+                <Shield className="w-5 h-5 text-chart-1" />
+                Trust & transparency
+              </h2>
+              <Card data-testid="card-protections">
+                <CardContent className="p-6">
+                  <ul className="space-y-4">
+                    {CAMPAIGN_PROTECTIONS.map((protection) => (
+                      <li key={protection.id} className="flex items-start gap-3">
+                        <CheckCircle className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+                        <div>
+                          <span className="font-medium text-foreground">{protection.title}</span>
+                          <p className="text-muted-foreground text-sm mt-0.5">{protection.description}</p>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+            </section>
             
-            {/* About Section */}
+            {/* 3. About Section */}
             <section>
               <h2 className="text-xl font-semibold mb-4">About this campaign</h2>
               <Card data-testid="card-description">
@@ -418,11 +379,11 @@ export default function CampaignDetail() {
               </Card>
             </section>
 
-            {/* E. Timeline Section */}
+            {/* 4. Timeline Section */}
             <section>
               <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
                 <History className="w-5 h-5 text-chart-1" />
-                Campaign timeline
+                Timeline
               </h2>
               <Card data-testid="card-activity">
                 <CardContent className="p-6">
@@ -463,19 +424,6 @@ export default function CampaignDetail() {
               </Card>
             </section>
 
-            {/* F. Participation Terms */}
-            <section>
-              <h2 className="text-xl font-semibold mb-4">Participation Terms</h2>
-              <Card data-testid="card-rules">
-                <CardContent className="p-6">
-                  <div className="prose prose-sm dark:prose-invert max-w-none">
-                    <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground bg-transparent p-0">
-                      {campaign.rules}
-                    </pre>
-                  </div>
-                </CardContent>
-              </Card>
-            </section>
           </div>
 
           {/* B. Right Column: Primary Actions Card */}
