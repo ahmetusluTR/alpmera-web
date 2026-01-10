@@ -66,7 +66,7 @@ export function CampaignCard({ campaign }: CampaignCardProps) {
           
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-4 text-sm">
-              <span className="text-muted-foreground">Progress</span>
+              <span className="text-muted-foreground">Momentum</span>
               <span className="font-mono font-medium" data-testid={`text-progress-${campaign.id}`}>
                 {progress}%
               </span>

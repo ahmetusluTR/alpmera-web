@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useParams, Link, useLocation } from "wouter";
+import { useState, useEffect } from "react";
 import { Layout } from "@/components/layout";
 import { StateTimeline } from "@/components/state-timeline";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,16 +18,53 @@ import {
   Lock,
   Clock,
   CheckCircle,
-  XCircle,
   FileText,
   Users,
   Target,
-  Wallet,
-  History
+  History,
+  Timer
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { getStatusLabel, getStatusColor } from "@/lib/campaign-status";
 import type { CampaignState } from "@shared/schema";
+
+function useCountdown(deadline: string) {
+  const [timeLeft, setTimeLeft] = useState<{ hours: number; minutes: number; seconds: number; isExpired: boolean; totalHours: number } | null>(null);
+  
+  useEffect(() => {
+    const calculateTimeLeft = () => {
+      const now = new Date().getTime();
+      const end = new Date(deadline).getTime();
+      const diff = end - now;
+      
+      if (diff <= 0) {
+        return { hours: 0, minutes: 0, seconds: 0, isExpired: true, totalHours: 0 };
+      }
+      
+      const totalHours = diff / (1000 * 60 * 60);
+      const hours = Math.floor(diff / (1000 * 60 * 60));
+      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+      
+      return { hours, minutes, seconds, isExpired: false, totalHours };
+    };
+    
+    setTimeLeft(calculateTimeLeft());
+    const timer = setInterval(() => setTimeLeft(calculateTimeLeft()), 1000);
+    return () => clearInterval(timer);
+  }, [deadline]);
+  
+  return timeLeft;
+}
+
+function CountdownDisplay({ timeLeft }: { timeLeft: { hours: number; minutes: number; seconds: number } }) {
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  return (
+    <span className="font-mono font-medium">
+      {pad(timeLeft.hours)}:{pad(timeLeft.minutes)}:{pad(timeLeft.seconds)}
+    </span>
+  );
+}
 
 interface PublicCampaignDetail {
   id: string;
@@ -47,10 +85,10 @@ interface PublicCampaignDetail {
 }
 
 function getQualitativeLabel(percent: number): string {
-  if (percent >= 100) return "Target reached";
-  if (percent >= 70) return "Approaching target";
+  if (percent >= 100) return "Goal reached";
+  if (percent >= 70) return "Approaching goal";
   if (percent >= 40) return "Gaining traction";
-  return "Building momentum";
+  return "Gathering commitments";
 }
 
 function ProgressBarWithMilestones({ value }: { value: number }) {
@@ -133,8 +171,19 @@ export default function CampaignDetail() {
   
   const isFailed = campaign.state === "FAILED";
   const isCompleted = campaign.state === "RELEASED";
-  const canJoin = campaign.state === "AGGREGATION" && isAuthenticated;
+  const isSuccess = campaign.state === "SUCCESS";
+  const isFulfillment = campaign.state === "FULFILLMENT";
+  const isNotJoinable = isFailed || isCompleted || isSuccess || isFulfillment;
   const qualitativeLabel = getQualitativeLabel(progress);
+  
+  // Countdown timer for urgency
+  const timeLeft = useCountdown(campaign.aggregationDeadline);
+  const isClosingSoon = timeLeft && !timeLeft.isExpired && timeLeft.totalHours <= 24;
+  const isClosingVerySoon = timeLeft && !timeLeft.isExpired && timeLeft.totalHours <= 2;
+  const isCampaignClosed = timeLeft?.isExpired && campaign.state === "AGGREGATION";
+  
+  // Join conditions
+  const canJoin = campaign.state === "AGGREGATION" && isAuthenticated && !isCampaignClosed;
 
   const formatCurrency = (amount: number) => 
     amount.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
@@ -180,7 +229,7 @@ export default function CampaignDetail() {
             {campaign.title}
           </h1>
           <p className="text-muted-foreground text-lg mb-4">
-            A collective campaign where participants join together to reach a shared goal.
+            Join others to reach a shared goal. Your money stays protected until the campaign is accepted.
           </p>
           
           {/* State Timeline */}
@@ -192,22 +241,22 @@ export default function CampaignDetail() {
           <div className="flex flex-wrap items-center gap-6 text-sm">
             <div className="flex items-center gap-2">
               <Calendar className="w-4 h-4 text-muted-foreground" />
-              <span className="text-muted-foreground">Closes:</span>
+              <span className="text-muted-foreground">Ends:</span>
               <span className="font-medium" data-testid="text-deadline">
                 {formatDate(campaign.aggregationDeadline)}
               </span>
             </div>
             <div className="flex items-center gap-2">
               <Target className="w-4 h-4 text-muted-foreground" />
-              <span className="text-muted-foreground">Progress:</span>
+              <span className="text-muted-foreground">Momentum:</span>
               <span className="font-mono font-medium" data-testid="text-funding-progress">
                 {Math.round(progress)}%
               </span>
             </div>
-            {hasPricingData && campaign.participantCount !== undefined && (
+            {isAuthenticated && campaign.participantCount !== undefined && (
               <div className="flex items-center gap-2">
                 <Users className="w-4 h-4 text-muted-foreground" />
-                <span className="text-muted-foreground">Participants:</span>
+                <span className="text-muted-foreground">Members:</span>
                 <span className="font-mono font-medium" data-testid="text-participants">
                   {campaign.participantCount}
                 </span>
@@ -217,6 +266,18 @@ export default function CampaignDetail() {
         </div>
       </div>
 
+      {/* Closing Soon Banner (shows when ≤ 2h remaining) */}
+      {isClosingVerySoon && !isCampaignClosed && campaign.state === "AGGREGATION" && timeLeft && (
+        <div className="bg-amber-500/10 border-b border-amber-500/30 px-6 py-3" data-testid="banner-closing-soon">
+          <div className="max-w-6xl mx-auto flex items-center justify-center gap-3 text-amber-600 dark:text-amber-400">
+            <Timer className="w-4 h-4" />
+            <span className="font-medium">Closing soon</span>
+            <span className="text-muted-foreground">|</span>
+            <span className="text-sm">Ends in <CountdownDisplay timeLeft={timeLeft} /></span>
+          </div>
+        </div>
+      )}
+
       {/* Main Content: Two-column layout on desktop */}
       <div className="max-w-6xl mx-auto px-6 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -224,44 +285,13 @@ export default function CampaignDetail() {
           {/* Left Column: Main Content */}
           <div className="lg:col-span-2 space-y-8">
             
-            {/* C. Transparency Section */}
+            {/* C. Trust & Transparency Section */}
             <section>
               <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
                 <Shield className="w-5 h-5 text-chart-1" />
-                Transparency
+                Trust & transparency
               </h2>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                
-                {/* Escrow Status Card */}
-                <Card data-testid="card-escrow-status">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                      <Wallet className="w-4 h-4" />
-                      Escrow Status
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {hasPricingData ? (
-                      <div className="space-y-2">
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">In escrow</span>
-                          <span className="font-mono font-medium">{formatCurrency(totalCommitted)}</span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Target</span>
-                          <span className="font-mono font-medium">{formatCurrency(targetAmount)}</span>
-                        </div>
-                        <ProgressBarWithMilestones value={progress} />
-                        <p className="text-xs text-muted-foreground">{qualitativeLabel}</p>
-                      </div>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">
-                        Sign in to view escrow details.
-                      </p>
-                    )}
-                  </CardContent>
-                </Card>
-
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Campaign Status Card */}
                 <Card data-testid="card-status">
                   <CardHeader className="pb-2">
@@ -296,22 +326,31 @@ export default function CampaignDetail() {
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
                       <FileText className="w-4 h-4" />
-                      Rules & Protections
+                      Rules & protections
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <ul className="space-y-2 text-sm text-muted-foreground">
+                    <ul className="space-y-3 text-sm">
                       <li className="flex items-start gap-2">
                         <CheckCircle className="w-3.5 h-3.5 text-green-600 mt-0.5 flex-shrink-0" />
-                        <span>Append-only records</span>
+                        <div>
+                          <span className="font-medium text-foreground">Your money is protected</span>
+                          <p className="text-muted-foreground text-xs mt-0.5">Funds are locked securely and only released if the campaign is accepted.</p>
+                        </div>
                       </li>
                       <li className="flex items-start gap-2">
                         <CheckCircle className="w-3.5 h-3.5 text-green-600 mt-0.5 flex-shrink-0" />
-                        <span>Idempotent operations</span>
+                        <div>
+                          <span className="font-medium text-foreground">No silent changes</span>
+                          <p className="text-muted-foreground text-xs mt-0.5">Campaign rules and key actions can't be changed without being recorded.</p>
+                        </div>
                       </li>
                       <li className="flex items-start gap-2">
                         <CheckCircle className="w-3.5 h-3.5 text-green-600 mt-0.5 flex-shrink-0" />
-                        <span>Auditable timeline</span>
+                        <div>
+                          <span className="font-medium text-foreground">Full visibility</span>
+                          <p className="text-muted-foreground text-xs mt-0.5">You can always see when the campaign status changes and why it changed.</p>
+                        </div>
                       </li>
                     </ul>
                   </CardContent>
@@ -319,9 +358,9 @@ export default function CampaignDetail() {
               </div>
             </section>
 
-            {/* D. Details Section */}
+            {/* D. About Section */}
             <section>
-              <h2 className="text-xl font-semibold mb-4">Campaign Details</h2>
+              <h2 className="text-xl font-semibold mb-4">About this campaign</h2>
               
               {campaign.imageUrl && (
                 <Card className="overflow-hidden mb-4">
@@ -349,7 +388,7 @@ export default function CampaignDetail() {
             <section>
               <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
                 <History className="w-5 h-5 text-chart-1" />
-                Campaign Activity
+                Activity timeline
               </h2>
               <Card data-testid="card-activity">
                 <CardContent className="p-6">
@@ -357,7 +396,7 @@ export default function CampaignDetail() {
                     <div className="flex items-start gap-4">
                       <div className="w-2 h-2 rounded-full bg-chart-1 mt-2" />
                       <div>
-                        <p className="font-medium">Campaign created</p>
+                        <p className="font-medium">Campaign opened</p>
                         <p className="text-sm text-muted-foreground font-mono">
                           {formatDate(campaign.createdAt)}
                         </p>
@@ -371,10 +410,10 @@ export default function CampaignDetail() {
                       <div>
                         <p className="font-medium">
                           {isFailed 
-                            ? "Campaign did not reach target" 
+                            ? "Campaign did not reach goal" 
                             : isCompleted 
                             ? "Campaign completed" 
-                            : "Campaign closes"
+                            : "Campaign ends"
                           }
                         </p>
                         <p className="text-sm text-muted-foreground font-mono">
@@ -407,21 +446,29 @@ export default function CampaignDetail() {
             <div className="sticky top-6">
               <Card data-testid="card-actions">
                 <CardHeader>
-                  <CardTitle>Join this Campaign</CardTitle>
+                  <CardTitle>Join this campaign</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-6">
                   
-                  {/* Pricing info for authenticated users */}
-                  {hasPricingData && (
+                  {/* Countdown timer when ≤24h remaining */}
+                  {isClosingSoon && !isCampaignClosed && campaign.state === "AGGREGATION" && timeLeft && (
+                    <div className="flex items-center justify-center gap-2 text-amber-600 dark:text-amber-400 bg-amber-500/10 rounded-md p-3" data-testid="countdown-cta">
+                      <Timer className="w-4 h-4" />
+                      <span className="text-sm">Ends in <CountdownDisplay timeLeft={timeLeft} /></span>
+                    </div>
+                  )}
+                  
+                  {/* Pricing info for authenticated users only */}
+                  {isAuthenticated && hasPricingData && (
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
-                        <span className="text-sm text-muted-foreground">Unit price</span>
+                        <span className="text-sm text-muted-foreground">Commitment amount</span>
                         <span className="font-mono font-medium" data-testid="text-unit-price">
                           {formatCurrency(unitPrice)}
                         </span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span className="text-sm text-muted-foreground">Minimum</span>
+                        <span className="text-sm text-muted-foreground">Minimum commitment</span>
                         <span className="font-mono font-medium" data-testid="text-min-commitment">
                           {formatCurrency(minCommitment)}
                         </span>
@@ -439,29 +486,65 @@ export default function CampaignDetail() {
                   )}
 
                   {/* CTA Button */}
-                  {canJoin ? (
-                    <Link href={`/campaign/${id}/commit`}>
-                      <Button className="w-full" size="lg" data-testid="button-commit">
-                        Join campaign
-                        <ArrowRight className="w-4 h-4 ml-2" />
-                      </Button>
-                    </Link>
+                  {isCampaignClosed ? (
+                    <div className="space-y-4">
+                      <div className="p-4 rounded-md bg-muted text-center">
+                        <p className="text-sm text-muted-foreground">Campaign closed</p>
+                      </div>
+                      <Link href="/campaigns">
+                        <Button variant="outline" className="w-full" data-testid="button-browse-campaigns">
+                          Browse active campaigns
+                          <ArrowRight className="w-4 h-4 ml-2" />
+                        </Button>
+                      </Link>
+                    </div>
+                  ) : canJoin ? (
+                    <div className="space-y-3">
+                      <Link href={`/campaign/${id}/commit`}>
+                        <Button className="w-full" size="lg" data-testid="button-commit">
+                          Join campaign
+                          <ArrowRight className="w-4 h-4 ml-2" />
+                        </Button>
+                      </Link>
+                      <p className="text-xs text-center text-muted-foreground">
+                        You'll review key terms before confirming your commitment.
+                      </p>
+                    </div>
                   ) : campaign.state === "AGGREGATION" && !isAuthenticated ? (
-                    <Link href={signInUrl}>
-                      <Button className="w-full" size="lg" data-testid="button-login-to-commit">
-                        Sign in to join
-                        <ArrowRight className="w-4 h-4 ml-2" />
-                      </Button>
-                    </Link>
+                    <div className="space-y-3">
+                      <Link href={signInUrl}>
+                        <Button className="w-full" size="lg" data-testid="button-login-to-commit">
+                          Sign in to join
+                          <ArrowRight className="w-4 h-4 ml-2" />
+                        </Button>
+                      </Link>
+                      <p className="text-xs text-center text-muted-foreground">
+                        You'll review key terms before confirming your commitment.
+                      </p>
+                    </div>
+                  ) : isNotJoinable ? (
+                    <div className="space-y-4">
+                      <div className="p-4 rounded-md bg-muted text-center">
+                        <p className="text-sm text-muted-foreground">
+                          {isFailed 
+                            ? "This campaign did not reach its goal. All funds will be refunded."
+                            : isCompleted
+                            ? "This campaign has been completed and funds released."
+                            : "This campaign is no longer accepting new members."
+                          }
+                        </p>
+                      </div>
+                      <Link href="/campaigns">
+                        <Button variant="outline" className="w-full" data-testid="button-browse-campaigns">
+                          Browse active campaigns
+                          <ArrowRight className="w-4 h-4 ml-2" />
+                        </Button>
+                      </Link>
+                    </div>
                   ) : (
                     <div className="p-4 rounded-md bg-muted text-center">
                       <p className="text-sm text-muted-foreground">
-                        {isFailed 
-                          ? "This campaign did not reach its target. All funds will be refunded."
-                          : isCompleted
-                          ? "This campaign has been completed and funds released."
-                          : "This campaign is no longer accepting new participants."
-                        }
+                        This campaign is no longer accepting new members.
                       </p>
                     </div>
                   )}
@@ -474,15 +557,24 @@ export default function CampaignDetail() {
                     <ul className="space-y-2.5 text-sm text-muted-foreground">
                       <li className="flex items-start gap-2">
                         <Lock className="w-4 h-4 text-chart-1 mt-0.5 flex-shrink-0" />
-                        <span>Funds are locked in escrow during the campaign</span>
+                        <div>
+                          <span className="font-medium text-foreground">Your funds are locked safely</span>
+                          <p className="text-xs mt-0.5">Money is secured while the campaign is active.</p>
+                        </div>
                       </li>
                       <li className="flex items-start gap-2">
                         <Shield className="w-4 h-4 text-chart-1 mt-0.5 flex-shrink-0" />
-                        <span>If the campaign is not accepted or fails, funds are refunded</span>
+                        <div>
+                          <span className="font-medium text-foreground">No risk if it doesn't go through</span>
+                          <p className="text-xs mt-0.5">If the campaign isn't accepted or doesn't complete, you get a full refund.</p>
+                        </div>
                       </li>
                       <li className="flex items-start gap-2">
                         <FileText className="w-4 h-4 text-chart-1 mt-0.5 flex-shrink-0" />
-                        <span>All money movements are recorded with reason and actor</span>
+                        <div>
+                          <span className="font-medium text-foreground">Nothing happens behind the scenes</span>
+                          <p className="text-xs mt-0.5">Every important action is recorded and visible.</p>
+                        </div>
                       </li>
                     </ul>
                   </div>
@@ -492,6 +584,40 @@ export default function CampaignDetail() {
           </div>
         </div>
       </div>
+
+      {/* P1-C: Sticky CTA when user scrolls past Join card */}
+      {campaign.state === "AGGREGATION" && !isCampaignClosed && (
+        <div className="fixed bottom-0 left-0 right-0 bg-background/95 backdrop-blur border-t px-6 py-4 lg:hidden" data-testid="sticky-cta">
+          <div className="max-w-6xl mx-auto flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              {isClosingSoon && timeLeft && (
+                <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+                  <Timer className="w-4 h-4" />
+                  <span className="text-sm font-mono">
+                    <CountdownDisplay timeLeft={timeLeft} />
+                  </span>
+                </div>
+              )}
+              <span className="text-sm font-medium truncate">{campaign.title}</span>
+            </div>
+            {isAuthenticated ? (
+              <Link href={`/campaign/${id}/commit`}>
+                <Button size="sm" data-testid="button-sticky-commit">
+                  Join
+                  <ArrowRight className="w-4 h-4 ml-1" />
+                </Button>
+              </Link>
+            ) : (
+              <Link href={signInUrl}>
+                <Button size="sm" data-testid="button-sticky-signin">
+                  Sign in
+                  <ArrowRight className="w-4 h-4 ml-1" />
+                </Button>
+              </Link>
+            )}
+          </div>
+        </div>
+      )}
     </Layout>
   );
 }
