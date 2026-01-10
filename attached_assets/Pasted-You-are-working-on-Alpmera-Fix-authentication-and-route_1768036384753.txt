@@ -1,0 +1,92 @@
+You are working on Alpmera. Fix authentication and route guards with minimal edits.
+
+AUTH MODEL (CANONICAL):
+1) Normal users: passwordless OTP (email one-time code)
+2) Admin: API key (stored in Replit Secrets), NOT OTP
+
+NON-NEGOTIABLE:
+- Never add password flows.
+- Keep existing routes. Do not rename pages.
+- Do not redesign UI.
+- Keep “join/commitment/escrow” language; never use buy/order/checkout.
+- Minimal code changes; reuse existing guard/middleware.
+
+PROBLEM:
+- User login is broken.
+- Admin login is broken.
+- Admin must not use OTP; it must use API key.
+- Ensure no Replit error overlay (HTML) from auth endpoints.
+
+GOAL:
+- Users can sign in via OTP and access /account/*
+- Admin can access /admin/* using API key auth
+- Guards enforce: Public vs User vs Admin correctly
+- No auth loops; returnTo works for user OTP flow
+
+IMPLEMENTATION (DO IN ORDER):
+
+1) Identify current auth/guard implementation
+- Locate the central guard/middleware and the auth state source.
+- Determine what currently qualifies as “admin” (likely incorrect).
+
+2) Restore and hard-separate auth mechanisms
+A) USER AUTH (OTP)
+- Ensure /auth/sign-in triggers the correct backend endpoint and returns JSON.
+- Ensure OTP verify creates a persistent user session (cookie or token).
+- Fix cookie/token settings for Replit preview (avoid Secure cookie causing no persistence).
+- After verify: redirect to returnTo else /account/commitments.
+
+B) ADMIN AUTH (API KEY)
+- Implement admin authentication as a separate mechanism that does NOT depend on user session.
+- Add an Admin Sign In entry (minimal) OR a header-based flow:
+  Option 1 (recommended minimal UI): /admin/sign-in page with one field “Admin API Key”.
+  - On submit: store an admin session flag/token (httpOnly cookie or server session) ONLY for admin area.
+  - This admin session must be distinct from user OTP session.
+  - Do NOT store the API key in localStorage; exchange it for a server-side admin session if possible.
+
+  Option 2 (no UI): Accept admin key via request header for API calls, but you still need a UI way to set it; therefore Option 1 is preferred.
+
+- Read the API key from Replit Secrets as ADMIN_API_KEY.
+  IMPORTANT: if the key is currently placed in “Configurations”, move or also read from process.env.ADMIN_API_KEY (secrets). Treat it as sensitive.
+
+3) Update Guards (single source of truth)
+- Public routes: no guard.
+- User routes (/account/*): require valid USER session (OTP session).
+- Admin routes (/admin/*): require valid ADMIN session (API-key-based).
+- Do NOT require OTP user login for admin routes.
+- Add redirect rules:
+  - If /admin/* unauthenticated as admin -> redirect to /admin/sign-in (not /auth/sign-in).
+  - If /account/* unauthenticated as user -> redirect to /auth/sign-in?returnTo=...
+
+4) Confirm /campaigns behavior remains dual-mode
+- /campaigns and /campaigns/:id should not require login.
+- Page should show read-only mode if logged out; show commitment panel if user is logged in.
+- Admin auth should not change public campaign pages.
+
+5) Fix the “HTML error overlay” root cause
+- Ensure all auth endpoints return JSON and proper status codes.
+- If email provider missing, do not crash; log OTP to server console for dev and show a clean UI message.
+- Ensure frontend handles non-200 responses gracefully (show error banner, no runtime crash).
+
+6) Validation Checklist (must pass, report pass/fail)
+USER:
+- Logged out -> /account/commitments redirects to /auth/sign-in?returnTo=...
+- OTP send returns success JSON; no crash
+- OTP verify logs in user; refresh stays logged in
+- /campaigns/:id shows commitment panel when logged in
+
+ADMIN:
+- Logged out -> /admin redirects to /admin/sign-in
+- Enter correct admin API key -> can access /admin and subpages
+- Wrong key -> stays blocked with clear error
+- Admin session persists across refresh (for admin area)
+
+SECURITY:
+- API key is never displayed after entry
+- Prefer server session/httpOnly cookie for admin auth if feasible
+
+DELIVERABLE:
+- Working user OTP login
+- Working admin API key login
+- Correct route guards and redirects
+- No route duplication, no renames

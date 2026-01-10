@@ -1,6 +1,7 @@
-import { useEffect, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { useLocation, Redirect } from "wouter";
 import { useAuth } from "@/lib/auth";
+import { useAdminAuth } from "@/lib/admin-auth";
 import { Skeleton } from "@/components/ui/skeleton";
 
 interface GuardProps {
@@ -36,20 +37,14 @@ export function AuthGuard({ children }: GuardProps) {
 }
 
 export function AdminGuard({ children }: GuardProps) {
-  const { isAuthenticated, isAdmin, isLoading } = useAuth();
-  const [location] = useLocation();
+  const { isAdmin, isLoading } = useAdminAuth();
 
   if (isLoading) {
     return <LoadingScreen />;
   }
 
-  if (!isAuthenticated) {
-    const returnTo = encodeURIComponent(location);
-    return <Redirect to={`/auth/sign-in?returnTo=${returnTo}`} />;
-  }
-
   if (!isAdmin) {
-    return <Redirect to="/" />;
+    return <Redirect to="/admin/sign-in" />;
   }
 
   return <>{children}</>;

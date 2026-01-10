@@ -4,6 +4,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/lib/auth";
+import { AdminAuthProvider } from "@/lib/admin-auth";
 import { AuthGuard, AdminGuard, PublicOnlyGuard } from "@/components/route-guards";
 
 import NotFound from "@/pages/not-found";
@@ -19,6 +20,7 @@ import SignInPage from "@/pages/auth/sign-in";
 import VerifyPage from "@/pages/auth/verify";
 import SignIn from "@/pages/signin";
 
+import AdminSignInPage from "@/pages/admin/sign-in";
 import AdminControlRoom from "@/pages/admin/control-room";
 import AdminCampaigns from "@/pages/admin/campaigns";
 import AdminCampaignDetail from "@/pages/admin/campaign-detail";
@@ -171,6 +173,7 @@ function Router() {
       </Route>
 
       {/* ========== ADMIN ROUTES (Admin Auth Required) ========== */}
+      <Route path="/admin/sign-in" component={AdminSignInPage} />
       <Route path="/admin">
         <AdminGuard>
           <AdminControlRoom />
@@ -372,10 +375,12 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Router />
-        </TooltipProvider>
+        <AdminAuthProvider>
+          <TooltipProvider>
+            <Toaster />
+            <Router />
+          </TooltipProvider>
+        </AdminAuthProvider>
       </AuthProvider>
     </QueryClientProvider>
   );
