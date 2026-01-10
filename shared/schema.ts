@@ -79,6 +79,19 @@ export const adminPublishStatusEnum = pgEnum("admin_publish_status", [
   "HIDDEN"
 ]);
 
+// Delivery Strategy enum
+export const deliveryStrategyEnum = pgEnum("delivery_strategy", [
+  "SUPPLIER_DIRECT",
+  "CONSOLIDATION_POINT"
+]);
+
+// Delivery Cost Handling enum
+export const deliveryCostHandlingEnum = pgEnum("delivery_cost_handling", [
+  "INCLUDED_IN_UNIT_PRICE",
+  "SEPARATE_POST_CAMPAIGN",
+  "SUPPLIER_COVERED"
+]);
+
 // Campaigns table
 export const campaigns = pgTable("campaigns", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -97,14 +110,30 @@ export const campaigns = pgTable("campaigns", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   // Admin publish status (separate from state machine)
   adminPublishStatus: adminPublishStatusEnum("admin_publish_status").notNull().default("DRAFT"),
+  publishedAt: timestamp("published_at"),
+  publishedByAdminId: text("published_by_admin_id"),
   // SKU and product identification
   sku: text("sku"),
   productName: text("product_name"),
+  // Product details
+  brand: text("brand"),
+  modelNumber: text("model_number"),
+  variant: text("variant"),
+  shortDescription: text("short_description"),
+  specs: text("specs"), // JSON: array of { key: string, value: string }
+  // Images
+  primaryImageUrl: text("primary_image_url"),
+  galleryImageUrls: text("gallery_image_urls"), // JSON: array of strings
+  // Reference prices (for transparency)
+  referencePrices: text("reference_prices"), // JSON: array of { amount, currency, source, url?, capturedAt?, note? }
   // Delivery strategy
-  deliveryStrategy: text("delivery_strategy").default("SUPPLIER_DIRECT"), // SUPPLIER_DIRECT | BULK_TO_CONSOLIDATION
+  deliveryStrategy: text("delivery_strategy").default("SUPPLIER_DIRECT"), // SUPPLIER_DIRECT | CONSOLIDATION_POINT
+  deliveryCostHandling: text("delivery_cost_handling"), // INCLUDED_IN_UNIT_PRICE | SEPARATE_POST_CAMPAIGN | SUPPLIER_COVERED
+  supplierDirectConfirmed: boolean("supplier_direct_confirmed").default(false),
   // Consolidation fields (editable while published, locked in fulfillment phase)
   consolidationContactName: text("consolidation_contact_name"),
   consolidationCompany: text("consolidation_company"),
+  consolidationContactEmail: text("consolidation_contact_email"),
   consolidationAddressLine1: text("consolidation_address_line1"),
   consolidationAddressLine2: text("consolidation_address_line2"),
   consolidationCity: text("consolidation_city"),
@@ -164,6 +193,24 @@ export const adminActionLogs = pgTable("admin_action_logs", {
   newState: text("new_state"),
   reason: text("reason"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Campaign Admin Events - append-only audit log for campaign changes
+// Tracks CREATED, UPDATED, PUBLISHED events with changed fields
+export const campaignAdminEventsEnum = pgEnum("campaign_admin_event_type", [
+  "CREATED",
+  "UPDATED", 
+  "PUBLISHED"
+]);
+
+export const campaignAdminEvents = pgTable("campaign_admin_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  campaignId: varchar("campaign_id").notNull().references(() => campaigns.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  adminId: text("admin_id").notNull(), // admin email or username
+  eventType: campaignAdminEventsEnum("event_type").notNull(),
+  changedFields: text("changed_fields"), // JSON array of field names that changed
+  note: text("note"),
 });
 
 // Idempotency Keys - prevent duplicate money-affecting operations
@@ -247,6 +294,13 @@ export const adminActionLogsRelations = relations(adminActionLogs, ({ one }) => 
   }),
 }));
 
+export const campaignAdminEventsRelations = relations(campaignAdminEvents, ({ one }) => ({
+  campaign: one(campaigns, {
+    fields: [campaignAdminEvents.campaignId],
+    references: [campaigns.id],
+  }),
+}));
+
 // Insert Schemas
 export const insertCampaignSchema = createInsertSchema(campaigns).omit({
   id: true,
@@ -277,6 +331,11 @@ export const insertAdminActionLogSchema = createInsertSchema(adminActionLogs).om
 });
 
 export const insertIdempotencyKeySchema = createInsertSchema(idempotencyKeys).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertCampaignAdminEventSchema = createInsertSchema(campaignAdminEvents).omit({
   id: true,
   createdAt: true,
 });
@@ -337,6 +396,10 @@ export type InsertAdminActionLog = z.infer<typeof insertAdminActionLogSchema>;
 
 export type IdempotencyKey = typeof idempotencyKeys.$inferSelect;
 export type InsertIdempotencyKey = z.infer<typeof insertIdempotencyKeySchema>;
+
+export type CampaignAdminEvent = typeof campaignAdminEvents.$inferSelect;
+export type InsertCampaignAdminEvent = z.infer<typeof insertCampaignAdminEventSchema>;
+export type CampaignAdminEventType = "CREATED" | "UPDATED" | "PUBLISHED";
 
 // Campaign State type
 export type CampaignState = "AGGREGATION" | "SUCCESS" | "FAILED" | "FULFILLMENT" | "RELEASED";

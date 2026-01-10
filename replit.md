@@ -35,6 +35,16 @@ AGGREGATION → SUCCESS → FULFILLMENT → RELEASED
 ### Data Models
 
 **Campaigns:** Campaign details, rules, target, state, deadline
+- **Product Details (P0):** brand, modelNumber, variant, shortDescription, specs (JSON), primaryImageUrl, galleryImageUrls (JSON), referencePrices (JSON)
+- **Publish Tracking:** publishedAt, publishedByAdminId
+- **Delivery Fields:** deliveryCostHandling, supplierDirectConfirmed, consolidationContactEmail
+
+**Campaign Admin Events (P0):** Append-only audit log for campaign lifecycle events
+- eventType: CREATED | UPDATED | PUBLISHED
+- changedFields: JSON array of modified field names
+- adminId: who performed the action
+- note: optional description
+
 **Commitments:** User commitments with reference numbers, locked amounts (optional user_id FK)
 **Escrow Ledger:** Append-only record of LOCK/REFUND/RELEASE entries
 **Supplier Acceptances:** When suppliers accept successful campaigns

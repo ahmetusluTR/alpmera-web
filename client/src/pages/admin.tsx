@@ -178,6 +178,24 @@ export default function AdminConsole() {
   const [newCampaignTargetAmount, setNewCampaignTargetAmount] = useState("");
   const [newCampaignUnitPrice, setNewCampaignUnitPrice] = useState("");
   const [newCampaignDeadline, setNewCampaignDeadline] = useState("");
+  // New P0 fields
+  const [newCampaignSku, setNewCampaignSku] = useState("");
+  const [newCampaignProductName, setNewCampaignProductName] = useState("");
+  const [newCampaignPrimaryImageUrl, setNewCampaignPrimaryImageUrl] = useState("");
+  const [newCampaignDeliveryStrategy, setNewCampaignDeliveryStrategy] = useState<"SUPPLIER_DIRECT" | "CONSOLIDATION_POINT">("SUPPLIER_DIRECT");
+  const [newCampaignReferencePriceAmount, setNewCampaignReferencePriceAmount] = useState("");
+  const [newCampaignReferencePriceSource, setNewCampaignReferencePriceSource] = useState<"MSRP" | "RETAILER_LISTING" | "SUPPLIER_QUOTE" | "OTHER">("MSRP");
+  const [newCampaignSupplierDirectConfirmed, setNewCampaignSupplierDirectConfirmed] = useState(false);
+  // Consolidation fields
+  const [newCampaignConsolidationCompany, setNewCampaignConsolidationCompany] = useState("");
+  const [newCampaignConsolidationContactName, setNewCampaignConsolidationContactName] = useState("");
+  const [newCampaignConsolidationContactEmail, setNewCampaignConsolidationContactEmail] = useState("");
+  const [newCampaignConsolidationPhone, setNewCampaignConsolidationPhone] = useState("");
+  const [newCampaignConsolidationAddressLine1, setNewCampaignConsolidationAddressLine1] = useState("");
+  const [newCampaignConsolidationCity, setNewCampaignConsolidationCity] = useState("");
+  const [newCampaignConsolidationState, setNewCampaignConsolidationState] = useState("");
+  const [newCampaignConsolidationPostalCode, setNewCampaignConsolidationPostalCode] = useState("");
+  const [newCampaignConsolidationCountry, setNewCampaignConsolidationCountry] = useState("USA");
 
   const { data: campaigns, isLoading: campaignsLoading } = useQuery<CampaignWithStats[]>({
     queryKey: ["/api/campaigns"],
@@ -293,7 +311,12 @@ export default function AdminConsole() {
 
   const createCampaignMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest("POST", `/api/admin/campaigns`, {
+      // Build reference prices array
+      const referencePrices = newCampaignReferencePriceAmount 
+        ? [{ amount: parseFloat(newCampaignReferencePriceAmount), source: newCampaignReferencePriceSource }]
+        : [];
+      
+      const payload: Record<string, unknown> = {
         adminUsername,
         title: newCampaignTitle,
         description: newCampaignDescription,
@@ -303,7 +326,29 @@ export default function AdminConsole() {
         unitPrice: newCampaignUnitPrice,
         minCommitment: newCampaignUnitPrice,
         aggregationDeadline: newCampaignDeadline,
-      });
+        // New P0 fields
+        sku: newCampaignSku || null,
+        productName: newCampaignProductName || null,
+        primaryImageUrl: newCampaignPrimaryImageUrl || null,
+        deliveryStrategy: newCampaignDeliveryStrategy,
+        referencePrices: referencePrices.length > 0 ? referencePrices : null,
+        supplierDirectConfirmed: newCampaignSupplierDirectConfirmed,
+      };
+
+      // Add consolidation fields if using consolidation point
+      if (newCampaignDeliveryStrategy === "CONSOLIDATION_POINT") {
+        payload.consolidationCompany = newCampaignConsolidationCompany || null;
+        payload.consolidationContactName = newCampaignConsolidationContactName || null;
+        payload.consolidationContactEmail = newCampaignConsolidationContactEmail || null;
+        payload.consolidationPhone = newCampaignConsolidationPhone || null;
+        payload.consolidationAddressLine1 = newCampaignConsolidationAddressLine1 || null;
+        payload.consolidationCity = newCampaignConsolidationCity || null;
+        payload.consolidationState = newCampaignConsolidationState || null;
+        payload.consolidationPostalCode = newCampaignConsolidationPostalCode || null;
+        payload.consolidationCountry = newCampaignConsolidationCountry || null;
+      }
+
+      const response = await apiRequest("POST", `/api/admin/campaigns`, payload);
       return response.json();
     },
     onSuccess: (campaign) => {
@@ -327,6 +372,24 @@ export default function AdminConsole() {
     setNewCampaignTargetAmount("");
     setNewCampaignUnitPrice("");
     setNewCampaignDeadline("");
+    // Reset new P0 fields
+    setNewCampaignSku("");
+    setNewCampaignProductName("");
+    setNewCampaignPrimaryImageUrl("");
+    setNewCampaignDeliveryStrategy("SUPPLIER_DIRECT");
+    setNewCampaignReferencePriceAmount("");
+    setNewCampaignReferencePriceSource("MSRP");
+    setNewCampaignSupplierDirectConfirmed(false);
+    // Reset consolidation fields
+    setNewCampaignConsolidationCompany("");
+    setNewCampaignConsolidationContactName("");
+    setNewCampaignConsolidationContactEmail("");
+    setNewCampaignConsolidationPhone("");
+    setNewCampaignConsolidationAddressLine1("");
+    setNewCampaignConsolidationCity("");
+    setNewCampaignConsolidationState("");
+    setNewCampaignConsolidationPostalCode("");
+    setNewCampaignConsolidationCountry("USA");
   };
 
   const isCreateFormValid = () => {
@@ -913,8 +976,207 @@ export default function AdminConsole() {
               />
             </div>
 
+            <Separator className="my-4" />
+            <p className="text-sm text-muted-foreground">Product Details (required for publishing)</p>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="campaign-sku">SKU</Label>
+                <Input
+                  id="campaign-sku"
+                  placeholder="PROD-001"
+                  value={newCampaignSku}
+                  onChange={(e) => setNewCampaignSku(e.target.value)}
+                  data-testid="input-campaign-sku"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="campaign-product-name">Product Name</Label>
+                <Input
+                  id="campaign-product-name"
+                  placeholder="Product display name"
+                  value={newCampaignProductName}
+                  onChange={(e) => setNewCampaignProductName(e.target.value)}
+                  data-testid="input-campaign-product-name"
+                />
+              </div>
+            </div>
+
             <div className="space-y-2">
-              <Label htmlFor="campaign-image">Image URL (optional)</Label>
+              <Label htmlFor="campaign-primary-image">Primary Image URL</Label>
+              <Input
+                id="campaign-primary-image"
+                type="url"
+                placeholder="https://example.com/product-image.jpg"
+                value={newCampaignPrimaryImageUrl}
+                onChange={(e) => setNewCampaignPrimaryImageUrl(e.target.value)}
+                data-testid="input-campaign-primary-image"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="campaign-ref-price">Reference Price</Label>
+                <Input
+                  id="campaign-ref-price"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="129.99"
+                  value={newCampaignReferencePriceAmount}
+                  onChange={(e) => setNewCampaignReferencePriceAmount(e.target.value)}
+                  data-testid="input-campaign-ref-price"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="campaign-ref-source">Price Source</Label>
+                <Select 
+                  value={newCampaignReferencePriceSource} 
+                  onValueChange={(v: "MSRP" | "RETAILER_LISTING" | "SUPPLIER_QUOTE" | "OTHER") => setNewCampaignReferencePriceSource(v)}
+                >
+                  <SelectTrigger data-testid="select-campaign-ref-source">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="MSRP">MSRP</SelectItem>
+                    <SelectItem value="RETAILER_LISTING">Retailer Listing</SelectItem>
+                    <SelectItem value="SUPPLIER_QUOTE">Supplier Quote</SelectItem>
+                    <SelectItem value="OTHER">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <Separator className="my-4" />
+            <p className="text-sm text-muted-foreground">Delivery Configuration</p>
+
+            <div className="space-y-2">
+              <Label htmlFor="campaign-delivery-strategy">Delivery Strategy</Label>
+              <Select 
+                value={newCampaignDeliveryStrategy} 
+                onValueChange={(v: "SUPPLIER_DIRECT" | "CONSOLIDATION_POINT") => setNewCampaignDeliveryStrategy(v)}
+              >
+                <SelectTrigger data-testid="select-campaign-delivery-strategy">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="SUPPLIER_DIRECT">Direct from Supplier</SelectItem>
+                  <SelectItem value="CONSOLIDATION_POINT">Consolidation Point</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {newCampaignDeliveryStrategy === "SUPPLIER_DIRECT" && (
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="campaign-supplier-confirmed"
+                  checked={newCampaignSupplierDirectConfirmed}
+                  onChange={(e) => setNewCampaignSupplierDirectConfirmed(e.target.checked)}
+                  className="rounded border-border"
+                  data-testid="checkbox-supplier-confirmed"
+                />
+                <Label htmlFor="campaign-supplier-confirmed" className="text-sm">
+                  Supplier confirmed direct delivery capability
+                </Label>
+              </div>
+            )}
+
+            {newCampaignDeliveryStrategy === "CONSOLIDATION_POINT" && (
+              <div className="space-y-4 p-4 border rounded-md bg-muted/30">
+                <p className="text-sm font-medium">Consolidation Point Details</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="consolidation-company">Company Name</Label>
+                    <Input
+                      id="consolidation-company"
+                      placeholder="Company name"
+                      value={newCampaignConsolidationCompany}
+                      onChange={(e) => setNewCampaignConsolidationCompany(e.target.value)}
+                      data-testid="input-consolidation-company"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="consolidation-contact">Contact Name</Label>
+                    <Input
+                      id="consolidation-contact"
+                      placeholder="Contact person"
+                      value={newCampaignConsolidationContactName}
+                      onChange={(e) => setNewCampaignConsolidationContactName(e.target.value)}
+                      data-testid="input-consolidation-contact"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="consolidation-email">Contact Email</Label>
+                    <Input
+                      id="consolidation-email"
+                      type="email"
+                      placeholder="contact@company.com"
+                      value={newCampaignConsolidationContactEmail}
+                      onChange={(e) => setNewCampaignConsolidationContactEmail(e.target.value)}
+                      data-testid="input-consolidation-email"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="consolidation-phone">Phone</Label>
+                    <Input
+                      id="consolidation-phone"
+                      placeholder="555-123-4567"
+                      value={newCampaignConsolidationPhone}
+                      onChange={(e) => setNewCampaignConsolidationPhone(e.target.value)}
+                      data-testid="input-consolidation-phone"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="consolidation-address">Address</Label>
+                  <Input
+                    id="consolidation-address"
+                    placeholder="Street address"
+                    value={newCampaignConsolidationAddressLine1}
+                    onChange={(e) => setNewCampaignConsolidationAddressLine1(e.target.value)}
+                    data-testid="input-consolidation-address"
+                  />
+                </div>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="consolidation-city">City</Label>
+                    <Input
+                      id="consolidation-city"
+                      placeholder="City"
+                      value={newCampaignConsolidationCity}
+                      onChange={(e) => setNewCampaignConsolidationCity(e.target.value)}
+                      data-testid="input-consolidation-city"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="consolidation-state">State</Label>
+                    <Input
+                      id="consolidation-state"
+                      placeholder="CA"
+                      value={newCampaignConsolidationState}
+                      onChange={(e) => setNewCampaignConsolidationState(e.target.value)}
+                      data-testid="input-consolidation-state"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="consolidation-postal">Postal Code</Label>
+                    <Input
+                      id="consolidation-postal"
+                      placeholder="90210"
+                      value={newCampaignConsolidationPostalCode}
+                      onChange={(e) => setNewCampaignConsolidationPostalCode(e.target.value)}
+                      data-testid="input-consolidation-postal"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="campaign-image">Legacy Image URL (optional)</Label>
               <Input
                 id="campaign-image"
                 type="url"

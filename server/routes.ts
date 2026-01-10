@@ -10,7 +10,8 @@ import {
   updateUserProfileSchema,
   escrowLedger,
   commitments,
-  campaigns
+  campaigns,
+  campaignAdminEvents
 } from "@shared/schema";
 import { z } from "zod";
 import { eq, desc } from "drizzle-orm";
@@ -62,6 +63,133 @@ const transitionRequestSchema = z.object({
   reason: z.string().min(1, "Reason is required for audit trail"),
   adminUsername: z.string().min(1, "Admin username is required"),
 });
+
+// Reference price type for validation
+interface ReferencePrice {
+  amount: number;
+  currency?: string;
+  source: "MSRP" | "RETAILER_LISTING" | "SUPPLIER_QUOTE" | "OTHER";
+  url?: string;
+  capturedAt?: string;
+  note?: string;
+}
+
+// Validate campaign is ready to publish
+// Returns { ok: boolean, missing: string[] }
+function validateCampaignPublishable(campaign: any): { ok: boolean; missing: string[] } {
+  const missing: string[] = [];
+
+  // Core required fields
+  if (!campaign.title?.trim()) missing.push("campaignName");
+  if (!campaign.sku?.trim()) missing.push("sku");
+  if (!campaign.productName?.trim()) missing.push("productName");
+  if (!campaign.aggregationDeadline) missing.push("aggregationDeadline");
+  if (!campaign.targetAmount || parseFloat(campaign.targetAmount) <= 0) missing.push("targetAmount");
+  if (!campaign.unitPrice || parseFloat(campaign.unitPrice) <= 0) missing.push("unitPrice");
+  if (!campaign.minCommitment || parseFloat(campaign.minCommitment) <= 0) missing.push("minCommitment");
+  if (!campaign.deliveryStrategy) missing.push("deliveryStrategy");
+
+  // Image required
+  if (!campaign.primaryImageUrl?.trim()) missing.push("primaryImageUrl");
+
+  // Reference prices validation
+  let referencePrices: ReferencePrice[] = [];
+  if (campaign.referencePrices) {
+    try {
+      referencePrices = typeof campaign.referencePrices === "string" 
+        ? JSON.parse(campaign.referencePrices) 
+        : campaign.referencePrices;
+    } catch {
+      referencePrices = [];
+    }
+  }
+  const validPrices = referencePrices.filter(p => p.amount && p.amount > 0 && p.source);
+  if (validPrices.length === 0) missing.push("referencePrices");
+
+  // Delivery strategy specific validation
+  if (campaign.deliveryStrategy === "CONSOLIDATION_POINT") {
+    if (!campaign.consolidationCompany?.trim()) missing.push("consolidationCompanyName");
+    if (!campaign.consolidationContactName?.trim()) missing.push("consolidationContactName");
+    if (!campaign.consolidationContactEmail?.trim()) missing.push("consolidationContactEmail");
+    if (!campaign.consolidationPhone?.trim()) missing.push("consolidationContactPhone");
+    if (!campaign.consolidationAddressLine1?.trim()) missing.push("consolidationAddressLine1");
+    if (!campaign.consolidationCity?.trim()) missing.push("consolidationCity");
+    if (!campaign.consolidationState?.trim()) missing.push("consolidationState");
+    if (!campaign.consolidationPostalCode?.trim()) missing.push("consolidationPostalCode");
+    if (!campaign.consolidationCountry?.trim()) missing.push("consolidationCountry");
+  }
+
+  // Supplier direct requires confirmation
+  if (campaign.deliveryStrategy === "SUPPLIER_DIRECT" && !campaign.supplierDirectConfirmed) {
+    missing.push("supplierDirectConfirmed");
+  }
+
+  return { ok: missing.length === 0, missing };
+}
+
+// Normalize value for comparison (parse JSON strings, sort arrays)
+function normalizeForComparison(val: any): string {
+  if (val === null || val === undefined) return "null";
+  if (typeof val === "string") {
+    // Try to parse as JSON
+    try {
+      const parsed = JSON.parse(val);
+      return JSON.stringify(sortObject(parsed));
+    } catch {
+      return val.trim();
+    }
+  }
+  return JSON.stringify(sortObject(val));
+}
+
+// Sort objects/arrays for consistent comparison
+function sortObject(obj: any): any {
+  if (Array.isArray(obj)) {
+    return obj.map(sortObject);
+  }
+  if (obj && typeof obj === "object") {
+    const sorted: any = {};
+    Object.keys(obj).sort().forEach(key => {
+      sorted[key] = sortObject(obj[key]);
+    });
+    return sorted;
+  }
+  return obj;
+}
+
+// Get changed fields between old and new campaign data
+function getChangedFields(oldData: any, newData: any): string[] {
+  const changed: string[] = [];
+  const compareFields = [
+    "title", "description", "rules", "imageUrl", "targetAmount", "minCommitment",
+    "maxCommitment", "unitPrice", "aggregationDeadline", "sku", "productName",
+    "brand", "modelNumber", "variant", "shortDescription", "specs",
+    "primaryImageUrl", "galleryImageUrls", "referencePrices", "deliveryStrategy",
+    "deliveryCostHandling", "supplierDirectConfirmed", "consolidationContactName",
+    "consolidationCompany", "consolidationContactEmail", "consolidationAddressLine1",
+    "consolidationAddressLine2", "consolidationCity", "consolidationState",
+    "consolidationPostalCode", "consolidationCountry", "consolidationPhone",
+    "deliveryWindow", "fulfillmentNotes"
+  ];
+
+  for (const field of compareFields) {
+    if (newData[field] !== undefined) {
+      const oldVal = normalizeForComparison(oldData[field]);
+      const newVal = normalizeForComparison(newData[field]);
+      if (oldVal !== newVal) {
+        changed.push(field);
+      }
+    }
+  }
+
+  return changed;
+}
+
+// Locked fields when campaign is PUBLISHED
+const PUBLISHED_LOCKED_FIELDS = [
+  "title", "sku", "productName", "aggregationDeadline", 
+  "targetAmount", "unitPrice", "minCommitment"
+];
 
 // Admin authentication middleware
 // SECURITY: STRICT enforcement - NO dev mode bypass allowed
@@ -1360,10 +1488,14 @@ export async function registerRoutes(
         adminUsername, title, description, rules, imageUrl, targetAmount, 
         minCommitment, maxCommitment, unitPrice, aggregationDeadline,
         sku, productName, deliveryStrategy,
-        consolidationContactName, consolidationCompany, consolidationAddressLine1,
+        consolidationContactName, consolidationCompany, consolidationContactEmail, consolidationAddressLine1,
         consolidationAddressLine2, consolidationCity, consolidationState,
         consolidationPostalCode, consolidationCountry, consolidationPhone,
-        deliveryWindow, fulfillmentNotes
+        deliveryWindow, fulfillmentNotes,
+        // New product detail fields
+        brand, modelNumber, variant, shortDescription, specs,
+        primaryImageUrl, galleryImageUrls, referencePrices,
+        deliveryCostHandling, supplierDirectConfirmed
       } = req.body;
 
       // Validate required fields
@@ -1387,6 +1519,8 @@ export async function registerRoutes(
 
       // Insert directly with all new fields
       const campaignId = crypto.randomUUID();
+      const adminUser = adminUsername || (req as any).adminUsername || "admin";
+      
       await db.insert(campaigns).values({
         id: campaignId,
         title: title.trim(),
@@ -1403,9 +1537,24 @@ export async function registerRoutes(
         supplierAccepted: false,
         sku: sku?.trim() || null,
         productName: productName?.trim() || null,
+        // Product details
+        brand: brand?.trim() || null,
+        modelNumber: modelNumber?.trim() || null,
+        variant: variant?.trim() || null,
+        shortDescription: shortDescription?.trim() || null,
+        specs: specs ? (typeof specs === "string" ? specs : JSON.stringify(specs)) : null,
+        // Images
+        primaryImageUrl: primaryImageUrl?.trim() || null,
+        galleryImageUrls: galleryImageUrls ? (typeof galleryImageUrls === "string" ? galleryImageUrls : JSON.stringify(galleryImageUrls)) : null,
+        // Reference prices
+        referencePrices: referencePrices ? (typeof referencePrices === "string" ? referencePrices : JSON.stringify(referencePrices)) : null,
+        // Delivery
         deliveryStrategy: deliveryStrategy || "SUPPLIER_DIRECT",
+        deliveryCostHandling: deliveryCostHandling || null,
+        supplierDirectConfirmed: supplierDirectConfirmed || false,
         consolidationContactName: consolidationContactName?.trim() || null,
         consolidationCompany: consolidationCompany?.trim() || null,
+        consolidationContactEmail: consolidationContactEmail?.trim() || null,
         consolidationAddressLine1: consolidationAddressLine1?.trim() || null,
         consolidationAddressLine2: consolidationAddressLine2?.trim() || null,
         consolidationCity: consolidationCity?.trim() || null,
@@ -1420,10 +1569,18 @@ export async function registerRoutes(
       const campaignResult = await db.select().from(campaigns).where(eq(campaigns.id, campaignId)).limit(1);
       const campaign = campaignResult[0];
 
+      // Add to campaign admin events (append-only)
+      await db.insert(campaignAdminEvents).values({
+        campaignId: campaign.id,
+        adminId: adminUser,
+        eventType: "CREATED",
+        note: "Campaign created as DRAFT",
+      });
+
       // Log admin action - CAMPAIGN_CREATE
       await storage.createAdminActionLog({
         campaignId: campaign.id,
-        adminUsername: adminUsername || (req as any).adminUsername || "admin",
+        adminUsername: adminUser,
         action: "CAMPAIGN_CREATE",
         previousState: null,
         newState: "AGGREGATION",
@@ -1468,14 +1625,34 @@ export async function registerRoutes(
       // Include all campaign fields including publish status and consolidation
       const fullCampaign = await db.select().from(campaigns).where(eq(campaigns.id, req.params.id)).limit(1);
       const campaignData = fullCampaign[0];
+      // Get commitment count for deliveryStrategy lock determination
+      const campaignCommitments = await storage.getCommitments(req.params.id);
+      const hasCommitments = campaignCommitments.length > 0;
+      
       res.json({
         ...campaign,
         adminPublishStatus: campaignData?.adminPublishStatus || "DRAFT",
+        // Core fields
         sku: campaignData?.sku,
         productName: campaignData?.productName,
+        // Product details
+        brand: campaignData?.brand,
+        modelNumber: campaignData?.modelNumber,
+        variant: campaignData?.variant,
+        shortDescription: campaignData?.shortDescription,
+        specs: campaignData?.specs,
+        // Images
+        primaryImageUrl: campaignData?.primaryImageUrl,
+        galleryImageUrls: campaignData?.galleryImageUrls,
+        // Reference prices
+        referencePrices: campaignData?.referencePrices,
+        // Delivery
         deliveryStrategy: campaignData?.deliveryStrategy || "SUPPLIER_DIRECT",
+        deliveryCostHandling: campaignData?.deliveryCostHandling,
+        supplierDirectConfirmed: campaignData?.supplierDirectConfirmed,
         consolidationContactName: campaignData?.consolidationContactName,
         consolidationCompany: campaignData?.consolidationCompany,
+        consolidationContactEmail: campaignData?.consolidationContactEmail,
         consolidationAddressLine1: campaignData?.consolidationAddressLine1,
         consolidationAddressLine2: campaignData?.consolidationAddressLine2,
         consolidationCity: campaignData?.consolidationCity,
@@ -1485,10 +1662,34 @@ export async function registerRoutes(
         consolidationPhone: campaignData?.consolidationPhone,
         deliveryWindow: campaignData?.deliveryWindow,
         fulfillmentNotes: campaignData?.fulfillmentNotes,
+        // Publish tracking
+        publishedAt: campaignData?.publishedAt,
+        publishedByAdminId: campaignData?.publishedByAdminId,
+        // Edit permissions
+        hasCommitments,
+        commitmentCount: campaignCommitments.length,
       });
     } catch (error) {
       console.error("Error fetching admin campaign:", error);
       res.status(500).json({ error: "Failed to fetch campaign" });
+    }
+  });
+
+  // Admin: Validate campaign for publishing (precheck)
+  app.get("/api/admin/campaigns/:id/publish/validate", requireAdminAuth, async (req, res) => {
+    try {
+      const campaignId = req.params.id;
+      const campaign = await db.select().from(campaigns).where(eq(campaigns.id, campaignId)).limit(1);
+      
+      if (!campaign[0]) {
+        return res.status(404).json({ error: "Campaign not found" });
+      }
+      
+      const validation = validateCampaignPublishable(campaign[0]);
+      res.json(validation);
+    } catch (error) {
+      console.error("Error validating campaign:", error);
+      res.status(500).json({ error: "Failed to validate campaign" });
     }
   });
 
@@ -1507,13 +1708,36 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Campaign is already published" });
       }
       
+      // Validate campaign is ready to publish
+      const validation = validateCampaignPublishable(campaign[0]);
+      if (!validation.ok) {
+        return res.status(400).json({ 
+          error: "Campaign not ready to publish",
+          missing: validation.missing 
+        });
+      }
+      
+      const adminUsername = (req as any).adminUsername || "admin";
+      
       await db.update(campaigns)
-        .set({ adminPublishStatus: "PUBLISHED" })
+        .set({ 
+          adminPublishStatus: "PUBLISHED",
+          publishedAt: new Date(),
+          publishedByAdminId: adminUsername,
+        })
         .where(eq(campaigns.id, campaignId));
+      
+      // Add to campaign admin events (append-only)
+      await db.insert(campaignAdminEvents).values({
+        campaignId,
+        adminId: adminUsername,
+        eventType: "PUBLISHED",
+        note: `Campaign published (was ${currentStatus})`,
+      });
       
       await storage.createAdminActionLog({
         campaignId,
-        adminUsername: (req as any).adminUsername || "admin",
+        adminUsername,
         action: "CAMPAIGN_PUBLISHED",
         reason: `Campaign published (was ${currentStatus})`,
       });
@@ -1558,19 +1782,27 @@ export async function registerRoutes(
     }
   });
 
-  // Consolidation fields that can be edited while published (until fulfillment phase)
-  const CONSOLIDATION_FIELDS = [
-    "consolidationContactName", "consolidationCompany", "consolidationAddressLine1",
-    "consolidationAddressLine2", "consolidationCity", "consolidationState",
-    "consolidationPostalCode", "consolidationCountry", "consolidationPhone",
-    "deliveryWindow", "fulfillmentNotes"
+  // Fields editable when published (delivery + product details)
+  const PUBLISHED_EDITABLE_FIELDS = [
+    // Delivery fields
+    "consolidationContactName", "consolidationCompany", "consolidationContactEmail",
+    "consolidationAddressLine1", "consolidationAddressLine2", "consolidationCity", 
+    "consolidationState", "consolidationPostalCode", "consolidationCountry", 
+    "consolidationPhone", "deliveryWindow", "fulfillmentNotes", "deliveryCostHandling",
+    "supplierDirectConfirmed",
+    // Product detail fields (editable when published)
+    "brand", "modelNumber", "variant", "shortDescription", "specs",
+    "primaryImageUrl", "galleryImageUrls", "referencePrices", "description"
   ];
   
-  // Fields locked after publish
-  const CORE_FIELDS = [
-    "title", "description", "rules", "imageUrl", "targetAmount", "minCommitment",
-    "maxCommitment", "unitPrice", "aggregationDeadline", "sku", "productName", "deliveryStrategy"
-  ];
+  // Fields locked after publish (core campaign config)
+  const PUBLISHED_LOCKED_FIELDS_SET = new Set([
+    "title", "sku", "productName", "aggregationDeadline", 
+    "targetAmount", "unitPrice", "minCommitment", "maxCommitment"
+  ]);
+  
+  // deliveryStrategy can only be changed if no commitments exist
+  const COMMITMENT_DEPENDENT_FIELDS = ["deliveryStrategy"];
 
   // Admin: Update campaign with field locking enforcement
   app.patch("/api/admin/campaigns/:id", requireAdminAuth, async (req, res) => {
@@ -1584,37 +1816,54 @@ export async function registerRoutes(
       
       const adminPublishStatus = campaign[0].adminPublishStatus || "DRAFT";
       const campaignState = campaign[0].state;
-      const isPublished = adminPublishStatus !== "DRAFT";
+      const isPublished = adminPublishStatus === "PUBLISHED";
       const isFulfillmentPhase = campaignState === "FULFILLMENT" || campaignState === "RELEASED";
       
       const updateFields = req.body;
       const disallowedFields: string[] = [];
+      const adminUsername = (req as any).adminUsername || "admin";
+      
+      // Get commitment count for deliveryStrategy change validation
+      let commitmentCount = 0;
+      if (updateFields.deliveryStrategy && updateFields.deliveryStrategy !== campaign[0].deliveryStrategy) {
+        const commitmentsResult = await storage.getCommitments(campaignId);
+        commitmentCount = commitmentsResult.length;
+      }
       
       // Validate field locks
       for (const field of Object.keys(updateFields)) {
-        if (isPublished && CORE_FIELDS.includes(field)) {
+        // Lock core fields when published
+        if (isPublished && PUBLISHED_LOCKED_FIELDS_SET.has(field)) {
           disallowedFields.push(field);
         }
-        if (isFulfillmentPhase && CONSOLIDATION_FIELDS.includes(field)) {
+        // Lock deliveryStrategy when published AND has commitments
+        if (isPublished && COMMITMENT_DEPENDENT_FIELDS.includes(field) && commitmentCount > 0) {
+          disallowedFields.push(`${field} (has ${commitmentCount} commitments)`);
+        }
+        // Lock consolidation fields during fulfillment phase
+        if (isFulfillmentPhase && field.startsWith("consolidation")) {
           disallowedFields.push(field);
         }
       }
       
       if (disallowedFields.length > 0) {
-        const message = isPublished && isFulfillmentPhase
+        const message = isFulfillmentPhase
           ? `Campaign is in fulfillment; these fields are locked: ${disallowedFields.join(", ")}`
-          : `Campaign is published; these core fields are locked: ${disallowedFields.join(", ")}`;
+          : `Campaign is published; these fields are locked: ${disallowedFields.join(", ")}`;
         return res.status(400).json({ error: "Field update not allowed", message, disallowedFields });
       }
+      
+      // Get changed fields for audit
+      const changedFields = getChangedFields(campaign[0], updateFields);
       
       // Build safe update object
       const safeUpdate: Record<string, any> = {};
       for (const [key, value] of Object.entries(updateFields)) {
-        if (!isPublished || CONSOLIDATION_FIELDS.includes(key)) {
-          // Map camelCase to snake_case for DB
-          const dbKey = key.replace(/([A-Z])/g, "_$1").toLowerCase();
-          safeUpdate[dbKey] = value;
-        }
+        // Skip locked fields
+        if (isPublished && PUBLISHED_LOCKED_FIELDS_SET.has(key)) continue;
+        // Map camelCase to snake_case for DB
+        const dbKey = key.replace(/([A-Z])/g, "_$1").toLowerCase();
+        safeUpdate[dbKey] = value;
       }
       
       if (Object.keys(safeUpdate).length === 0) {
@@ -1625,9 +1874,20 @@ export async function registerRoutes(
         .set(safeUpdate)
         .where(eq(campaigns.id, campaignId));
       
+      // Add to campaign admin events (append-only) for PUBLISHED campaigns
+      if (isPublished && changedFields.length > 0) {
+        await db.insert(campaignAdminEvents).values({
+          campaignId,
+          adminId: adminUsername,
+          eventType: "UPDATED",
+          changedFields: JSON.stringify(changedFields),
+          note: `Updated ${changedFields.length} field(s)`,
+        });
+      }
+      
       await storage.createAdminActionLog({
         campaignId,
-        adminUsername: (req as any).adminUsername || "admin",
+        adminUsername,
         action: "CAMPAIGN_UPDATED",
         reason: `Updated fields: ${Object.keys(updateFields).join(", ")}`,
       });
