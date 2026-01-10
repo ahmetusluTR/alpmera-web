@@ -766,37 +766,132 @@ export default function CampaignDetailPage() {
             </Card>
 
             <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Product Details</CardTitle>
-                <CardDescription>
-                  Product information used for transparency and fulfillment. This is not a store listing.
-                </CardDescription>
+              <CardHeader className="flex flex-row items-center justify-between gap-4">
+                <div>
+                  <CardTitle className="text-lg">Product Details</CardTitle>
+                  <CardDescription>
+                    Product information used for transparency and fulfillment.
+                  </CardDescription>
+                </div>
+                {!isPublished && editingSection !== "product" && (
+                  <Button onClick={() => {
+                    setEditingSection("product");
+                    setEditForm({
+                      brand: campaign.brand || "",
+                      modelNumber: campaign.modelNumber || "",
+                      variant: campaign.variant || "",
+                      shortDescription: campaign.shortDescription || "",
+                      primaryImageUrl: campaign.primaryImageUrl || "",
+                    });
+                  }} data-testid="button-edit-product">
+                    <Edit className="w-4 h-4 mr-2" />
+                    Edit Product
+                  </Button>
+                )}
               </CardHeader>
               <CardContent className="space-y-6">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground text-xs mb-1">Brand</p>
-                    <p className="font-medium" data-testid="text-brand">{campaign.brand || "—"}</p>
+                {editingSection === "product" ? (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-brand">Brand</Label>
+                        <Input
+                          id="edit-brand"
+                          value={editForm.brand || ""}
+                          onChange={(e) => setEditForm({...editForm, brand: e.target.value})}
+                          data-testid="input-edit-brand"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-model">Model / MPN</Label>
+                        <Input
+                          id="edit-model"
+                          value={editForm.modelNumber || ""}
+                          onChange={(e) => setEditForm({...editForm, modelNumber: e.target.value})}
+                          data-testid="input-edit-model"
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-variant">Variant</Label>
+                        <Input
+                          id="edit-variant"
+                          value={editForm.variant || ""}
+                          onChange={(e) => setEditForm({...editForm, variant: e.target.value})}
+                          data-testid="input-edit-variant"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-primary-image">Primary Image URL</Label>
+                        <Input
+                          id="edit-primary-image"
+                          value={editForm.primaryImageUrl || ""}
+                          onChange={(e) => setEditForm({...editForm, primaryImageUrl: e.target.value})}
+                          placeholder="https://..."
+                          data-testid="input-edit-primary-image"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-short-description">Short Description</Label>
+                      <Textarea
+                        id="edit-short-description"
+                        value={editForm.shortDescription || ""}
+                        onChange={(e) => setEditForm({...editForm, shortDescription: e.target.value})}
+                        rows={2}
+                        data-testid="input-edit-short-description"
+                      />
+                    </div>
+                    <div className="flex gap-2 pt-2">
+                      <Button 
+                        onClick={() => saveMutation.mutate({
+                          brand: editForm.brand,
+                          modelNumber: editForm.modelNumber,
+                          variant: editForm.variant,
+                          shortDescription: editForm.shortDescription,
+                          primaryImageUrl: editForm.primaryImageUrl,
+                        })}
+                        disabled={saveMutation.isPending}
+                        data-testid="button-save-product"
+                      >
+                        {saveMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                        <Save className="w-4 h-4 mr-2" />
+                        Save
+                      </Button>
+                      <Button variant="outline" onClick={() => { setEditingSection(null); setEditForm({}); }} data-testid="button-cancel-product">
+                        Cancel
+                      </Button>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-muted-foreground text-xs mb-1">Model / MPN</p>
-                    <p className="font-medium" data-testid="text-model">{campaign.modelNumber || "—"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground text-xs mb-1">Variant</p>
-                    <p className="font-medium" data-testid="text-variant">{campaign.variant || "—"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground text-xs mb-1">SKU</p>
-                    <p className="font-mono text-sm" data-testid="text-sku">{campaign.sku || "—"}</p>
-                  </div>
-                </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                      <div>
+                        <p className="text-muted-foreground text-xs mb-1">Brand</p>
+                        <p className="font-medium" data-testid="text-brand">{campaign.brand || "—"}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground text-xs mb-1">Model / MPN</p>
+                        <p className="font-medium" data-testid="text-model">{campaign.modelNumber || "—"}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground text-xs mb-1">Variant</p>
+                        <p className="font-medium" data-testid="text-variant">{campaign.variant || "—"}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground text-xs mb-1">SKU</p>
+                        <p className="font-mono text-sm" data-testid="text-sku">{campaign.sku || "—"}</p>
+                      </div>
+                    </div>
 
-                {campaign.shortDescription && (
-                  <div>
-                    <p className="text-muted-foreground text-xs mb-1">Short Description</p>
-                    <p className="text-sm" data-testid="text-short-description">{campaign.shortDescription}</p>
-                  </div>
+                    {campaign.shortDescription && (
+                      <div>
+                        <p className="text-muted-foreground text-xs mb-1">Short Description</p>
+                        <p className="text-sm" data-testid="text-short-description">{campaign.shortDescription}</p>
+                      </div>
+                    )}
+                  </>
                 )}
 
                 {campaign.specs && (() => {
@@ -921,71 +1016,247 @@ export default function CampaignDetailPage() {
             </Card>
 
             <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Delivery Settings</CardTitle>
-                <CardDescription>
-                  {campaign.deliveryStrategy === "CONSOLIDATION_POINT" || campaign.deliveryStrategy === "BULK_TO_CONSOLIDATION"
-                    ? "Bulk delivery to consolidation point"
-                    : "Supplier direct fulfillment to participants"}
-                  {isPublished && !isFulfillmentPhase && " (editable)"}
-                  {isFulfillmentPhase && " (locked)"}
-                </CardDescription>
+              <CardHeader className="flex flex-row items-center justify-between gap-4">
+                <div>
+                  <CardTitle className="text-lg">Delivery Settings</CardTitle>
+                  <CardDescription>
+                    {campaign.deliveryStrategy === "CONSOLIDATION_POINT" || campaign.deliveryStrategy === "BULK_TO_CONSOLIDATION"
+                      ? "Bulk delivery to consolidation point"
+                      : "Supplier direct fulfillment to participants"}
+                    {isFulfillmentPhase && " (locked)"}
+                  </CardDescription>
+                </div>
+                {!isPublished && !isFulfillmentPhase && editingSection !== "delivery" && (
+                  <Button onClick={() => {
+                    setEditingSection("delivery");
+                    setEditForm({
+                      deliveryStrategy: campaign.deliveryStrategy || "SUPPLIER_DIRECT",
+                      consolidationContactName: campaign.consolidationContactName || "",
+                      consolidationCompany: campaign.consolidationCompany || "",
+                      consolidationContactEmail: campaign.consolidationContactEmail || "",
+                      consolidationAddressLine1: campaign.consolidationAddressLine1 || "",
+                      consolidationCity: campaign.consolidationCity || "",
+                      consolidationState: campaign.consolidationState || "",
+                      consolidationPostalCode: campaign.consolidationPostalCode || "",
+                      consolidationPhone: campaign.consolidationPhone || "",
+                      deliveryWindow: campaign.deliveryWindow || "",
+                      fulfillmentNotes: campaign.fulfillmentNotes || "",
+                    });
+                  }} data-testid="button-edit-delivery">
+                    <Edit className="w-4 h-4 mr-2" />
+                    Edit Delivery
+                  </Button>
+                )}
               </CardHeader>
               <CardContent>
-                {campaign.deliveryStrategy === "SUPPLIER_DIRECT" ? (
-                  <div className="p-4 bg-muted/30 rounded text-sm">
-                    <p>Supplier is responsible for direct fulfillment to participants.</p>
-                    {campaign.supplierDirectConfirmed && (
-                      <p className="mt-2 text-green-600 dark:text-green-400 flex items-center gap-2">
-                        <span className="w-2 h-2 bg-green-500 rounded-full" />
-                        Supplier has confirmed direct delivery capability
-                      </p>
+                {editingSection === "delivery" ? (
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label>Delivery Strategy</Label>
+                      <Select
+                        value={editForm.deliveryStrategy || "SUPPLIER_DIRECT"}
+                        onValueChange={(value) => setEditForm({...editForm, deliveryStrategy: value})}
+                      >
+                        <SelectTrigger data-testid="select-delivery-strategy">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="SUPPLIER_DIRECT">Supplier Direct to Participants</SelectItem>
+                          <SelectItem value="CONSOLIDATION_POINT">Consolidation Point</SelectItem>
+                          <SelectItem value="BULK_TO_CONSOLIDATION">Bulk to Consolidation</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {editForm.deliveryStrategy !== "SUPPLIER_DIRECT" && (
+                      <>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="edit-company">Company / Organization</Label>
+                            <Input
+                              id="edit-company"
+                              value={editForm.consolidationCompany || ""}
+                              onChange={(e) => setEditForm({...editForm, consolidationCompany: e.target.value})}
+                              data-testid="input-edit-company"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="edit-contact-name">Contact Name</Label>
+                            <Input
+                              id="edit-contact-name"
+                              value={editForm.consolidationContactName || ""}
+                              onChange={(e) => setEditForm({...editForm, consolidationContactName: e.target.value})}
+                              data-testid="input-edit-contact-name"
+                            />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="edit-contact-email">Contact Email</Label>
+                            <Input
+                              id="edit-contact-email"
+                              type="email"
+                              value={editForm.consolidationContactEmail || ""}
+                              onChange={(e) => setEditForm({...editForm, consolidationContactEmail: e.target.value})}
+                              data-testid="input-edit-contact-email"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="edit-phone">Phone</Label>
+                            <Input
+                              id="edit-phone"
+                              value={editForm.consolidationPhone || ""}
+                              onChange={(e) => setEditForm({...editForm, consolidationPhone: e.target.value})}
+                              data-testid="input-edit-phone"
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-address">Street Address</Label>
+                          <Input
+                            id="edit-address"
+                            value={editForm.consolidationAddressLine1 || ""}
+                            onChange={(e) => setEditForm({...editForm, consolidationAddressLine1: e.target.value})}
+                            data-testid="input-edit-address"
+                          />
+                        </div>
+                        <div className="grid grid-cols-3 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="edit-city">City</Label>
+                            <Input
+                              id="edit-city"
+                              value={editForm.consolidationCity || ""}
+                              onChange={(e) => setEditForm({...editForm, consolidationCity: e.target.value})}
+                              data-testid="input-edit-city"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="edit-state">State</Label>
+                            <Input
+                              id="edit-state"
+                              value={editForm.consolidationState || ""}
+                              onChange={(e) => setEditForm({...editForm, consolidationState: e.target.value})}
+                              data-testid="input-edit-state"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="edit-postal">Postal Code</Label>
+                            <Input
+                              id="edit-postal"
+                              value={editForm.consolidationPostalCode || ""}
+                              onChange={(e) => setEditForm({...editForm, consolidationPostalCode: e.target.value})}
+                              data-testid="input-edit-postal"
+                            />
+                          </div>
+                        </div>
+                      </>
                     )}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-delivery-window">Delivery Window</Label>
+                        <Input
+                          id="edit-delivery-window"
+                          value={editForm.deliveryWindow || ""}
+                          onChange={(e) => setEditForm({...editForm, deliveryWindow: e.target.value})}
+                          placeholder="e.g., 2-4 weeks after campaign closes"
+                          data-testid="input-edit-delivery-window"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-fulfillment-notes">Fulfillment Notes</Label>
+                      <Textarea
+                        id="edit-fulfillment-notes"
+                        value={editForm.fulfillmentNotes || ""}
+                        onChange={(e) => setEditForm({...editForm, fulfillmentNotes: e.target.value})}
+                        rows={2}
+                        data-testid="input-edit-fulfillment-notes"
+                      />
+                    </div>
+                    <div className="flex gap-2 pt-2">
+                      <Button 
+                        onClick={() => saveMutation.mutate({
+                          deliveryStrategy: editForm.deliveryStrategy,
+                          consolidationContactName: editForm.consolidationContactName,
+                          consolidationCompany: editForm.consolidationCompany,
+                          consolidationContactEmail: editForm.consolidationContactEmail,
+                          consolidationAddressLine1: editForm.consolidationAddressLine1,
+                          consolidationCity: editForm.consolidationCity,
+                          consolidationState: editForm.consolidationState,
+                          consolidationPostalCode: editForm.consolidationPostalCode,
+                          consolidationPhone: editForm.consolidationPhone,
+                          deliveryWindow: editForm.deliveryWindow,
+                          fulfillmentNotes: editForm.fulfillmentNotes,
+                        })}
+                        disabled={saveMutation.isPending}
+                        data-testid="button-save-delivery"
+                      >
+                        {saveMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                        <Save className="w-4 h-4 mr-2" />
+                        Save
+                      </Button>
+                      <Button variant="outline" onClick={() => { setEditingSection(null); setEditForm({}); }} data-testid="button-cancel-delivery">
+                        Cancel
+                      </Button>
+                    </div>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <p className="text-muted-foreground text-xs mb-1">Company / Organization</p>
-                      <p className="font-medium" data-testid="text-consolidation-company">{campaign.consolidationCompany || "—"}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground text-xs mb-1">Contact Name</p>
-                      <p className="font-medium" data-testid="text-consolidation-contact">{campaign.consolidationContactName || "—"}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground text-xs mb-1">Contact Email</p>
-                      <p className="font-medium" data-testid="text-consolidation-email">{campaign.consolidationContactEmail || "—"}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground text-xs mb-1">Contact Phone</p>
-                      <p className="font-medium" data-testid="text-consolidation-phone">{campaign.consolidationPhone || "—"}</p>
-                    </div>
-                    <div className="col-span-2">
-                      <p className="text-muted-foreground text-xs mb-1">Address</p>
-                      <p className="font-medium">
-                        {campaign.consolidationAddressLine1 || "—"}
-                        {campaign.consolidationAddressLine2 && `, ${campaign.consolidationAddressLine2}`}
-                      </p>
-                      {(campaign.consolidationCity || campaign.consolidationState || campaign.consolidationPostalCode) && (
-                        <p className="text-muted-foreground">
-                          {[campaign.consolidationCity, campaign.consolidationState, campaign.consolidationPostalCode]
-                            .filter(Boolean)
-                            .join(", ")}
-                          {campaign.consolidationCountry && ` ${campaign.consolidationCountry}`}
-                        </p>
-                      )}
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground text-xs mb-1">Delivery Window</p>
-                      <p className="font-medium">{campaign.deliveryWindow || "—"}</p>
-                    </div>
-                    {campaign.fulfillmentNotes && (
-                      <div>
-                        <p className="text-muted-foreground text-xs mb-1">Fulfillment Notes</p>
-                        <p className="text-sm">{campaign.fulfillmentNotes}</p>
+                  <>
+                    {campaign.deliveryStrategy === "SUPPLIER_DIRECT" ? (
+                      <div className="p-4 bg-muted/30 rounded text-sm">
+                        <p>Supplier is responsible for direct fulfillment to participants.</p>
+                        {campaign.supplierDirectConfirmed && (
+                          <p className="mt-2 text-green-600 dark:text-green-400 flex items-center gap-2">
+                            <span className="w-2 h-2 bg-green-500 rounded-full" />
+                            Supplier has confirmed direct delivery capability
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <p className="text-muted-foreground text-xs mb-1">Company / Organization</p>
+                          <p className="font-medium" data-testid="text-consolidation-company">{campaign.consolidationCompany || "—"}</p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground text-xs mb-1">Contact Name</p>
+                          <p className="font-medium" data-testid="text-consolidation-contact">{campaign.consolidationContactName || "—"}</p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground text-xs mb-1">Contact Email</p>
+                          <p className="font-medium" data-testid="text-consolidation-email">{campaign.consolidationContactEmail || "—"}</p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground text-xs mb-1">Contact Phone</p>
+                          <p className="font-medium" data-testid="text-consolidation-phone">{campaign.consolidationPhone || "—"}</p>
+                        </div>
+                        <div className="col-span-2">
+                          <p className="text-muted-foreground text-xs mb-1">Address</p>
+                          <p className="font-medium">
+                            {campaign.consolidationAddressLine1 || "—"}
+                            {campaign.consolidationAddressLine2 && `, ${campaign.consolidationAddressLine2}`}
+                          </p>
+                          {(campaign.consolidationCity || campaign.consolidationState || campaign.consolidationPostalCode) && (
+                            <p className="text-muted-foreground">
+                              {[campaign.consolidationCity, campaign.consolidationState, campaign.consolidationPostalCode]
+                                .filter(Boolean)
+                                .join(", ")}
+                              {campaign.consolidationCountry && ` ${campaign.consolidationCountry}`}
+                            </p>
+                          )}
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground text-xs mb-1">Delivery Window</p>
+                          <p className="font-medium">{campaign.deliveryWindow || "—"}</p>
+                        </div>
+                        {campaign.fulfillmentNotes && (
+                          <div>
+                            <p className="text-muted-foreground text-xs mb-1">Fulfillment Notes</p>
+                            <p className="text-sm">{campaign.fulfillmentNotes}</p>
+                          </div>
+                        )}
                       </div>
                     )}
-                  </div>
+                  </>
                 )}
               </CardContent>
             </Card>
