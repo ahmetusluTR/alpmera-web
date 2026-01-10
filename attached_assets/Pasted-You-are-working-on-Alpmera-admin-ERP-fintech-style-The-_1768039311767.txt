@@ -1,0 +1,124 @@
+You are working on Alpmera (admin ERP/fintech-style). The Admin Campaigns module currently uses an old “Create Campaign” modal and Draft campaigns are not editable. This must be fixed.
+
+NON-NEGOTIABLE DOCTRINE:
+- Users JOIN campaigns; no buy/order/checkout language.
+- Target is UNITS (integer), not money.
+- Admin is authenticated via API key (not OTP).
+- Campaign timelines must be append-only.
+- Avoid rewrites; small, safe diffs; reuse components.
+
+GOAL:
+1) Replace “Create Campaign” modal flow with a dedicated Draft Editor page.
+2) Make Draft campaigns fully editable (metadata + product definition + target + fulfillment plan).
+3) Add missing product fields: media, specifications, variations (admin-only).
+4) Keep list page global search + sort as-is.
+
+IMPLEMENTATION PLAN (DO IN ORDER):
+
+A) Campaign Creation Flow (Replace Modal)
+- Remove or deprecate the current Create Campaign modal.
+- Change the “Create Campaign” button on /admin/campaigns to navigate to:
+  - /admin/campaigns/new  (new page)
+- On /admin/campaigns/new, create a draft campaign in two steps:
+  1) Minimal form: Campaign Name (required)
+  2) On submit: create draft campaign record and redirect to /admin/campaigns/:id (Draft Editor)
+- Optional: also allow SKU + Product Name at create time ONLY if already present, but do not block on these.
+
+B) Draft Editor: Enable Editing (only in DRAFT lifecycleState)
+On /admin/campaigns/:id implement an “Edit Draft” experience:
+- If campaign.lifecycleState === DRAFT:
+  - sections are editable
+  - show Save actions per section or one Save Draft (whichever matches current patterns)
+- If not DRAFT:
+  - sections become read-only except allowed admin actions (publish, etc.)
+  - never show editable inputs
+
+C) Add Missing Sections to Campaign Detail (Admin-only)
+Implement these sections on the campaign detail page (in this order), using simple forms and existing UI components:
+
+1) Campaign Metadata (editable in DRAFT)
+- name (required)
+- description (optional)
+- publishStatus (Draft/Published) must be controlled via explicit Publish action; not a direct toggle.
+
+2) Product Definition (editable in DRAFT)
+2.1 Specifications
+- Key/value list editor
+- Add row / remove row
+- Validate: key non-empty, value non-empty, keys must be unique within campaign
+
+2.2 Variations
+- Variation list editor
+- Each variation has:
+  - variation name (required)
+  - attributes map (key/value)
+- Validate: variation name unique; attribute keys unique inside variation
+
+2.3 Media
+- Simple image URL list (Phase 1) OR file upload if already supported.
+- Fields: url, altText (optional), sortOrder
+- Validate: at least 1 image required BEFORE publish (not required to save draft)
+
+3) Target & Progress (units)
+- targetUnits (required integer > 0) editable in DRAFT
+- committedUnits read-only (computed)
+- Remove/avoid “Target Amount” money-type in admin; target is units.
+
+4) Fulfillment Plan
+- deliveryMode: SUPPLIER_DIRECT vs CP_BASED
+- if CP_BASED: consolidationPointId required
+- Editable in DRAFT and ACTIVE only until fulfillment starts (match current app rules)
+
+5) Buyer Commitments (read-only)
+- Keep existing read-only table
+
+6) Supplier Interaction (editable based on state rules)
+- Attach supplier (optional in DRAFT)
+- Mark soft quote received (bool)
+- Mark final acceptance (only allowed once FUNDED)
+
+7) Campaign Timeline (append-only)
+- Show list of events
+- When admin changes key fields (publish, state transitions), append an event.
+- Do not allow editing/deleting timeline rows.
+
+D) State-Guarded Actions (Minimal Set)
+- Add explicit buttons in “Admin Actions” section:
+  - Publish (only if DRAFT + required publish preconditions met)
+  - Open/Activate (only if Published and allowed)
+  - Mark Funded (only if target met and rules allow)
+  - Start Fulfillment (only if FUNDED)
+  - Release Escrow (only if Fulfillment complete/eligible)
+  - Fail Campaign (allowed pre-release)
+- Ensure buttons are disabled with clear reason text if not allowed.
+
+Publish Preconditions (must enforce):
+- campaign name present
+- targetUnits present (>0)
+- product media has at least one image
+- deliveryMode set; if CP_BASED then CP assigned
+
+E) Data Layer: Persist New Fields
+- Extend campaign data model/storage to include:
+  - product: sku (optional), productName (optional)
+  - specifications: array
+  - variations: array
+  - media: array
+  - targetUnits
+  - deliveryMode, consolidationPointId
+- Keep backward compatibility: if older campaigns lack these fields, default to empty arrays/nulls without crashing.
+
+F) Acceptance Tests (Must Pass)
+1) Clicking “Create Campaign” opens /admin/campaigns/new (no modal)
+2) Creating a campaign produces a DRAFT campaign and redirects to /admin/campaigns/:id
+3) In DRAFT, admin can edit: metadata, specs, variations, media, targetUnits, fulfillment plan
+4) Publish is blocked until preconditions are met (with reason shown)
+5) After publish or activation, fields become read-only except allowed actions
+6) List page still has search + sort, and campaign shows correct state/publish labels
+7) No forbidden language: buy/order/checkout
+
+DELIVERABLE:
+- Dedicated /admin/campaigns/new page
+- Draft campaigns editable with full product definition fields
+- Modal removed or unused
+- Publish gating implemented

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useLocation } from "wouter";
+import { useLocation, Link } from "wouter";
 import { AdminLayout } from "./layout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -227,10 +227,12 @@ export default function CampaignsListPage() {
             <h1 className="text-2xl font-semibold" data-testid="text-campaigns-heading">Campaigns</h1>
             <p className="text-muted-foreground text-sm">Manage campaign lifecycle and commitments</p>
           </div>
-          <Button onClick={() => setCreateDialogOpen(true)} data-testid="button-create-campaign">
-            <Plus className="w-4 h-4 mr-2" />
-            Create Campaign
-          </Button>
+          <Link href="/admin/campaigns/new">
+            <Button data-testid="button-create-campaign">
+              <Plus className="w-4 h-4 mr-2" />
+              Create Campaign
+            </Button>
+          </Link>
         </div>
 
         <div className="flex flex-col sm:flex-row gap-4 flex-wrap">

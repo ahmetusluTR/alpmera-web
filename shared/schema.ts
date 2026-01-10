@@ -121,9 +121,13 @@ export const campaigns = pgTable("campaigns", {
   variant: text("variant"),
   shortDescription: text("short_description"),
   specs: text("specs"), // JSON: array of { key: string, value: string }
+  variations: text("variations"), // JSON: array of { name: string, attributes: { key: value } }
+  // Target in UNITS (primary for Phase 1.5+)
+  targetUnits: integer("target_units"),
   // Images
   primaryImageUrl: text("primary_image_url"),
   galleryImageUrls: text("gallery_image_urls"), // JSON: array of strings
+  media: text("media"), // JSON: array of { url: string, altText?: string, sortOrder: number }
   // Reference prices (for transparency)
   referencePrices: text("reference_prices"), // JSON: array of { amount, currency, source, url?, capturedAt?, note? }
   // Delivery strategy

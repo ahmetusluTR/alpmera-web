@@ -23,6 +23,7 @@ import SignIn from "@/pages/signin";
 import AdminSignInPage from "@/pages/admin/sign-in";
 import AdminControlRoom from "@/pages/admin/control-room";
 import AdminCampaigns from "@/pages/admin/campaigns";
+import AdminCampaignNew from "@/pages/admin/campaign-new";
 import AdminCampaignDetail from "@/pages/admin/campaign-detail";
 import AdminFulfillment from "@/pages/admin/fulfillment";
 import AdminClearing from "@/pages/admin/clearing";
@@ -187,6 +188,11 @@ function Router() {
       <Route path="/admin/campaigns">
         <AdminGuard>
           <AdminCampaigns />
+        </AdminGuard>
+      </Route>
+      <Route path="/admin/campaigns/new">
+        <AdminGuard>
+          <AdminCampaignNew />
         </AdminGuard>
       </Route>
       <Route path="/admin/campaigns/:id">
