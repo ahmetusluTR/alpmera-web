@@ -42,6 +42,26 @@ import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 
+const US_STATES = [
+  { value: "AL", label: "Alabama" }, { value: "AK", label: "Alaska" }, { value: "AZ", label: "Arizona" },
+  { value: "AR", label: "Arkansas" }, { value: "CA", label: "California" }, { value: "CO", label: "Colorado" },
+  { value: "CT", label: "Connecticut" }, { value: "DE", label: "Delaware" }, { value: "FL", label: "Florida" },
+  { value: "GA", label: "Georgia" }, { value: "HI", label: "Hawaii" }, { value: "ID", label: "Idaho" },
+  { value: "IL", label: "Illinois" }, { value: "IN", label: "Indiana" }, { value: "IA", label: "Iowa" },
+  { value: "KS", label: "Kansas" }, { value: "KY", label: "Kentucky" }, { value: "LA", label: "Louisiana" },
+  { value: "ME", label: "Maine" }, { value: "MD", label: "Maryland" }, { value: "MA", label: "Massachusetts" },
+  { value: "MI", label: "Michigan" }, { value: "MN", label: "Minnesota" }, { value: "MS", label: "Mississippi" },
+  { value: "MO", label: "Missouri" }, { value: "MT", label: "Montana" }, { value: "NE", label: "Nebraska" },
+  { value: "NV", label: "Nevada" }, { value: "NH", label: "New Hampshire" }, { value: "NJ", label: "New Jersey" },
+  { value: "NM", label: "New Mexico" }, { value: "NY", label: "New York" }, { value: "NC", label: "North Carolina" },
+  { value: "ND", label: "North Dakota" }, { value: "OH", label: "Ohio" }, { value: "OK", label: "Oklahoma" },
+  { value: "OR", label: "Oregon" }, { value: "PA", label: "Pennsylvania" }, { value: "RI", label: "Rhode Island" },
+  { value: "SC", label: "South Carolina" }, { value: "SD", label: "South Dakota" }, { value: "TN", label: "Tennessee" },
+  { value: "TX", label: "Texas" }, { value: "UT", label: "Utah" }, { value: "VT", label: "Vermont" },
+  { value: "VA", label: "Virginia" }, { value: "WA", label: "Washington" }, { value: "WV", label: "West Virginia" },
+  { value: "WI", label: "Wisconsin" }, { value: "WY", label: "Wyoming" }, { value: "DC", label: "District of Columbia" },
+];
+
 interface CampaignDetail {
   id: string;
   title: string;
@@ -1107,9 +1127,11 @@ export default function CampaignDetailPage() {
                       consolidationCompany: campaign.consolidationCompany || "",
                       consolidationContactEmail: campaign.consolidationContactEmail || "",
                       consolidationAddressLine1: campaign.consolidationAddressLine1 || "",
+                      consolidationAddressLine2: campaign.consolidationAddressLine2 || "",
                       consolidationCity: campaign.consolidationCity || "",
                       consolidationState: campaign.consolidationState || "",
                       consolidationPostalCode: campaign.consolidationPostalCode || "",
+                      consolidationCountry: campaign.consolidationCountry || "USA",
                       consolidationPhone: campaign.consolidationPhone || "",
                     });
                   }} data-testid="button-edit-delivery">
@@ -1186,34 +1208,66 @@ export default function CampaignDetailPage() {
                             data-testid="input-edit-consolidation-address"
                           />
                         </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-consolidation-address2">Address Line 2</Label>
+                          <Input
+                            id="edit-consolidation-address2"
+                            value={editForm.consolidationAddressLine2 || ""}
+                            onChange={(e) => setEditForm({...editForm, consolidationAddressLine2: e.target.value})}
+                            placeholder="Apt, Suite, Unit, etc. (optional)"
+                            data-testid="input-edit-consolidation-address2"
+                          />
+                        </div>
                         <div className="grid grid-cols-3 gap-4">
                           <div className="space-y-2">
-                            <Label htmlFor="edit-consolidation-city">City</Label>
+                            <Label htmlFor="edit-consolidation-city">City <span className="text-destructive">*</span></Label>
                             <Input
                               id="edit-consolidation-city"
                               value={editForm.consolidationCity || ""}
                               onChange={(e) => setEditForm({...editForm, consolidationCity: e.target.value})}
+                              required
                               data-testid="input-edit-consolidation-city"
                             />
                           </div>
                           <div className="space-y-2">
-                            <Label htmlFor="edit-consolidation-state">State</Label>
-                            <Input
-                              id="edit-consolidation-state"
+                            <Label htmlFor="edit-consolidation-state">State <span className="text-destructive">*</span></Label>
+                            <Select
                               value={editForm.consolidationState || ""}
-                              onChange={(e) => setEditForm({...editForm, consolidationState: e.target.value})}
-                              data-testid="input-edit-consolidation-state"
-                            />
+                              onValueChange={(value) => setEditForm({...editForm, consolidationState: value})}
+                            >
+                              <SelectTrigger id="edit-consolidation-state" data-testid="select-consolidation-state">
+                                <SelectValue placeholder="Select state" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {US_STATES.map((state) => (
+                                  <SelectItem key={state.value} value={state.value}>
+                                    {state.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
                           </div>
                           <div className="space-y-2">
-                            <Label htmlFor="edit-consolidation-postal">Postal Code</Label>
+                            <Label htmlFor="edit-consolidation-postal">Postal Code <span className="text-destructive">*</span></Label>
                             <Input
                               id="edit-consolidation-postal"
                               value={editForm.consolidationPostalCode || ""}
                               onChange={(e) => setEditForm({...editForm, consolidationPostalCode: e.target.value})}
+                              required
                               data-testid="input-edit-consolidation-postal"
                             />
                           </div>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-consolidation-country">Country</Label>
+                          <Input
+                            id="edit-consolidation-country"
+                            value={editForm.consolidationCountry || "USA"}
+                            disabled
+                            className="bg-muted"
+                            data-testid="input-edit-consolidation-country"
+                          />
+                          <p className="text-xs text-muted-foreground">USA only for Phase 1</p>
                         </div>
                       </>
                     )}
@@ -1249,9 +1303,11 @@ export default function CampaignDetailPage() {
                           consolidationCompany: editForm.consolidationCompany,
                           consolidationContactEmail: editForm.consolidationContactEmail,
                           consolidationAddressLine1: editForm.consolidationAddressLine1,
+                          consolidationAddressLine2: editForm.consolidationAddressLine2,
                           consolidationCity: editForm.consolidationCity,
                           consolidationState: editForm.consolidationState,
                           consolidationPostalCode: editForm.consolidationPostalCode,
+                          consolidationCountry: editForm.consolidationCountry || "USA",
                           consolidationPhone: editForm.consolidationPhone,
                         })}
                         disabled={saveMutation.isPending}
