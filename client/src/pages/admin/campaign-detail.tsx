@@ -821,12 +821,19 @@ export default function CampaignDetailPage() {
                 {!isPublished && editingSection !== "product" && (
                   <Button onClick={() => {
                     setEditingSection("product");
+                    let existingPrices: ReferencePriceEntry[] = [];
+                    try {
+                      if (campaign.referencePrices) {
+                        existingPrices = JSON.parse(campaign.referencePrices);
+                      }
+                    } catch {}
                     setEditForm({
                       brand: campaign.brand || "",
                       modelNumber: campaign.modelNumber || "",
                       variant: campaign.variant || "",
                       shortDescription: campaign.shortDescription || "",
                       primaryImageUrl: campaign.primaryImageUrl || "",
+                      referencePrices: existingPrices.length > 0 ? existingPrices : [{ amount: 0, source: "", currency: "USD" }],
                     });
                   }} data-testid="button-edit-product">
                     <Edit className="w-4 h-4 mr-2" />
@@ -935,6 +942,62 @@ export default function CampaignDetailPage() {
                         data-testid="input-edit-short-description"
                       />
                     </div>
+                    <div className="space-y-2">
+                      <Label>Reference Prices <span className="text-destructive">*</span></Label>
+                      <p className="text-xs text-muted-foreground">Required for publishing. Add at least one price source.</p>
+                      {(editForm.referencePrices || []).map((price: ReferencePriceEntry, idx: number) => (
+                        <div key={idx} className="flex gap-2 items-center">
+                          <Input
+                            type="number"
+                            placeholder="Amount"
+                            value={price.amount || ""}
+                            onChange={(e) => {
+                              const prices = [...(editForm.referencePrices || [])];
+                              prices[idx] = { ...prices[idx], amount: parseFloat(e.target.value) || 0 };
+                              setEditForm({...editForm, referencePrices: prices});
+                            }}
+                            className="w-28"
+                            data-testid={`input-ref-price-amount-${idx}`}
+                          />
+                          <Input
+                            placeholder="Source (e.g., Amazon, MSRP)"
+                            value={price.source || ""}
+                            onChange={(e) => {
+                              const prices = [...(editForm.referencePrices || [])];
+                              prices[idx] = { ...prices[idx], source: e.target.value };
+                              setEditForm({...editForm, referencePrices: prices});
+                            }}
+                            className="flex-1"
+                            data-testid={`input-ref-price-source-${idx}`}
+                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => {
+                              const prices = (editForm.referencePrices || []).filter((_: any, i: number) => i !== idx);
+                              setEditForm({...editForm, referencePrices: prices.length > 0 ? prices : [{ amount: 0, source: "", currency: "USD" }]});
+                            }}
+                            data-testid={`button-remove-ref-price-${idx}`}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      ))}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const prices = [...(editForm.referencePrices || []), { amount: 0, source: "", currency: "USD" }];
+                          setEditForm({...editForm, referencePrices: prices});
+                        }}
+                        data-testid="button-add-ref-price"
+                      >
+                        <Plus className="w-4 h-4 mr-2" />
+                        Add Price Source
+                      </Button>
+                    </div>
                     <div className="flex gap-2 pt-2">
                       <Button 
                         onClick={() => saveMutation.mutate({
@@ -942,6 +1005,7 @@ export default function CampaignDetailPage() {
                           modelNumber: editForm.modelNumber,
                           variant: editForm.variant,
                           shortDescription: editForm.shortDescription,
+                          referencePrices: JSON.stringify(editForm.referencePrices || []),
                           primaryImageUrl: editForm.primaryImageUrl,
                         })}
                         disabled={saveMutation.isPending}
