@@ -1499,23 +1499,27 @@ export async function registerRoutes(
         deliveryCostHandling, supplierDirectConfirmed
       } = req.body;
 
-      // Validate required fields
+      // Validate required fields - only title is required for draft creation
       if (!title || !title.trim()) {
         return res.status(400).json({ error: "Title is required" });
       }
-      if (!targetAmount || parseFloat(targetAmount) <= 0) {
-        return res.status(400).json({ error: "Target amount must be positive" });
-      }
-      if (!unitPrice || parseFloat(unitPrice) <= 0) {
-        return res.status(400).json({ error: "Unit price must be positive" });
-      }
-      if (!aggregationDeadline) {
-        return res.status(400).json({ error: "Aggregation deadline is required" });
-      }
 
-      const deadlineDate = new Date(aggregationDeadline);
-      if (isNaN(deadlineDate.getTime()) || deadlineDate <= new Date()) {
-        return res.status(400).json({ error: "Aggregation deadline must be a valid future date" });
+      // Use sensible defaults for DRAFT campaigns
+      const effectiveUnitPrice = unitPrice && parseFloat(unitPrice) > 0 ? unitPrice : "1";
+      const effectiveTargetAmount = targetAmount && parseFloat(targetAmount) > 0 
+        ? targetAmount 
+        : effectiveUnitPrice; // Default to 1 unit worth
+      
+      // Default deadline: 30 days from now
+      let deadlineDate: Date;
+      if (aggregationDeadline) {
+        deadlineDate = new Date(aggregationDeadline);
+        if (isNaN(deadlineDate.getTime()) || deadlineDate <= new Date()) {
+          return res.status(400).json({ error: "Aggregation deadline must be a valid future date" });
+        }
+      } else {
+        deadlineDate = new Date();
+        deadlineDate.setDate(deadlineDate.getDate() + 30);
       }
 
       // Insert directly with all new fields
@@ -1528,10 +1532,10 @@ export async function registerRoutes(
         description: description?.trim() || "",
         rules: rules?.trim() || "Standard campaign rules apply.",
         imageUrl: imageUrl?.trim() || null,
-        targetAmount: targetAmount.toString(),
-        minCommitment: minCommitment?.toString() || unitPrice.toString(),
+        targetAmount: effectiveTargetAmount.toString(),
+        minCommitment: minCommitment?.toString() || effectiveUnitPrice.toString(),
         maxCommitment: maxCommitment?.toString() || null,
-        unitPrice: unitPrice.toString(),
+        unitPrice: effectiveUnitPrice.toString(),
         state: "AGGREGATION",
         adminPublishStatus: "DRAFT",
         aggregationDeadline: deadlineDate,
