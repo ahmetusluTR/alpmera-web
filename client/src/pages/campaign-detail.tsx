@@ -14,18 +14,21 @@ import {
   ArrowRight, 
   ArrowLeft, 
   AlertTriangle, 
-  Shield, 
-  Lock,
+  Shield,
   Clock,
   CheckCircle,
-  FileText,
-  Users,
   Target,
   History,
   Timer
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { getStatusLabel, getStatusColor } from "@/lib/campaign-status";
+import { 
+  CAMPAIGN_PROTECTIONS, 
+  getMomentumBucket, 
+  getStatusExplainer,
+  getTimelineMilestones 
+} from "@/lib/campaign-content";
 import type { CampaignState } from "@shared/schema";
 
 function useCountdown(deadline: string) {
@@ -82,13 +85,8 @@ interface PublicCampaignDetail {
   maxCommitment?: string | null;
   participantCount?: number;
   totalCommitted?: number;
-}
-
-function getQualitativeLabel(percent: number): string {
-  if (percent >= 100) return "Goal reached";
-  if (percent >= 70) return "Approaching goal";
-  if (percent >= 40) return "Gaining traction";
-  return "Gathering commitments";
+  productName?: string | null;
+  sku?: string | null;
 }
 
 function ProgressBarWithMilestones({ value }: { value: number }) {
@@ -179,7 +177,10 @@ export default function CampaignDetail() {
   const isSuccess = campaign.state === "SUCCESS";
   const isFulfillment = campaign.state === "FULFILLMENT";
   const isNotJoinable = isFailed || isCompleted || isSuccess || isFulfillment;
-  const qualitativeLabel = getQualitativeLabel(progress);
+  const momentumBucket = getMomentumBucket(progress);
+  const statusExplainer = getStatusExplainer(campaign.state);
+  
+  const isGoalReached = progress >= 100;
   
   // Countdown-derived state
   const isClosingSoon = timeLeft && !timeLeft.isExpired && timeLeft.totalHours <= 24;
@@ -241,6 +242,13 @@ export default function CampaignDetail() {
             <StateTimeline currentState={campaign.state as CampaignState} isFailed={isFailed} />
           </div>
           
+          {/* Status explainer */}
+          {statusExplainer && (
+            <p className="text-sm text-muted-foreground mb-4" data-testid="text-status-explainer">
+              {statusExplainer}
+            </p>
+          )}
+          
           {/* Key Meta Row */}
           <div className="flex flex-wrap items-center gap-6 text-sm">
             <div className="flex items-center gap-2">
@@ -253,19 +261,14 @@ export default function CampaignDetail() {
             <div className="flex items-center gap-2">
               <Target className="w-4 h-4 text-muted-foreground" />
               <span className="text-muted-foreground">Momentum:</span>
-              <span className="font-mono font-medium" data-testid="text-funding-progress">
-                {Math.round(progress)}%
+              <span className={`font-medium ${
+                momentumBucket.emphasis === "complete" ? "text-green-600 dark:text-green-400" :
+                momentumBucket.emphasis === "high" ? "text-chart-1" :
+                "text-foreground"
+              }`} data-testid="text-funding-progress">
+                {momentumBucket.label}
               </span>
             </div>
-            {isAuthenticated && campaign.participantCount !== undefined && (
-              <div className="flex items-center gap-2">
-                <Users className="w-4 h-4 text-muted-foreground" />
-                <span className="text-muted-foreground">Members:</span>
-                <span className="font-mono font-medium" data-testid="text-participants">
-                  {campaign.participantCount}
-                </span>
-              </div>
-            )}
           </div>
         </div>
       </div>
@@ -325,60 +328,87 @@ export default function CampaignDetail() {
                   </CardContent>
                 </Card>
 
-                {/* Rules & Protections Card */}
+                {/* Protections Card - uses shared constants */}
                 <Card data-testid="card-protections">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                      <FileText className="w-4 h-4" />
-                      Rules & protections
+                      <Shield className="w-4 h-4" />
+                      Your protections
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
                     <ul className="space-y-3 text-sm">
-                      <li className="flex items-start gap-2">
-                        <CheckCircle className="w-3.5 h-3.5 text-green-600 mt-0.5 flex-shrink-0" />
-                        <div>
-                          <span className="font-medium text-foreground">Your money is protected</span>
-                          <p className="text-muted-foreground text-xs mt-0.5">Funds are locked securely and only released if the campaign is accepted.</p>
-                        </div>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <CheckCircle className="w-3.5 h-3.5 text-green-600 mt-0.5 flex-shrink-0" />
-                        <div>
-                          <span className="font-medium text-foreground">No silent changes</span>
-                          <p className="text-muted-foreground text-xs mt-0.5">Campaign rules and key actions can't be changed without being recorded.</p>
-                        </div>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <CheckCircle className="w-3.5 h-3.5 text-green-600 mt-0.5 flex-shrink-0" />
-                        <div>
-                          <span className="font-medium text-foreground">Full visibility</span>
-                          <p className="text-muted-foreground text-xs mt-0.5">You can always see when the campaign status changes and why it changed.</p>
-                        </div>
-                      </li>
+                      {CAMPAIGN_PROTECTIONS.map((protection) => (
+                        <li key={protection.id} className="flex items-start gap-2">
+                          <CheckCircle className="w-3.5 h-3.5 text-green-600 mt-0.5 flex-shrink-0" />
+                          <div>
+                            <span className="font-medium text-foreground">{protection.title}</span>
+                            <p className="text-muted-foreground text-xs mt-0.5">{protection.description}</p>
+                          </div>
+                        </li>
+                      ))}
                     </ul>
                   </CardContent>
                 </Card>
               </div>
             </section>
 
-            {/* D. About Section */}
+            {/* D. Product Section */}
+            <section>
+              <h2 className="text-xl font-semibold mb-4">Product</h2>
+              <Card data-testid="card-product">
+                <CardContent className="p-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Product Image */}
+                    <div className="space-y-3">
+                      {campaign.imageUrl ? (
+                        <div className="aspect-video rounded-md overflow-hidden bg-muted">
+                          <img 
+                            src={campaign.imageUrl} 
+                            alt={campaign.productName || campaign.title}
+                            className="w-full h-full object-cover"
+                            data-testid="img-campaign"
+                          />
+                        </div>
+                      ) : (
+                        <div className="aspect-video rounded-md bg-muted flex items-center justify-center" data-testid="img-placeholder">
+                          <div className="text-center text-muted-foreground">
+                            <Target className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                            <p className="text-sm">Product image</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    
+                    {/* Product Details */}
+                    <div className="space-y-4">
+                      {campaign.productName && (
+                        <div>
+                          <h3 className="font-semibold text-lg" data-testid="text-product-name">
+                            {campaign.productName}
+                          </h3>
+                          {campaign.sku && (
+                            <p className="text-xs text-muted-foreground font-mono" data-testid="text-sku">
+                              SKU: {campaign.sku}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                      
+                      <div className="text-sm text-muted-foreground">
+                        <p className="leading-relaxed">
+                          This campaign brings together interested buyers to collectively secure better terms from the supplier.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </section>
+            
+            {/* About Section */}
             <section>
               <h2 className="text-xl font-semibold mb-4">About this campaign</h2>
-              
-              {campaign.imageUrl && (
-                <Card className="overflow-hidden mb-4">
-                  <div className="aspect-video w-full">
-                    <img 
-                      src={campaign.imageUrl} 
-                      alt={campaign.title}
-                      className="w-full h-full object-cover"
-                      data-testid="img-campaign"
-                    />
-                  </div>
-                </Card>
-              )}
-              
               <Card data-testid="card-description">
                 <CardContent className="p-6">
                   <p className="text-muted-foreground leading-relaxed">
@@ -392,39 +422,42 @@ export default function CampaignDetail() {
             <section>
               <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
                 <History className="w-5 h-5 text-chart-1" />
-                Activity timeline
+                Campaign timeline
               </h2>
               <Card data-testid="card-activity">
                 <CardContent className="p-6">
                   <div className="space-y-4">
-                    <div className="flex items-start gap-4">
-                      <div className="w-2 h-2 rounded-full bg-chart-1 mt-2" />
-                      <div>
-                        <p className="font-medium">Campaign opened</p>
-                        <p className="text-sm text-muted-foreground font-mono">
-                          {formatDate(campaign.createdAt)}
-                        </p>
+                    {getTimelineMilestones(
+                      campaign.state,
+                      campaign.createdAt,
+                      campaign.aggregationDeadline,
+                      formatDate
+                    ).map((milestone) => (
+                      <div key={milestone.id} className="flex items-start gap-4">
+                        <div className={`w-2 h-2 rounded-full mt-2 ${
+                          milestone.isFailed 
+                            ? "bg-destructive" 
+                            : milestone.isComplete 
+                            ? "bg-green-600" 
+                            : milestone.isPending 
+                            ? "bg-muted-foreground/30" 
+                            : "bg-chart-1"
+                        }`} />
+                        <div className={milestone.isPending ? "opacity-50" : ""}>
+                          <p className="font-medium">
+                            {milestone.label}
+                            {milestone.isPending && (
+                              <span className="text-xs text-muted-foreground ml-2">(Not yet)</span>
+                            )}
+                          </p>
+                          {milestone.date && (
+                            <p className="text-sm text-muted-foreground font-mono">
+                              {milestone.date}
+                            </p>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                    
-                    <div className="flex items-start gap-4">
-                      <div className={`w-2 h-2 rounded-full mt-2 ${
-                        isFailed ? "bg-destructive" : isCompleted ? "bg-green-600" : "bg-muted-foreground/30"
-                      }`} />
-                      <div>
-                        <p className="font-medium">
-                          {isFailed 
-                            ? "Campaign did not reach goal" 
-                            : isCompleted 
-                            ? "Campaign completed" 
-                            : "Campaign ends"
-                          }
-                        </p>
-                        <p className="text-sm text-muted-foreground font-mono">
-                          {formatDate(campaign.aggregationDeadline)}
-                        </p>
-                      </div>
-                    </div>
+                    ))}
                   </div>
                 </CardContent>
               </Card>
@@ -465,18 +498,29 @@ export default function CampaignDetail() {
                   {/* Pricing info for authenticated users only */}
                   {isAuthenticated && hasPricingData && (
                     <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-muted-foreground">Commitment amount</span>
-                        <span className="font-mono font-medium" data-testid="text-unit-price">
-                          {formatCurrency(unitPrice)}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-muted-foreground">Minimum commitment</span>
-                        <span className="font-mono font-medium" data-testid="text-min-commitment">
-                          {formatCurrency(minCommitment)}
-                        </span>
-                      </div>
+                      {unitPrice === minCommitment ? (
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-muted-foreground">Minimum commitment</span>
+                          <span className="font-mono font-medium" data-testid="text-min-commitment">
+                            {formatCurrency(minCommitment)}
+                          </span>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm text-muted-foreground">Unit price</span>
+                            <span className="font-mono font-medium" data-testid="text-unit-price">
+                              {formatCurrency(unitPrice)}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm text-muted-foreground">Minimum commitment</span>
+                            <span className="font-mono font-medium" data-testid="text-min-commitment">
+                              {formatCurrency(minCommitment)}
+                            </span>
+                          </div>
+                        </>
+                      )}
                       {maxCommitment && (
                         <div className="flex items-center justify-between">
                           <span className="text-sm text-muted-foreground">Maximum</span>
@@ -552,36 +596,6 @@ export default function CampaignDetail() {
                       </p>
                     </div>
                   )}
-
-                  {/* Participation Rules */}
-                  <div className="space-y-3 pt-2">
-                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                      Participation rules
-                    </p>
-                    <ul className="space-y-2.5 text-sm text-muted-foreground">
-                      <li className="flex items-start gap-2">
-                        <Lock className="w-4 h-4 text-chart-1 mt-0.5 flex-shrink-0" />
-                        <div>
-                          <span className="font-medium text-foreground">Your funds are locked safely</span>
-                          <p className="text-xs mt-0.5">Money is secured while the campaign is active.</p>
-                        </div>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <Shield className="w-4 h-4 text-chart-1 mt-0.5 flex-shrink-0" />
-                        <div>
-                          <span className="font-medium text-foreground">No risk if it doesn't go through</span>
-                          <p className="text-xs mt-0.5">If the campaign isn't accepted or doesn't complete, you get a full refund.</p>
-                        </div>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <FileText className="w-4 h-4 text-chart-1 mt-0.5 flex-shrink-0" />
-                        <div>
-                          <span className="font-medium text-foreground">Nothing happens behind the scenes</span>
-                          <p className="text-xs mt-0.5">Every important action is recorded and visible.</p>
-                        </div>
-                      </li>
-                    </ul>
-                  </div>
                 </CardContent>
               </Card>
             </div>
