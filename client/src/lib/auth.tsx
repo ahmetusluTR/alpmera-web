@@ -20,11 +20,13 @@ interface User {
   email: string;
   createdAt: string;
   profile: UserProfile | null;
+  isAdmin?: boolean;
 }
 
 interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
+  isAdmin: boolean;
   isLoading: boolean;
   signOut: () => Promise<void>;
   refetch: () => void;
@@ -104,11 +106,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   }
 
+  const isAdmin = Boolean(user?.isAdmin);
+
   return (
     <AuthContext.Provider
       value={{
         user: user ?? null,
         isAuthenticated: Boolean(user),
+        isAdmin,
         isLoading,
         signOut,
         refetch,
