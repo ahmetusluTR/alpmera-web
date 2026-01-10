@@ -2,6 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { db } from "./db";
+import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
 import { 
   type CampaignState, 
   type CommitmentStatus,
@@ -106,8 +107,8 @@ function validateCampaignPublishable(campaign: any): { ok: boolean; missing: str
   const validPrices = referencePrices.filter(p => p.amount && p.amount > 0 && p.source);
   if (validPrices.length === 0) missing.push("referencePrices");
 
-  // Delivery strategy specific validation
-  if (campaign.deliveryStrategy === "CONSOLIDATION_POINT") {
+  // Delivery strategy specific validation - BULK_TO_CONSOLIDATION requires consolidation details
+  if (campaign.deliveryStrategy === "BULK_TO_CONSOLIDATION") {
     if (!campaign.consolidationCompany?.trim()) missing.push("consolidationCompanyName");
     if (!campaign.consolidationContactName?.trim()) missing.push("consolidationContactName");
     if (!campaign.consolidationContactEmail?.trim()) missing.push("consolidationContactEmail");
@@ -287,6 +288,9 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  
+  // Register object storage routes for file uploads
+  registerObjectStorageRoutes(app);
   
   // Admin login - validates API key and creates session
   app.post("/api/admin/login", (req, res) => {
@@ -1597,6 +1601,109 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error creating campaign:", error);
       res.status(500).json({ error: "Failed to create campaign" });
+    }
+  });
+
+  // Zod schema for campaign PATCH updates
+  const campaignUpdateSchema = z.object({
+    title: z.string().min(1).optional(),
+    description: z.string().optional(),
+    sku: z.string().optional(),
+    productName: z.string().optional(),
+    targetUnits: z.number().int().positive().optional(),
+    unitPrice: z.string().optional(),
+    brand: z.string().optional(),
+    modelNumber: z.string().optional(),
+    variant: z.string().optional(),
+    shortDescription: z.string().optional(),
+    primaryImageUrl: z.string().optional(),
+    galleryImageUrls: z.string().optional(),
+    specs: z.string().optional(),
+    referencePrices: z.string().optional(),
+    rules: z.string().optional(),
+    supplierDirectConfirmed: z.boolean().optional(),
+    deliveryStrategy: z.enum(["SUPPLIER_DIRECT", "BULK_TO_CONSOLIDATION"]).optional(),
+    deliveryWindow: z.string().optional(),
+    fulfillmentNotes: z.string().optional(),
+    consolidationContactName: z.string().optional(),
+    consolidationCompany: z.string().optional(),
+    consolidationContactEmail: z.string().email().optional().or(z.literal("")),
+    consolidationAddressLine1: z.string().optional(),
+    consolidationAddressLine2: z.string().optional(),
+    consolidationCity: z.string().optional(),
+    consolidationState: z.string().optional(),
+    consolidationPostalCode: z.string().optional(),
+    consolidationCountry: z.string().optional(),
+    consolidationPhone: z.string().optional(),
+  }).strict();
+
+  // Admin: Update campaign (PATCH for editable fields)
+  app.patch("/api/admin/campaigns/:id", requireAdminAuth, async (req, res) => {
+    try {
+      const campaignId = req.params.id;
+      const campaign = await db.select().from(campaigns).where(eq(campaigns.id, campaignId)).limit(1);
+      
+      if (!campaign[0]) {
+        return res.status(404).json({ error: "Campaign not found" });
+      }
+      
+      // Validate request body
+      const parseResult = campaignUpdateSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({ 
+          error: "Invalid update data", 
+          details: parseResult.error.errors 
+        });
+      }
+      
+      const updates = parseResult.data;
+      const currentStatus = campaign[0].adminPublishStatus || "DRAFT";
+      
+      // Define which fields can be edited per status
+      const draftEditableFields = [
+        "title", "description", "sku", "productName", "targetUnits", "unitPrice",
+        "brand", "modelNumber", "variant", "shortDescription", "primaryImageUrl",
+        "galleryImageUrls", "specs", "referencePrices", "rules",
+        "supplierDirectConfirmed", "deliveryStrategy", "deliveryWindow", "fulfillmentNotes",
+        "consolidationContactName", "consolidationCompany", "consolidationContactEmail",
+        "consolidationAddressLine1", "consolidationAddressLine2",
+        "consolidationCity", "consolidationState", "consolidationPostalCode",
+        "consolidationCountry", "consolidationPhone"
+      ];
+      
+      // Published campaigns cannot edit core fields or deliveryStrategy
+      const publishedEditableFields = [
+        "brand", "modelNumber", "variant", "shortDescription", "primaryImageUrl",
+        "galleryImageUrls", "specs", "referencePrices", "rules",
+        "deliveryWindow", "fulfillmentNotes",
+        "consolidationContactName", "consolidationCompany", "consolidationContactEmail",
+        "consolidationAddressLine1", "consolidationAddressLine2",
+        "consolidationCity", "consolidationState", "consolidationPostalCode",
+        "consolidationCountry", "consolidationPhone"
+      ];
+      
+      const allowedFields = currentStatus === "DRAFT" ? draftEditableFields : publishedEditableFields;
+      
+      // Filter to only allowed fields
+      const filteredUpdates: Record<string, any> = {};
+      for (const key of Object.keys(updates)) {
+        if (allowedFields.includes(key) && (updates as any)[key] !== undefined) {
+          filteredUpdates[key] = (updates as any)[key];
+        }
+      }
+      
+      if (Object.keys(filteredUpdates).length === 0) {
+        return res.status(400).json({ error: "No valid fields to update" });
+      }
+      
+      // Apply the updates
+      await db.update(campaigns).set(filteredUpdates).where(eq(campaigns.id, campaignId));
+      
+      console.log(`[ADMIN] Campaign ${campaignId} updated:`, Object.keys(filteredUpdates));
+      res.json({ success: true, updated: Object.keys(filteredUpdates) });
+    } catch (error) {
+      console.error("Error updating campaign:", error);
+      res.status(500).json({ error: "Failed to update campaign" });
     }
   });
 

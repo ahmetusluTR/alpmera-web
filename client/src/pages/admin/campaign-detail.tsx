@@ -36,7 +36,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, RefreshCw, Truck, Eye, EyeOff, Send, Lock, AlertTriangle, CheckCircle, XCircle, Users, Loader2, Plus, Trash2, Edit, Save } from "lucide-react";
+import { ArrowLeft, RefreshCw, Truck, Eye, EyeOff, Send, Lock, AlertTriangle, CheckCircle, XCircle, Users, Loader2, Plus, Trash2, Edit, Save, Upload } from "lucide-react";
+import { useUpload } from "@/hooks/use-upload";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -836,26 +837,73 @@ export default function CampaignDetailPage() {
                         />
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="edit-variant">Variant</Label>
-                        <Input
-                          id="edit-variant"
-                          value={editForm.variant || ""}
-                          onChange={(e) => setEditForm({...editForm, variant: e.target.value})}
-                          data-testid="input-edit-variant"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="edit-primary-image">Primary Image URL</Label>
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-variant">Variant</Label>
+                      <Input
+                        id="edit-variant"
+                        value={editForm.variant || ""}
+                        onChange={(e) => setEditForm({...editForm, variant: e.target.value})}
+                        data-testid="input-edit-variant"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Primary Image</Label>
+                      <div className="flex gap-2 items-center">
                         <Input
                           id="edit-primary-image"
                           value={editForm.primaryImageUrl || ""}
                           onChange={(e) => setEditForm({...editForm, primaryImageUrl: e.target.value})}
-                          placeholder="https://..."
+                          placeholder="Enter URL or upload an image"
+                          className="flex-1"
                           data-testid="input-edit-primary-image"
                         />
+                        <label className="cursor-pointer">
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              try {
+                                const urlRes = await fetch("/api/uploads/request-url", {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({
+                                    name: file.name,
+                                    size: file.size,
+                                    contentType: file.type,
+                                  }),
+                                });
+                                const { uploadURL, objectPath } = await urlRes.json();
+                                await fetch(uploadURL, {
+                                  method: "PUT",
+                                  body: file,
+                                  headers: { "Content-Type": file.type },
+                                });
+                                // Use the objectPath which resolves to /objects/... endpoint
+                                setEditForm({...editForm, primaryImageUrl: objectPath});
+                                toast({ title: "Image Uploaded", description: "Image uploaded successfully." });
+                              } catch (err) {
+                                toast({ title: "Upload Failed", description: "Could not upload image.", variant: "destructive" });
+                              }
+                            }}
+                            data-testid="input-upload-primary-image"
+                          />
+                          <Button type="button" variant="outline" asChild>
+                            <span><Upload className="w-4 h-4 mr-2" />Upload</span>
+                          </Button>
+                        </label>
                       </div>
+                      {editForm.primaryImageUrl && (
+                        <div className="mt-2">
+                          <img 
+                            src={editForm.primaryImageUrl} 
+                            alt="Preview" 
+                            className="w-24 h-24 object-cover rounded border"
+                          />
+                        </div>
+                      )}
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="edit-short-description">Short Description</Label>
@@ -1042,7 +1090,7 @@ export default function CampaignDetailPage() {
                 <div>
                   <CardTitle className="text-lg">Delivery Settings</CardTitle>
                   <CardDescription>
-                    {campaign.deliveryStrategy === "CONSOLIDATION_POINT" || campaign.deliveryStrategy === "BULK_TO_CONSOLIDATION"
+                    {campaign.deliveryStrategy === "BULK_TO_CONSOLIDATION"
                       ? "Bulk delivery to consolidation point"
                       : "Supplier direct fulfillment to participants"}
                     {isFulfillmentPhase && " (locked)"}
@@ -1083,11 +1131,10 @@ export default function CampaignDetailPage() {
                         data-testid="select-delivery-strategy"
                       >
                         <option value="SUPPLIER_DIRECT">Supplier Direct</option>
-                        <option value="CONSOLIDATION_POINT">Consolidation Point</option>
                         <option value="BULK_TO_CONSOLIDATION">Bulk to Consolidation</option>
                       </select>
                     </div>
-                    {(editForm.deliveryStrategy === "CONSOLIDATION_POINT" || editForm.deliveryStrategy === "BULK_TO_CONSOLIDATION") && (
+                    {editForm.deliveryStrategy === "BULK_TO_CONSOLIDATION" && (
                       <>
                         <div className="grid grid-cols-2 gap-4">
                           <div className="space-y-2">
