@@ -69,7 +69,6 @@ function Router() {
       <Route path="/" component={Home} />
       <Route path="/campaigns" component={Campaigns} />
       <Route path="/campaigns/:id" component={CampaignDetail} />
-      <Route path="/campaigns/:id/commit" component={CommitmentWizard} />
       <Route path="/how-it-works" component={HowItWorks} />
       <Route path="/faq" component={FAQ} />
       <Route path="/status" component={StatusPage} />
@@ -123,10 +122,13 @@ function Router() {
           </AuthGuard>
         )}
       </Route>
-      <Route path="/account/payments">
-        <AuthGuard>
-          <AccountPayments />
-        </AuthGuard>
+      {/* Commitment wizard requires auth */}
+      <Route path="/campaigns/:id/commit">
+        {(params) => (
+          <AuthGuard>
+            <CommitmentWizard />
+          </AuthGuard>
+        )}
       </Route>
       <Route path="/account/payments-escrow">
         <AuthGuard>
@@ -140,17 +142,15 @@ function Router() {
           </AuthGuard>
         )}
       </Route>
+      {/* Account alias routes - redirect to canonical paths */}
+      <Route path="/account/payments">
+        <Redirect to="/account/payments-escrow" />
+      </Route>
       <Route path="/account/escrow">
-        <AuthGuard>
-          <AccountPayments />
-        </AuthGuard>
+        <Redirect to="/account/payments-escrow" />
       </Route>
       <Route path="/account/escrow/:id">
-        {(params) => (
-          <AuthGuard>
-            <AccountEscrowDetail />
-          </AuthGuard>
-        )}
+        {(params) => <Redirect to={`/account/payments-escrow/${params.id}`} />}
       </Route>
       <Route path="/account/refunds">
         <AuthGuard>
