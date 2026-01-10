@@ -124,6 +124,11 @@ export default function CampaignDetail() {
     enabled: !!id,
   });
 
+  // Countdown timer - must be called before any early returns (React hooks rule)
+  // Use a fallback date when campaign is not loaded yet
+  const deadlineForCountdown = campaign?.aggregationDeadline ?? new Date().toISOString();
+  const timeLeft = useCountdown(deadlineForCountdown);
+
   if (isLoading) {
     return (
       <Layout>
@@ -176,8 +181,7 @@ export default function CampaignDetail() {
   const isNotJoinable = isFailed || isCompleted || isSuccess || isFulfillment;
   const qualitativeLabel = getQualitativeLabel(progress);
   
-  // Countdown timer for urgency
-  const timeLeft = useCountdown(campaign.aggregationDeadline);
+  // Countdown-derived state
   const isClosingSoon = timeLeft && !timeLeft.isExpired && timeLeft.totalHours <= 24;
   const isClosingVerySoon = timeLeft && !timeLeft.isExpired && timeLeft.totalHours <= 2;
   const isCampaignClosed = timeLeft?.isExpired && campaign.state === "AGGREGATION";
