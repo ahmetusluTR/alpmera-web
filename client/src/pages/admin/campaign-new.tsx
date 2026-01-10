@@ -17,15 +17,10 @@ export default function CampaignNewPage() {
 
   const createMutation = useMutation({
     mutationFn: async (name: string) => {
-      return await apiRequest("POST", "/api/admin/campaigns", {
+      const response = await apiRequest("POST", "/api/admin/campaigns", {
         title: name,
-        description: "",
-        rules: "",
-        targetAmount: "0",
-        unitPrice: "1",
-        minCommitment: "1",
-        aggregationDeadline: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
       });
+      return response.json();
     },
     onSuccess: (result: any) => {
       toast({ title: "Draft Created", description: "Campaign draft created. You can now edit the details." });
