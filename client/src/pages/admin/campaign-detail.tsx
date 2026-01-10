@@ -26,7 +26,17 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { ArrowLeft, RefreshCw, Truck, Eye, EyeOff, Send, Lock, AlertTriangle, CheckCircle, XCircle, Users, Loader2 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { ArrowLeft, RefreshCw, Truck, Eye, EyeOff, Send, Lock, AlertTriangle, CheckCircle, XCircle, Users, Loader2, Plus, Trash2, Edit, Save } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -53,6 +63,9 @@ interface CampaignDetail {
   variant: string | null;
   shortDescription: string | null;
   specs: string | null;
+  variations: string | null;
+  media: string | null;
+  targetUnits: number | null;
   primaryImageUrl: string | null;
   galleryImageUrls: string | null;
   referencePrices: string | null;
@@ -80,6 +93,17 @@ interface CampaignDetail {
 interface SpecEntry {
   key: string;
   value: string;
+}
+
+interface VariationEntry {
+  name: string;
+  attributes: Record<string, string>;
+}
+
+interface MediaEntry {
+  url: string;
+  altText?: string;
+  sortOrder: number;
 }
 
 interface ReferencePriceEntry {
@@ -279,6 +303,44 @@ export default function CampaignDetailPage() {
     },
   });
 
+  // Editable state for DRAFT campaigns
+  const [editingSection, setEditingSection] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<Record<string, any>>({});
+  const [specs, setSpecs] = useState<SpecEntry[]>([]);
+  const [variations, setVariations] = useState<VariationEntry[]>([]);
+  const [media, setMedia] = useState<MediaEntry[]>([]);
+
+  // Initialize editable data from campaign
+  const initializeEditData = () => {
+    if (!campaign) return;
+    try {
+      setSpecs(campaign.specs ? JSON.parse(campaign.specs) : []);
+    } catch { setSpecs([]); }
+    try {
+      setVariations(campaign.variations ? JSON.parse(campaign.variations) : []);
+    } catch { setVariations([]); }
+    try {
+      setMedia(campaign.media ? JSON.parse(campaign.media) : []);
+    } catch { setMedia([]); }
+  };
+
+  // Save mutation for updating campaign fields
+  const saveMutation = useMutation({
+    mutationFn: async (updates: Record<string, any>) => {
+      return await apiRequest("PATCH", `/api/admin/campaigns/${campaignId}`, updates);
+    },
+    onSuccess: () => {
+      toast({ title: "Saved", description: "Campaign updated successfully." });
+      queryClient.invalidateQueries({ queryKey: [`/api/admin/campaigns/${campaignId}/detail`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/campaigns"] });
+      setEditingSection(null);
+      setEditForm({});
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to Save", description: error.message, variant: "destructive" });
+    },
+  });
+
   const timelineEvents = timeline ? mapToTimelineEvents(timeline) : [];
   
   const publishStatus = campaign?.adminPublishStatus || "DRAFT";
@@ -383,6 +445,153 @@ export default function CampaignDetailPage() {
               </CardHeader>
             </Card>
 
+            {/* Campaign Metadata - Editable in DRAFT */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between gap-4">
+                <div>
+                  <CardTitle className="text-lg">Campaign Metadata</CardTitle>
+                  <CardDescription>
+                    {!isPublished ? "Edit campaign details below" : "Core fields are locked after publishing"}
+                  </CardDescription>
+                </div>
+                {!isPublished && editingSection !== "metadata" && (
+                  <Button variant="outline" size="sm" onClick={() => {
+                    setEditingSection("metadata");
+                    setEditForm({
+                      title: campaign.title,
+                      description: campaign.description || "",
+                      sku: campaign.sku || "",
+                      productName: campaign.productName || "",
+                      targetUnits: campaign.targetUnits || Math.floor(parseFloat(campaign.targetAmount) / parseFloat(campaign.unitPrice)),
+                      unitPrice: campaign.unitPrice,
+                    });
+                  }} data-testid="button-edit-metadata">
+                    <Edit className="w-4 h-4 mr-2" />
+                    Edit
+                  </Button>
+                )}
+              </CardHeader>
+              <CardContent>
+                {editingSection === "metadata" ? (
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-title">Campaign Name *</Label>
+                      <Input
+                        id="edit-title"
+                        value={editForm.title || ""}
+                        onChange={(e) => setEditForm({...editForm, title: e.target.value})}
+                        data-testid="input-edit-title"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-description">Description</Label>
+                      <Textarea
+                        id="edit-description"
+                        value={editForm.description || ""}
+                        onChange={(e) => setEditForm({...editForm, description: e.target.value})}
+                        rows={3}
+                        data-testid="input-edit-description"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-sku">SKU</Label>
+                        <Input
+                          id="edit-sku"
+                          value={editForm.sku || ""}
+                          onChange={(e) => setEditForm({...editForm, sku: e.target.value})}
+                          data-testid="input-edit-sku"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-product-name">Product Name</Label>
+                        <Input
+                          id="edit-product-name"
+                          value={editForm.productName || ""}
+                          onChange={(e) => setEditForm({...editForm, productName: e.target.value})}
+                          data-testid="input-edit-product-name"
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-target-units">Target Units *</Label>
+                        <Input
+                          id="edit-target-units"
+                          type="number"
+                          value={editForm.targetUnits || ""}
+                          onChange={(e) => setEditForm({...editForm, targetUnits: parseInt(e.target.value) || 0})}
+                          data-testid="input-edit-target-units"
+                        />
+                        <p className="text-xs text-muted-foreground">Number of units to reach for campaign success</p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-unit-price">Unit Price ($)</Label>
+                        <Input
+                          id="edit-unit-price"
+                          type="number"
+                          step="0.01"
+                          value={editForm.unitPrice || ""}
+                          onChange={(e) => setEditForm({...editForm, unitPrice: e.target.value})}
+                          data-testid="input-edit-unit-price"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex gap-2 pt-2">
+                      <Button 
+                        onClick={() => saveMutation.mutate({
+                          title: editForm.title,
+                          description: editForm.description,
+                          sku: editForm.sku,
+                          productName: editForm.productName,
+                          targetUnits: editForm.targetUnits,
+                          unitPrice: editForm.unitPrice,
+                        })}
+                        disabled={saveMutation.isPending}
+                        data-testid="button-save-metadata"
+                      >
+                        {saveMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                        <Save className="w-4 h-4 mr-2" />
+                        Save
+                      </Button>
+                      <Button variant="outline" onClick={() => { setEditingSection(null); setEditForm({}); }} data-testid="button-cancel-metadata">
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    <div>
+                      <p className="text-muted-foreground text-xs mb-1">Campaign Name</p>
+                      <p className="font-medium">{campaign.title}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground text-xs mb-1">SKU</p>
+                      <p className="font-mono">{campaign.sku || "—"}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground text-xs mb-1">Product Name</p>
+                      <p className="font-medium">{campaign.productName || "—"}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground text-xs mb-1">Unit Price</p>
+                      <p className="font-mono">${parseFloat(campaign.unitPrice).toFixed(2)}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground text-xs mb-1">Target Units</p>
+                      <p className="font-mono">{campaign.targetUnits?.toLocaleString() || "—"}</p>
+                    </div>
+                    {campaign.description && (
+                      <div className="col-span-4 md:col-span-3">
+                        <p className="text-muted-foreground text-xs mb-1">Description</p>
+                        <p className="text-sm">{campaign.description}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg">Campaign Summary</CardTitle>
@@ -404,7 +613,7 @@ export default function CampaignDetailPage() {
                   <div>
                     <p className="text-muted-foreground text-xs mb-1">Target Units</p>
                     <p className="text-xl font-mono font-semibold" data-testid="stat-target-units">
-                      {Math.floor(parseFloat(campaign.targetAmount) / parseFloat(campaign.unitPrice)).toLocaleString()}
+                      {campaign.targetUnits?.toLocaleString() || Math.floor(parseFloat(campaign.targetAmount) / parseFloat(campaign.unitPrice)).toLocaleString()}
                     </p>
                   </div>
                   <div>

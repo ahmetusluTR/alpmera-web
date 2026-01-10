@@ -1793,14 +1793,14 @@ export async function registerRoutes(
     "consolidationPhone", "deliveryWindow", "fulfillmentNotes", "deliveryCostHandling",
     "supplierDirectConfirmed",
     // Product detail fields (editable when published)
-    "brand", "modelNumber", "variant", "shortDescription", "specs",
+    "brand", "modelNumber", "variant", "shortDescription", "specs", "variations", "media",
     "primaryImageUrl", "galleryImageUrls", "referencePrices", "description"
   ];
   
   // Fields locked after publish (core campaign config)
   const PUBLISHED_LOCKED_FIELDS_SET = new Set([
     "title", "sku", "productName", "aggregationDeadline", 
-    "targetAmount", "unitPrice", "minCommitment", "maxCommitment"
+    "targetAmount", "targetUnits", "unitPrice", "minCommitment", "maxCommitment"
   ]);
   
   // deliveryStrategy can only be changed if no commitments exist
