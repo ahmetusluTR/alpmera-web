@@ -1633,6 +1633,7 @@ export async function registerRoutes(
         ...campaign,
         adminPublishStatus: campaignData?.adminPublishStatus || "DRAFT",
         // Core fields
+        minCommitment: campaignData?.minCommitment,
         sku: campaignData?.sku,
         productName: campaignData?.productName,
         // Product details
