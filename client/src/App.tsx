@@ -23,6 +23,9 @@ import SignIn from "@/pages/signin";
 import AdminSignInPage from "@/pages/admin/sign-in";
 import AdminControlRoom from "@/pages/admin/control-room";
 import AdminCampaigns from "@/pages/admin/campaigns";
+import AdminProducts from "@/pages/admin/products";
+import AdminProductDetail from "@/pages/admin/product-detail";
+import AdminProductBulk from "@/pages/admin/product-bulk";
 import AdminCampaignNew from "@/pages/admin/campaign-new";
 import AdminCampaignDetail from "@/pages/admin/campaign-detail";
 import AdminFulfillment from "@/pages/admin/fulfillment";
@@ -209,6 +212,26 @@ function Router() {
           </AdminGuard>
         )}
       </Route>
+
+      {/* Admin Products */}
+      <Route path="/admin/products">
+        <AdminGuard>
+          <AdminProducts />
+        </AdminGuard>
+      </Route>
+      <Route path="/admin/products/bulk">
+        <AdminGuard>
+          <AdminProductBulk />
+        </AdminGuard>
+      </Route>
+      <Route path="/admin/products/:id">
+        {(params) => (
+          <AdminGuard>
+            <AdminProductDetail />
+          </AdminGuard>
+        )}
+      </Route>
+
 
       {/* Admin Users */}
       <Route path="/admin/users">

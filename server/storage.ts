@@ -1,15 +1,16 @@
-import { 
-  campaigns, 
-  commitments, 
-  escrowLedger, 
-  supplierAcceptances, 
+import {
+  campaigns,
+  commitments,
+  escrowLedger,
+  supplierAcceptances,
   adminActionLogs,
   idempotencyKeys,
   users,
   userProfiles,
   userSessions,
   authCodes,
-  type Campaign, 
+  products,
+  type Campaign,
   type InsertCampaign,
   type Commitment,
   type InsertCommitment,
@@ -32,6 +33,10 @@ import {
   type InsertAuthCode,
   type CampaignState,
   type CommitmentStatus,
+  type Product,
+  type InsertProduct,
+  type UpdateProduct,
+  type ProductStatus,
   VALID_TRANSITIONS
 } from "@shared/schema";
 import { db } from "./db";
@@ -46,7 +51,7 @@ export interface IStorage {
   getCampaignsWithStats(): Promise<(Campaign & { participantCount: number; totalCommitted: number })[]>;
   createCampaign(campaign: InsertCampaign): Promise<Campaign>;
   updateCampaignState(id: string, state: CampaignState): Promise<Campaign | undefined>;
-  
+
   // Commitment operations
   getCommitments(campaignId: string): Promise<Commitment[]>;
   getCommitmentsByUserId(userId: string): Promise<(Commitment & { campaign: Campaign })[]>;
@@ -55,7 +60,7 @@ export interface IStorage {
   getCommitmentWithCampaign(referenceNumber: string): Promise<(Commitment & { campaign: Campaign }) | undefined>;
   createCommitment(commitment: InsertCommitment): Promise<Commitment>;
   updateCommitmentStatus(id: string, status: CommitmentStatus): Promise<Commitment | undefined>;
-  
+
   // Escrow ledger operations (append-only)
   getEscrowEntries(campaignId: string): Promise<EscrowEntry[]>;
   getEscrowEntriesByCommitment(commitmentId: string): Promise<EscrowEntry[]>;
@@ -63,43 +68,51 @@ export interface IStorage {
   getEscrowEntryById(id: string): Promise<(EscrowEntry & { commitment: Commitment; campaign: Campaign }) | undefined>;
   createEscrowEntry(entry: InsertEscrowEntry): Promise<EscrowEntry>;
   getCampaignEscrowBalance(campaignId: string): Promise<number>;
-  
+
   // Supplier acceptance
   createSupplierAcceptance(acceptance: InsertSupplierAcceptance): Promise<SupplierAcceptance>;
   getSupplierAcceptances(campaignId: string): Promise<SupplierAcceptance[]>;
-  
+
   // Admin action logs
   createAdminActionLog(log: InsertAdminActionLog): Promise<AdminActionLog>;
   getAdminActionLogs(limit?: number): Promise<AdminActionLog[]>;
   getAdminActionLogsByCampaign(campaignId: string): Promise<AdminActionLog[]>;
-  
+
   // Idempotency keys
   getIdempotencyKey(key: string, scope: string): Promise<IdempotencyKey | undefined>;
   createIdempotencyKey(data: InsertIdempotencyKey): Promise<IdempotencyKey>;
   updateIdempotencyKeyResponse(id: string, response: string): Promise<void>;
-  
+
   // User operations
   getUserById(id: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
-  
+
   // User profile operations
   getUserProfile(userId: string): Promise<UserProfile | undefined>;
   createUserProfile(profile: InsertUserProfile): Promise<UserProfile>;
   updateUserProfile(userId: string, updates: UpdateUserProfile): Promise<UserProfile | undefined>;
   getUserWithProfile(userId: string): Promise<(User & { profile: UserProfile | null }) | undefined>;
-  
+
   // User session operations
   getUserSession(sessionToken: string): Promise<UserSession | undefined>;
   createUserSession(session: InsertUserSession): Promise<UserSession>;
   deleteUserSession(sessionToken: string): Promise<void>;
   deleteExpiredSessions(): Promise<number>;
-  
+
   // Auth code operations
   createAuthCode(code: InsertAuthCode): Promise<AuthCode>;
   getValidAuthCode(email: string): Promise<AuthCode | undefined>;
   markAuthCodeUsed(id: string): Promise<boolean>; // Returns true if marked, false if already used
   cleanupExpiredAuthCodes(): Promise<number>;
+
+  // Product operations
+  getProducts(): Promise<Product[]>;
+  getProduct(id: string): Promise<Product | undefined>;
+  getProductBySku(sku: string): Promise<Product | undefined>;
+  createProduct(product: InsertProduct): Promise<Product>;
+  updateProduct(id: string, updates: UpdateProduct): Promise<Product | undefined>;
+  archiveProduct(id: string): Promise<Product | undefined>;
 }
 
 // Generate unique reference number for commitments
@@ -146,7 +159,7 @@ export class DatabaseStorage implements IStorage {
 
   async getCampaignsWithStats(): Promise<(Campaign & { participantCount: number; totalCommitted: number })[]> {
     const allCampaigns = await this.getCampaigns();
-    
+
     const campaignsWithStats = await Promise.all(
       allCampaigns.map(async (campaign) => {
         const stats = await db
@@ -201,7 +214,7 @@ export class DatabaseStorage implements IStorage {
       .innerJoin(campaigns, eq(commitments.campaignId, campaigns.id))
       .where(eq(commitments.userId, userId))
       .orderBy(desc(commitments.createdAt));
-    
+
     return results.map(r => ({
       ...r.commitment,
       campaign: r.campaign,
@@ -278,7 +291,7 @@ export class DatabaseStorage implements IStorage {
       .innerJoin(campaigns, eq(escrowLedger.campaignId, campaigns.id))
       .where(eq(commitments.userId, userId))
       .orderBy(desc(escrowLedger.createdAt));
-    
+
     return results.map(r => ({
       ...r.escrowEntry,
       commitment: r.commitment,
@@ -297,9 +310,9 @@ export class DatabaseStorage implements IStorage {
       .innerJoin(commitments, eq(escrowLedger.commitmentId, commitments.id))
       .innerJoin(campaigns, eq(escrowLedger.campaignId, campaigns.id))
       .where(eq(escrowLedger.id, id));
-    
+
     if (!result) return undefined;
-    
+
     return {
       ...result.escrowEntry,
       commitment: result.commitment,
@@ -331,7 +344,7 @@ export class DatabaseStorage implements IStorage {
       })
       .from(escrowLedger)
       .where(eq(escrowLedger.campaignId, campaignId));
-    
+
     return result[0]?.balance || 0;
   }
 
@@ -391,34 +404,34 @@ export class DatabaseStorage implements IStorage {
       .set({ response })
       .where(eq(idempotencyKeys.id, id));
   }
-  
+
   // User operations
   async getUserById(id: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
     return user || undefined;
   }
-  
+
   async getUserByEmail(email: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.email, email.toLowerCase()));
     return user || undefined;
   }
-  
+
   async createUser(user: InsertUser): Promise<User> {
     const [created] = await db.insert(users).values({ ...user, email: user.email.toLowerCase() }).returning();
     return created;
   }
-  
+
   // User profile operations
   async getUserProfile(userId: string): Promise<UserProfile | undefined> {
     const [profile] = await db.select().from(userProfiles).where(eq(userProfiles.userId, userId));
     return profile || undefined;
   }
-  
+
   async createUserProfile(profile: InsertUserProfile): Promise<UserProfile> {
     const [created] = await db.insert(userProfiles).values(profile).returning();
     return created;
   }
-  
+
   async updateUserProfile(userId: string, updates: UpdateUserProfile): Promise<UserProfile | undefined> {
     const [updated] = await db
       .update(userProfiles)
@@ -427,15 +440,15 @@ export class DatabaseStorage implements IStorage {
       .returning();
     return updated || undefined;
   }
-  
+
   async getUserWithProfile(userId: string): Promise<(User & { profile: UserProfile | null }) | undefined> {
     const user = await this.getUserById(userId);
     if (!user) return undefined;
-    
+
     const profile = await this.getUserProfile(userId);
     return { ...user, profile: profile || null };
   }
-  
+
   // User session operations
   async getUserSession(sessionToken: string): Promise<UserSession | undefined> {
     const [session] = await db
@@ -444,16 +457,16 @@ export class DatabaseStorage implements IStorage {
       .where(eq(userSessions.sessionToken, sessionToken));
     return session || undefined;
   }
-  
+
   async createUserSession(session: InsertUserSession): Promise<UserSession> {
     const [created] = await db.insert(userSessions).values(session).returning();
     return created;
   }
-  
+
   async deleteUserSession(sessionToken: string): Promise<void> {
     await db.delete(userSessions).where(eq(userSessions.sessionToken, sessionToken));
   }
-  
+
   async deleteExpiredSessions(): Promise<number> {
     const result = await db
       .delete(userSessions)
@@ -461,13 +474,13 @@ export class DatabaseStorage implements IStorage {
       .returning();
     return result.length;
   }
-  
+
   // Auth code operations
   async createAuthCode(code: InsertAuthCode): Promise<AuthCode> {
     const [created] = await db.insert(authCodes).values(code).returning();
     return created;
   }
-  
+
   async getValidAuthCode(email: string): Promise<AuthCode | undefined> {
     // SECURITY: Filter by email, unused, and not expired - all in SQL
     const now = new Date();
@@ -485,7 +498,7 @@ export class DatabaseStorage implements IStorage {
       .limit(1);
     return code || undefined;
   }
-  
+
   // SECURITY: Atomic mark-as-used with optimistic locking
   // Returns true if successfully marked (code was still unused)
   // Returns false if code was already used (race condition prevented)
@@ -502,13 +515,58 @@ export class DatabaseStorage implements IStorage {
       .returning();
     return result.length > 0;
   }
-  
+
   async cleanupExpiredAuthCodes(): Promise<number> {
     const result = await db
       .delete(authCodes)
       .where(lt(authCodes.expiresAt, new Date()))
       .returning();
     return result.length;
+  }
+
+  // Product operations
+  async getProducts(): Promise<Product[]> {
+    return await db
+      .select()
+      .from(products)
+      .orderBy(desc(products.createdAt));
+  }
+
+  async getProduct(id: string): Promise<Product | undefined> {
+    const [product] = await db.select().from(products).where(eq(products.id, id));
+    return product || undefined;
+  }
+
+  async getProductBySku(sku: string): Promise<Product | undefined> {
+    // Case-insensitive SKU lookup
+    const [product] = await db
+      .select()
+      .from(products)
+      .where(sql`LOWER(${products.sku}) = LOWER(${sku})`);
+    return product || undefined;
+  }
+
+  async createProduct(product: InsertProduct): Promise<Product> {
+    const [created] = await db.insert(products).values(product).returning();
+    return created;
+  }
+
+  async updateProduct(id: string, updates: UpdateProduct): Promise<Product | undefined> {
+    const [updated] = await db
+      .update(products)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(products.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async archiveProduct(id: string): Promise<Product | undefined> {
+    const [updated] = await db
+      .update(products)
+      .set({ status: "ARCHIVED", updatedAt: new Date() })
+      .where(eq(products.id, id))
+      .returning();
+    return updated || undefined;
   }
 }
 
