@@ -382,6 +382,9 @@ export async function registerRoutes(
 
       // Generate 6-digit code
       const code = generateAuthCode();
+      if (process.env.APP_ENV === "staging") {
+        console.log(`[STAGING OTP] email=${email} code=${code}`);
+      }
       const salt = randomBytes(16).toString("hex");
       const codeHash = hashAuthCode(code, salt);
 
