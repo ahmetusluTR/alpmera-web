@@ -1,3 +1,7 @@
+## Canon Authority Notice
+
+This project uses a formal Canon System located in `docs/canon/`. The Canon (Constitution, Roles, Playbooks, Tasks) defines Alpmera’s non-negotiable doctrine, language rules, trust model, and decision authority. All reasoning, analysis, and outputs must comply with the Canon. If any instruction, prompt, or request conflicts with the Canon, the Canon takes precedence and the conflict must be surfaced rather than bypassed. The Canon is constitutional and may not be overridden by convenience, optimization, or speculative assumptions.
+
 # Alpmera - Trust-First Collective Buying Platform
 
 ## Overview
