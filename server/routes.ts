@@ -1,5 +1,8 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
+import { readFileSync, existsSync } from "fs";
+import { join } from "path";
+import { execSync } from "child_process";
 import { storage } from "./storage";
 import { db } from "./db";
 import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
@@ -284,10 +287,56 @@ const requireUserAuth = async (req: Request, res: Response, next: NextFunction) 
   }
 };
 
+// ============================================
+// HEALTH CHECK HELPERS
+// ============================================
+
+// Compute version and commit once at startup
+let appVersion = "unknown";
+try {
+  const packageJsonPath = join(process.cwd(), "package.json");
+  if (existsSync(packageJsonPath)) {
+    const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf-8"));
+    appVersion = packageJson.version || "unknown";
+  }
+} catch (e) {
+  console.error("[HEALTH] Failed to read package.json version", e);
+}
+
+let appCommit = process.env.GIT_COMMIT || "unknown";
+if (appCommit === "unknown") {
+  try {
+    // attempt git rev-parse --short HEAD
+    // stdio ignore to prevent error output if git is not present/fails
+    const gitOutput = execSync("git rev-parse --short HEAD", {
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 1000 // avoid hanging
+    });
+    appCommit = gitOutput.trim();
+  } catch (e) {
+    // ignore git error, fallback to unknown
+  }
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+
+  // Health check endpoint
+  // Must be public (no auth) and not hit DB
+  app.get("/health", (_req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    res.json({
+      ok: true,
+      service: "alpmera-api",
+      env: process.env.APP_ENV || process.env.NODE_ENV || "unknown",
+      version: appVersion,
+      commit: appCommit,
+      uptimeSeconds: Math.floor(process.uptime())
+    });
+  });
 
   // Register object storage routes for file uploads
   registerObjectStorageRoutes(app);
