@@ -48,10 +48,67 @@ export const authCodes = pgTable("auth_codes", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// ============================================
+// EXTERNAL SESSION TABLE (connect-pg-simple)
+// ============================================
+// This table is managed by connect-pg-simple for express-session.
+// We declare it here as a stub so Drizzle doesn't try to drop it.
+// DO NOT modify this table via Drizzle migrations.
+export const session = pgTable("session", {
+  sid: varchar("sid").primaryKey(),
+  sess: text("sess").notNull(),
+  expire: timestamp("expire", { precision: 6 }).notNull(),
+});
+
+
+// ============================================
+// PRODUCTS TABLE (Admin-only catalog)
+// ============================================
+
+// Product Status enum
+export const productStatusEnum = pgEnum("product_status", [
+  "ACTIVE",
+  "ARCHIVED"
+]);
+
+// Products table - stable product metadata (admin-only)
+// Products define WHAT an item is. Campaigns define WHEN/HOW coordination happens.
+export const products = pgTable("products", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  // Identity (required)
+  sku: text("sku").notNull().unique(),
+  name: text("name").notNull(),
+  // Descriptive metadata (optional)
+  brand: text("brand"),
+  modelNumber: text("model_number"),
+  variant: text("variant"),
+  category: text("category"),
+  shortDescription: text("short_description"), // max ~500 chars
+  // Specifications (JSON array of { key: string, value: string })
+  specs: text("specs"),
+  // Media
+  primaryImageUrl: text("primary_image_url"),
+  galleryImageUrls: text("gallery_image_urls"), // JSON array of strings
+  // Reference prices (append-only JSON array)
+  // Each entry: { amount, currency, sourceType, sourceNameOrUrl?, capturedAt, capturedBy, note? }
+  referencePrices: text("reference_prices"),
+  // Internal
+  internalNotes: text("internal_notes"), // admin-only
+  status: productStatusEnum("status").notNull().default("ACTIVE"),
+  // Timestamps
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// ============================================
+// CAMPAIGN TABLES
+// ============================================
+
 // Campaign State Machine: AGGREGATION → SUCCESS/FAILED → FULFILLMENT → RELEASED
+
 export const campaignStateEnum = pgEnum("campaign_state", [
   "AGGREGATION",
-  "SUCCESS", 
+  "SUCCESS",
   "FAILED",
   "FULFILLMENT",
   "RELEASED"
@@ -75,8 +132,21 @@ export const escrowEntryTypeEnum = pgEnum("escrow_entry_type", [
 // Controls visibility in public UI and editability in admin
 export const adminPublishStatusEnum = pgEnum("admin_publish_status", [
   "DRAFT",
-  "PUBLISHED", 
+  "PUBLISHED",
   "HIDDEN"
+]);
+
+// Delivery Strategy enum
+export const deliveryStrategyEnum = pgEnum("delivery_strategy", [
+  "SUPPLIER_DIRECT",
+  "CONSOLIDATION_POINT"
+]);
+
+// Delivery Cost Handling enum
+export const deliveryCostHandlingEnum = pgEnum("delivery_cost_handling", [
+  "INCLUDED_IN_UNIT_PRICE",
+  "SEPARATE_POST_CAMPAIGN",
+  "SUPPLIER_COVERED"
 ]);
 
 // Campaigns table
@@ -97,14 +167,34 @@ export const campaigns = pgTable("campaigns", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   // Admin publish status (separate from state machine)
   adminPublishStatus: adminPublishStatusEnum("admin_publish_status").notNull().default("DRAFT"),
+  publishedAt: timestamp("published_at"),
+  publishedByAdminId: text("published_by_admin_id"),
   // SKU and product identification
   sku: text("sku"),
   productName: text("product_name"),
+  // Product details
+  brand: text("brand"),
+  modelNumber: text("model_number"),
+  variant: text("variant"),
+  shortDescription: text("short_description"),
+  specs: text("specs"), // JSON: array of { key: string, value: string }
+  variations: text("variations"), // JSON: array of { name: string, attributes: { key: value } }
+  // Target in UNITS (primary for Phase 1.5+)
+  targetUnits: integer("target_units"),
+  // Images
+  primaryImageUrl: text("primary_image_url"),
+  galleryImageUrls: text("gallery_image_urls"), // JSON: array of strings
+  media: text("media"), // JSON: array of { url: string, altText?: string, sortOrder: number }
+  // Reference prices (for transparency)
+  referencePrices: text("reference_prices"), // JSON: array of { amount, currency, source, url?, capturedAt?, note? }
   // Delivery strategy
-  deliveryStrategy: text("delivery_strategy").default("SUPPLIER_DIRECT"), // SUPPLIER_DIRECT | BULK_TO_CONSOLIDATION
+  deliveryStrategy: text("delivery_strategy").default("SUPPLIER_DIRECT"), // SUPPLIER_DIRECT | CONSOLIDATION_POINT
+  deliveryCostHandling: text("delivery_cost_handling"), // INCLUDED_IN_UNIT_PRICE | SEPARATE_POST_CAMPAIGN | SUPPLIER_COVERED
+  supplierDirectConfirmed: boolean("supplier_direct_confirmed").default(false),
   // Consolidation fields (editable while published, locked in fulfillment phase)
   consolidationContactName: text("consolidation_contact_name"),
   consolidationCompany: text("consolidation_company"),
+  consolidationContactEmail: text("consolidation_contact_email"),
   consolidationAddressLine1: text("consolidation_address_line1"),
   consolidationAddressLine2: text("consolidation_address_line2"),
   consolidationCity: text("consolidation_city"),
@@ -164,6 +254,24 @@ export const adminActionLogs = pgTable("admin_action_logs", {
   newState: text("new_state"),
   reason: text("reason"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Campaign Admin Events - append-only audit log for campaign changes
+// Tracks CREATED, UPDATED, PUBLISHED events with changed fields
+export const campaignAdminEventsEnum = pgEnum("campaign_admin_event_type", [
+  "CREATED",
+  "UPDATED",
+  "PUBLISHED"
+]);
+
+export const campaignAdminEvents = pgTable("campaign_admin_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  campaignId: varchar("campaign_id").notNull().references(() => campaigns.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  adminId: text("admin_id").notNull(), // admin email or username
+  eventType: campaignAdminEventsEnum("event_type").notNull(),
+  changedFields: text("changed_fields"), // JSON array of field names that changed
+  note: text("note"),
 });
 
 // Idempotency Keys - prevent duplicate money-affecting operations
@@ -247,6 +355,13 @@ export const adminActionLogsRelations = relations(adminActionLogs, ({ one }) => 
   }),
 }));
 
+export const campaignAdminEventsRelations = relations(campaignAdminEvents, ({ one }) => ({
+  campaign: one(campaigns, {
+    fields: [campaignAdminEvents.campaignId],
+    references: [campaigns.id],
+  }),
+}));
+
 // Insert Schemas
 export const insertCampaignSchema = createInsertSchema(campaigns).omit({
   id: true,
@@ -280,6 +395,21 @@ export const insertIdempotencyKeySchema = createInsertSchema(idempotencyKeys).om
   id: true,
   createdAt: true,
 });
+
+export const insertCampaignAdminEventSchema = createInsertSchema(campaignAdminEvents).omit({
+  id: true,
+  createdAt: true,
+});
+
+// Product insert/update schemas
+export const insertProductSchema = createInsertSchema(products).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  status: true, // defaults to ACTIVE
+});
+
+export const updateProductSchema = insertProductSchema.partial();
 
 // User-related insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({
@@ -338,10 +468,39 @@ export type InsertAdminActionLog = z.infer<typeof insertAdminActionLogSchema>;
 export type IdempotencyKey = typeof idempotencyKeys.$inferSelect;
 export type InsertIdempotencyKey = z.infer<typeof insertIdempotencyKeySchema>;
 
+export type CampaignAdminEvent = typeof campaignAdminEvents.$inferSelect;
+export type InsertCampaignAdminEvent = z.infer<typeof insertCampaignAdminEventSchema>;
+export type CampaignAdminEventType = "CREATED" | "UPDATED" | "PUBLISHED";
+
 // Campaign State type
 export type CampaignState = "AGGREGATION" | "SUCCESS" | "FAILED" | "FULFILLMENT" | "RELEASED";
 export type CommitmentStatus = "LOCKED" | "REFUNDED" | "RELEASED";
 export type EscrowEntryType = "LOCK" | "REFUND" | "RELEASE";
+
+// Product types
+export type Product = typeof products.$inferSelect;
+export type InsertProduct = z.infer<typeof insertProductSchema>;
+export type UpdateProduct = z.infer<typeof updateProductSchema>;
+export type ProductStatus = "ACTIVE" | "ARCHIVED";
+
+// Reference Price type (for JSON array in products.referencePrices)
+// Append-only: never overwrite existing entries
+export interface ReferencePrice {
+  amount: number;
+  currency: string; // default "USD"
+  sourceType: "MSRP" | "RETAILER_LISTING" | "SUPPLIER_QUOTE" | "OTHER";
+  sourceNameOrUrl?: string;
+  capturedAt: string; // ISO datetime
+  capturedBy: string; // admin identifier
+  note?: string;
+}
+
+// Product Specification type (for JSON array in products.specs)
+export interface ProductSpec {
+  key: string;
+  value: string;
+}
+
 
 // State machine valid transitions
 export const VALID_TRANSITIONS: Record<CampaignState, CampaignState[]> = {

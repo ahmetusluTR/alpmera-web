@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useLocation } from "wouter";
+import { useLocation, Link } from "wouter";
 import { AdminLayout } from "./layout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -45,7 +45,17 @@ interface CampaignListItem {
   participantCount: number;
   totalCommitted: number;
   createdAt: string;
+  updatedAt?: string;
 }
+
+// Map internal states to spec terminology for display
+const STATE_DISPLAY_LABELS: Record<string, string> = {
+  AGGREGATION: "Active",
+  SUCCESS: "Funded",
+  FAILED: "Failed",
+  FULFILLMENT: "Fulfillment",
+  RELEASED: "Released",
+};
 
 const STATE_COLORS: Record<string, string> = {
   AGGREGATION: "bg-blue-500 text-white",
@@ -157,7 +167,12 @@ export default function CampaignsListPage() {
     ?.filter((c) => {
       if (stateFilter !== "all" && c.state !== stateFilter) return false;
       if (publishFilter !== "all" && (c.adminPublishStatus || "DRAFT") !== publishFilter) return false;
-      if (search && !c.title.toLowerCase().includes(search.toLowerCase())) return false;
+      if (search) {
+        const searchLower = search.toLowerCase();
+        const matchesTitle = c.title.toLowerCase().includes(searchLower);
+        const matchesId = c.id.toLowerCase().includes(searchLower);
+        if (!matchesTitle && !matchesId) return false;
+      }
       return true;
     })
     .sort((a, b) => {
@@ -168,6 +183,12 @@ export default function CampaignsListPage() {
         cmp = new Date(a.aggregationDeadline).getTime() - new Date(b.aggregationDeadline).getTime();
       } else if (sortBy === "commitments") {
         cmp = a.participantCount - b.participantCount;
+      } else if (sortBy === "escrow") {
+        cmp = a.totalCommitted - b.totalCommitted;
+      } else if (sortBy === "createdAt") {
+        cmp = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      } else if (sortBy === "state") {
+        cmp = a.state.localeCompare(b.state);
       }
       return sortDir === "desc" ? -cmp : cmp;
     }) || [];
@@ -206,17 +227,19 @@ export default function CampaignsListPage() {
             <h1 className="text-2xl font-semibold" data-testid="text-campaigns-heading">Campaigns</h1>
             <p className="text-muted-foreground text-sm">Manage campaign lifecycle and commitments</p>
           </div>
-          <Button onClick={() => setCreateDialogOpen(true)} data-testid="button-create-campaign">
-            <Plus className="w-4 h-4 mr-2" />
-            Create Campaign
-          </Button>
+          <Link href="/admin/campaigns/new">
+            <Button data-testid="button-create-campaign">
+              <Plus className="w-4 h-4 mr-2" />
+              Create Campaign
+            </Button>
+          </Link>
         </div>
 
         <div className="flex flex-col sm:flex-row gap-4 flex-wrap">
           <div className="relative flex-1 min-w-[200px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
-              placeholder="Search campaigns..."
+              placeholder="Search by name or ID..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-9"
@@ -225,15 +248,15 @@ export default function CampaignsListPage() {
           </div>
           <Select value={stateFilter} onValueChange={setStateFilter}>
             <SelectTrigger className="w-[150px]" data-testid="select-state-filter">
-              <SelectValue placeholder="State" />
+              <SelectValue placeholder="Lifecycle" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All States</SelectItem>
-              <SelectItem value="AGGREGATION">Aggregation</SelectItem>
-              <SelectItem value="SUCCESS">Success</SelectItem>
-              <SelectItem value="FAILED">Failed</SelectItem>
+              <SelectItem value="AGGREGATION">Active</SelectItem>
+              <SelectItem value="SUCCESS">Funded</SelectItem>
               <SelectItem value="FULFILLMENT">Fulfillment</SelectItem>
               <SelectItem value="RELEASED">Released</SelectItem>
+              <SelectItem value="FAILED">Failed</SelectItem>
             </SelectContent>
           </Select>
           <Select value={publishFilter} onValueChange={setPublishFilter}>
@@ -248,13 +271,16 @@ export default function CampaignsListPage() {
             </SelectContent>
           </Select>
           <Select value={sortBy} onValueChange={setSortBy}>
-            <SelectTrigger className="w-[150px]" data-testid="select-sort">
+            <SelectTrigger className="w-[160px]" data-testid="select-sort">
               <SelectValue placeholder="Sort by" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="name">Name</SelectItem>
               <SelectItem value="deadline">Deadline</SelectItem>
               <SelectItem value="commitments">Commitments</SelectItem>
+              <SelectItem value="escrow">Escrow Amount</SelectItem>
+              <SelectItem value="createdAt">Created At</SelectItem>
+              <SelectItem value="state">Lifecycle State</SelectItem>
             </SelectContent>
           </Select>
           <Button
@@ -292,7 +318,7 @@ export default function CampaignsListPage() {
                     <TableRow>
                       <TableHead>Name</TableHead>
                       <TableHead>Publish</TableHead>
-                      <TableHead>State</TableHead>
+                      <TableHead>Lifecycle</TableHead>
                       <TableHead>Deadline</TableHead>
                       <TableHead className="text-right">Commitments</TableHead>
                       <TableHead className="text-right">Escrow Locked</TableHead>
@@ -319,7 +345,7 @@ export default function CampaignsListPage() {
                           </TableCell>
                           <TableCell>
                             <Badge className={STATE_COLORS[campaign.state] || "bg-muted"}>
-                              {campaign.state}
+                              {STATE_DISPLAY_LABELS[campaign.state] || campaign.state}
                             </Badge>
                           </TableCell>
                           <TableCell className="text-sm text-muted-foreground">

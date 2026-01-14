@@ -7,11 +7,11 @@ export const STATE_COLORS: Record<string, string> = {
 };
 
 export const STATE_LABELS: Record<string, string> = {
-  AGGREGATION: "Building momentum",
-  SUCCESS: "Target reached",
+  AGGREGATION: "Gathering commitments",
+  SUCCESS: "Goal reached",
   FAILED: "Not completed",
-  FULFILLMENT: "In fulfillment",
-  RELEASED: "In fulfillment",
+  FULFILLMENT: "In execution",
+  RELEASED: "Completed",
 };
 
 export function getStatusLabel(state: string): string {

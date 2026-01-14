@@ -1,6 +1,6 @@
 import { createContext, useContext, useCallback, useEffect, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { apiRequest } from "./queryClient";
+import { apiRequest, getQueryFn } from "./queryClient";
 
 interface UserProfile {
   id: string;
@@ -20,11 +20,13 @@ interface User {
   email: string;
   createdAt: string;
   profile: UserProfile | null;
+  isAdmin?: boolean;
 }
 
 interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
+  isAdmin: boolean;
   isLoading: boolean;
   signOut: () => Promise<void>;
   refetch: () => void;
@@ -40,6 +42,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   
   const { data: user, isLoading, refetch } = useQuery<User | null>({
     queryKey: ["/api/me"],
+    queryFn: getQueryFn<User | null>({ on401: "returnNull" }),
     retry: false,
     staleTime: 1000 * 60 * 5,
     refetchOnWindowFocus: true,
@@ -104,11 +107,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   }
 
+  const isAdmin = Boolean(user?.isAdmin);
+
   return (
     <AuthContext.Provider
       value={{
         user: user ?? null,
         isAuthenticated: Boolean(user),
+        isAdmin,
         isLoading,
         signOut,
         refetch,

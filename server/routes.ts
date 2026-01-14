@@ -2,15 +2,17 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { db } from "./db";
-import { 
-  type CampaignState, 
+import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
+import {
+  type CampaignState,
   type CommitmentStatus,
   VALID_TRANSITIONS,
   insertCommitmentSchema,
   updateUserProfileSchema,
   escrowLedger,
   commitments,
-  campaigns
+  campaigns,
+  campaignAdminEvents
 } from "@shared/schema";
 import { z } from "zod";
 import { eq, desc } from "drizzle-orm";
@@ -63,6 +65,133 @@ const transitionRequestSchema = z.object({
   adminUsername: z.string().min(1, "Admin username is required"),
 });
 
+// Reference price type for validation
+interface ReferencePrice {
+  amount: number;
+  currency?: string;
+  source: "MSRP" | "RETAILER_LISTING" | "SUPPLIER_QUOTE" | "OTHER";
+  url?: string;
+  capturedAt?: string;
+  note?: string;
+}
+
+// Validate campaign is ready to publish
+// Returns { ok: boolean, missing: string[] }
+function validateCampaignPublishable(campaign: any): { ok: boolean; missing: string[] } {
+  const missing: string[] = [];
+
+  // Core required fields
+  if (!campaign.title?.trim()) missing.push("campaignName");
+  if (!campaign.sku?.trim()) missing.push("sku");
+  if (!campaign.productName?.trim()) missing.push("productName");
+  if (!campaign.aggregationDeadline) missing.push("aggregationDeadline");
+  if (!campaign.targetAmount || parseFloat(campaign.targetAmount) <= 0) missing.push("targetAmount");
+  if (!campaign.unitPrice || parseFloat(campaign.unitPrice) <= 0) missing.push("unitPrice");
+  if (!campaign.minCommitment || parseFloat(campaign.minCommitment) <= 0) missing.push("minCommitment");
+  if (!campaign.deliveryStrategy) missing.push("deliveryStrategy");
+
+  // Image required
+  if (!campaign.primaryImageUrl?.trim()) missing.push("primaryImageUrl");
+
+  // Reference prices validation
+  let referencePrices: ReferencePrice[] = [];
+  if (campaign.referencePrices) {
+    try {
+      referencePrices = typeof campaign.referencePrices === "string"
+        ? JSON.parse(campaign.referencePrices)
+        : campaign.referencePrices;
+    } catch {
+      referencePrices = [];
+    }
+  }
+  const validPrices = referencePrices.filter(p => p.amount && p.amount > 0 && p.source);
+  if (validPrices.length === 0) missing.push("referencePrices");
+
+  // Delivery strategy specific validation - BULK_TO_CONSOLIDATION requires consolidation details
+  if (campaign.deliveryStrategy === "BULK_TO_CONSOLIDATION") {
+    if (!campaign.consolidationCompany?.trim()) missing.push("consolidationCompanyName");
+    if (!campaign.consolidationContactName?.trim()) missing.push("consolidationContactName");
+    if (!campaign.consolidationContactEmail?.trim()) missing.push("consolidationContactEmail");
+    if (!campaign.consolidationPhone?.trim()) missing.push("consolidationContactPhone");
+    if (!campaign.consolidationAddressLine1?.trim()) missing.push("consolidationAddressLine1");
+    if (!campaign.consolidationCity?.trim()) missing.push("consolidationCity");
+    if (!campaign.consolidationState?.trim()) missing.push("consolidationState");
+    if (!campaign.consolidationPostalCode?.trim()) missing.push("consolidationPostalCode");
+    if (!campaign.consolidationCountry?.trim()) missing.push("consolidationCountry");
+  }
+
+  // Supplier direct requires confirmation
+  if (campaign.deliveryStrategy === "SUPPLIER_DIRECT" && !campaign.supplierDirectConfirmed) {
+    missing.push("supplierDirectConfirmed");
+  }
+
+  return { ok: missing.length === 0, missing };
+}
+
+// Normalize value for comparison (parse JSON strings, sort arrays)
+function normalizeForComparison(val: any): string {
+  if (val === null || val === undefined) return "null";
+  if (typeof val === "string") {
+    // Try to parse as JSON
+    try {
+      const parsed = JSON.parse(val);
+      return JSON.stringify(sortObject(parsed));
+    } catch {
+      return val.trim();
+    }
+  }
+  return JSON.stringify(sortObject(val));
+}
+
+// Sort objects/arrays for consistent comparison
+function sortObject(obj: any): any {
+  if (Array.isArray(obj)) {
+    return obj.map(sortObject);
+  }
+  if (obj && typeof obj === "object") {
+    const sorted: any = {};
+    Object.keys(obj).sort().forEach(key => {
+      sorted[key] = sortObject(obj[key]);
+    });
+    return sorted;
+  }
+  return obj;
+}
+
+// Get changed fields between old and new campaign data
+function getChangedFields(oldData: any, newData: any): string[] {
+  const changed: string[] = [];
+  const compareFields = [
+    "title", "description", "rules", "imageUrl", "targetAmount", "minCommitment",
+    "maxCommitment", "unitPrice", "aggregationDeadline", "sku", "productName",
+    "brand", "modelNumber", "variant", "shortDescription", "specs",
+    "primaryImageUrl", "galleryImageUrls", "referencePrices", "deliveryStrategy",
+    "deliveryCostHandling", "supplierDirectConfirmed", "consolidationContactName",
+    "consolidationCompany", "consolidationContactEmail", "consolidationAddressLine1",
+    "consolidationAddressLine2", "consolidationCity", "consolidationState",
+    "consolidationPostalCode", "consolidationCountry", "consolidationPhone",
+    "deliveryWindow", "fulfillmentNotes"
+  ];
+
+  for (const field of compareFields) {
+    if (newData[field] !== undefined) {
+      const oldVal = normalizeForComparison(oldData[field]);
+      const newVal = normalizeForComparison(newData[field]);
+      if (oldVal !== newVal) {
+        changed.push(field);
+      }
+    }
+  }
+
+  return changed;
+}
+
+// Locked fields when campaign is PUBLISHED
+const PUBLISHED_LOCKED_FIELDS = [
+  "title", "sku", "productName", "aggregationDeadline",
+  "targetAmount", "unitPrice", "minCommitment"
+];
+
 // Admin authentication middleware
 // SECURITY: STRICT enforcement - NO dev mode bypass allowed
 // All /api/admin/* endpoints require one of:
@@ -72,22 +201,22 @@ const transitionRequestSchema = z.object({
 const requireAdminAuth = (req: Request, res: Response, next: NextFunction) => {
   const adminHeader = req.headers["x-admin-auth"] as string | undefined;
   const adminApiKey = process.env.ADMIN_API_KEY;
-  
+
   // SECURITY CHECK 1: ADMIN_API_KEY must be configured
   if (!adminApiKey) {
     console.error(`[SECURITY] ADMIN_API_KEY not configured - admin endpoints disabled`);
-    return res.status(503).json({ 
+    return res.status(503).json({
       error: "Admin endpoints disabled",
       message: "Admin endpoints disabled: ADMIN_API_KEY not configured"
     });
   }
-  
+
   // AUTH METHOD 1: Check for valid admin session
   if (req.session?.isAdmin === true) {
     console.log(`[ADMIN] Authenticated access via session: ${req.method} ${req.path}`);
     return next();
   }
-  
+
   // AUTH METHOD 2: Check x-admin-auth header
   if (adminHeader) {
     if (adminHeader === adminApiKey) {
@@ -95,16 +224,16 @@ const requireAdminAuth = (req: Request, res: Response, next: NextFunction) => {
       return next();
     } else {
       console.warn(`[SECURITY] Invalid admin API key attempt: ${req.method} ${req.path} from ${req.ip}`);
-      return res.status(401).json({ 
+      return res.status(401).json({
         error: "Admin authentication failed",
         message: "Invalid admin credentials. This attempt has been logged."
       });
     }
   }
-  
+
   // No valid authentication method found
   console.warn(`[SECURITY] Missing admin auth: ${req.method} ${req.path} from ${req.ip}`);
-  return res.status(401).json({ 
+  return res.status(401).json({
     error: "Admin authentication required",
     message: "Please log in or provide valid admin credentials."
   });
@@ -114,41 +243,41 @@ const requireAdminAuth = (req: Request, res: Response, next: NextFunction) => {
 // Checks for valid user session via alpmera_user cookie
 const requireUserAuth = async (req: Request, res: Response, next: NextFunction) => {
   const sessionToken = req.cookies?.alpmera_user;
-  
+
   if (!sessionToken) {
-    return res.status(401).json({ 
+    return res.status(401).json({
       error: "Authentication required",
       message: "Please log in to access this resource."
     });
   }
-  
+
   try {
     const session = await storage.getUserSession(sessionToken);
-    
+
     if (!session) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         error: "Invalid session",
         message: "Your session is invalid. Please log in again."
       });
     }
-    
+
     // Check if session is expired
     if (new Date(session.expiresAt) < new Date()) {
       await storage.deleteUserSession(sessionToken);
-      return res.status(401).json({ 
+      return res.status(401).json({
         error: "Session expired",
         message: "Your session has expired. Please log in again."
       });
     }
-    
+
     // Attach user info to request for downstream handlers
     (req as any).userId = session.userId;
     (req as any).sessionToken = sessionToken;
-    
+
     next();
   } catch (error) {
     console.error("[AUTH] Session verification error:", error);
-    return res.status(500).json({ 
+    return res.status(500).json({
       error: "Authentication error",
       message: "An error occurred during authentication."
     });
@@ -159,40 +288,55 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-  
+
+  // Register object storage routes for file uploads
+  registerObjectStorageRoutes(app);
+
   // Admin login - validates API key and creates session
   app.post("/api/admin/login", (req, res) => {
     const { apiKey, username } = req.body;
     const adminApiKey = process.env.ADMIN_API_KEY;
-    
+
     if (!adminApiKey) {
       console.error(`[SECURITY] ADMIN_API_KEY not configured`);
-      return res.status(503).json({ 
+      return res.status(503).json({
         error: "Admin login disabled",
         message: "Admin API key not configured"
       });
     }
-    
+
     if (!apiKey || apiKey !== adminApiKey) {
       console.warn(`[SECURITY] Failed admin login attempt from ${req.ip}`);
-      return res.status(401).json({ 
+      return res.status(401).json({
         error: "Authentication failed",
         message: "Invalid admin credentials"
       });
     }
-    
+
     // Create admin session
     req.session.isAdmin = true;
     req.session.adminUsername = username || "admin";
-    
-    console.log(`[ADMIN] Successful login: ${req.session.adminUsername} from ${req.ip}`);
-    res.json({ 
-      success: true,
-      message: "Admin logged in successfully",
-      username: req.session.adminUsername
+
+    // CRITICAL: Save session before responding to ensure session is persisted
+    // This prevents race condition where frontend checks session before it's saved
+    req.session.save((err) => {
+      if (err) {
+        console.error(`[ADMIN] Session save error:`, err);
+        return res.status(500).json({
+          error: "Login failed",
+          message: "Failed to create admin session"
+        });
+      }
+
+      console.log(`[ADMIN] Successful login: ${req.session.adminUsername} from ${req.ip}`);
+      res.json({
+        success: true,
+        message: "Admin logged in successfully",
+        username: req.session.adminUsername
+      });
     });
   });
-  
+
   // Admin logout - destroys session
   app.post("/api/admin/logout", (req, res) => {
     const username = req.session?.adminUsername || "unknown";
@@ -205,11 +349,11 @@ export async function registerRoutes(
       res.json({ success: true, message: "Logged out successfully" });
     });
   });
-  
+
   // Check admin session status
   app.get("/api/admin/session", (req, res) => {
     if (req.session?.isAdmin === true) {
-      res.json({ 
+      res.json({
         authenticated: true,
         username: req.session.adminUsername
       });
@@ -221,29 +365,29 @@ export async function registerRoutes(
   // ============================================
   // USER AUTHENTICATION ENDPOINTS
   // ============================================
-  
+
   // Start passwordless auth - generates 6-digit code
   // POST /api/auth/start { email }
   app.post("/api/auth/start", async (req, res) => {
     try {
       const parsed = authStartSchema.safeParse(req.body);
       if (!parsed.success) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           error: "Invalid request",
           details: parsed.error.flatten()
         });
       }
-      
+
       const email = parsed.data.email.toLowerCase();
-      
+
       // Generate 6-digit code
       const code = generateAuthCode();
       const salt = randomBytes(16).toString("hex");
       const codeHash = hashAuthCode(code, salt);
-      
+
       // Set expiration to 10 minutes from now
       const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
-      
+
       // Store the hashed code with salt embedded (format: salt:hash)
       await storage.createAuthCode({
         email,
@@ -251,18 +395,18 @@ export async function registerRoutes(
         expiresAt,
         used: false,
       });
-      
+
       // DEV MODE: Log code to console and store in memory for tests
       if (process.env.NODE_ENV !== "production") {
         console.log(`[AUTH DEV] Code for ${email}: ${code}`);
         devAuthCodes.set(email, code);
       }
-      
+
       // In production, this would send an email
       // For now, we just return success
       console.log(`[AUTH] Code generated for ${email}, expires at ${expiresAt.toISOString()}`);
-      
-      res.json({ 
+
+      res.json({
         success: true,
         message: "Verification code sent to your email.",
         // DEV ONLY: Include code in response for easier testing
@@ -273,57 +417,57 @@ export async function registerRoutes(
       res.status(500).json({ error: "Failed to start authentication" });
     }
   });
-  
+
   // Verify auth code and create session
   // POST /api/auth/verify { email, code }
   app.post("/api/auth/verify", async (req, res) => {
     try {
       const parsed = authVerifySchema.safeParse(req.body);
       if (!parsed.success) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           error: "Invalid request",
           details: parsed.error.flatten()
         });
       }
-      
+
       const email = parsed.data.email.toLowerCase();
       const code = parsed.data.code;
-      
+
       // Get the latest valid auth code for this email
       const authCode = await storage.getValidAuthCode(email);
-      
+
       // SECURITY: getValidAuthCode already filters by email, used=false, and expiresAt > now in SQL
       if (!authCode) {
         console.warn(`[AUTH] No valid code found for ${email}`);
-        return res.status(401).json({ 
+        return res.status(401).json({
           error: "Invalid or expired code",
           message: "Please request a new verification code."
         });
       }
-      
+
       // Verify the code hash
       const [salt, storedHash] = authCode.codeHash.split(":");
       const providedHash = hashAuthCode(code, salt);
-      
+
       if (providedHash !== storedHash) {
         console.warn(`[AUTH] Invalid code attempt for ${email}`);
-        return res.status(401).json({ 
+        return res.status(401).json({
           error: "Invalid code",
           message: "The code you entered is incorrect."
         });
       }
-      
+
       // SECURITY: Atomically mark code as used with optimistic locking
       // This prevents race conditions where same code is used twice
       const marked = await storage.markAuthCodeUsed(authCode.id);
       if (!marked) {
         console.warn(`[AUTH] Code already used (race condition prevented) for ${email}`);
-        return res.status(401).json({ 
+        return res.status(401).json({
           error: "Code already used",
           message: "This code has already been used. Please request a new one."
         });
       }
-      
+
       // Get or create user
       let user = await storage.getUserByEmail(email);
       if (!user) {
@@ -333,17 +477,17 @@ export async function registerRoutes(
         await storage.createUserProfile({ userId: user.id });
         console.log(`[AUTH] New user created: ${user.id} (${email})`);
       }
-      
+
       // Create session (30 days expiry)
       const sessionToken = generateSessionToken();
       const sessionExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-      
+
       await storage.createUserSession({
         userId: user.id,
         sessionToken,
         expiresAt: sessionExpiresAt,
       });
-      
+
       // Set httpOnly cookie
       res.cookie("alpmera_user", sessionToken, {
         httpOnly: true,
@@ -352,15 +496,15 @@ export async function registerRoutes(
         maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
         path: "/",
       });
-      
+
       console.log(`[AUTH] User logged in: ${user.id} (${email})`);
-      
+
       // Clean up dev code store
       if (process.env.NODE_ENV !== "production") {
         devAuthCodes.delete(email);
       }
-      
-      res.json({ 
+
+      res.json({
         success: true,
         message: "Logged in successfully",
         user: { id: user.id, email: user.email }
@@ -370,33 +514,33 @@ export async function registerRoutes(
       res.status(500).json({ error: "Failed to verify code" });
     }
   });
-  
+
   // Check user session status
   // GET /api/auth/session
   app.get("/api/auth/session", async (req, res) => {
     const sessionToken = req.cookies?.alpmera_user;
-    
+
     if (!sessionToken) {
       return res.json({ authenticated: false });
     }
-    
+
     try {
       const session = await storage.getUserSession(sessionToken);
-      
+
       if (!session || new Date(session.expiresAt) < new Date()) {
         if (session) {
           await storage.deleteUserSession(sessionToken);
         }
         return res.json({ authenticated: false });
       }
-      
+
       const user = await storage.getUserWithProfile(session.userId);
-      
+
       if (!user) {
         return res.json({ authenticated: false });
       }
-      
-      res.json({ 
+
+      res.json({
         authenticated: true,
         user: {
           id: user.id,
@@ -409,12 +553,12 @@ export async function registerRoutes(
       res.json({ authenticated: false });
     }
   });
-  
+
   // User logout
   // POST /api/auth/logout
   app.post("/api/auth/logout", async (req, res) => {
     const sessionToken = req.cookies?.alpmera_user;
-    
+
     if (sessionToken) {
       try {
         await storage.deleteUserSession(sessionToken);
@@ -423,18 +567,18 @@ export async function registerRoutes(
         console.error("[AUTH] Logout error:", error);
       }
     }
-    
+
     res.clearCookie("alpmera_user", { path: "/" });
     res.json({ success: true, message: "Logged out successfully" });
   });
-  
+
   // DEV ONLY: Get auth code for testing
   // GET /api/auth/dev-code/:email
   if (process.env.NODE_ENV !== "production") {
     app.get("/api/auth/dev-code/:email", (req, res) => {
       const email = req.params.email.toLowerCase();
       const code = devAuthCodes.get(email);
-      
+
       if (code) {
         res.json({ code });
       } else {
@@ -442,61 +586,62 @@ export async function registerRoutes(
       }
     });
   }
-  
+
   // ============================================
   // USER PROFILE ENDPOINTS (Protected)
   // ============================================
-  
+
   // Get current user info and profile
   // GET /api/me
   app.get("/api/me", requireUserAuth, async (req, res) => {
     try {
       const userId = (req as any).userId;
       const user = await storage.getUserWithProfile(userId);
-      
+
       if (!user) {
         return res.status(404).json({ error: "User not found" });
       }
-      
+
       res.json({
         id: user.id,
         email: user.email,
         createdAt: user.createdAt,
-        profile: user.profile
+        profile: user.profile,
+        isAdmin: req.session?.isAdmin === true
       });
     } catch (error) {
       console.error("[USER] Error fetching user:", error);
       res.status(500).json({ error: "Failed to fetch user" });
     }
   });
-  
+
   // Update user profile
   // PATCH /api/me/profile
   app.patch("/api/me/profile", requireUserAuth, async (req, res) => {
     try {
       const userId = (req as any).userId;
-      
+
       const parsed = updateUserProfileSchema.safeParse(req.body);
       if (!parsed.success) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           error: "Invalid request",
           details: parsed.error.flatten()
         });
       }
-      
+
       // Check if profile exists, create if not
       let profile = await storage.getUserProfile(userId);
       if (!profile) {
         profile = await storage.createUserProfile({ userId });
       }
-      
+
       // Update profile
       const updated = await storage.updateUserProfile(userId, parsed.data);
-      
+
       if (!updated) {
         return res.status(500).json({ error: "Failed to update profile" });
       }
-      
+
       console.log(`[USER] Profile updated for user ${userId}`);
       res.json(updated);
     } catch (error) {
@@ -511,7 +656,7 @@ export async function registerRoutes(
     try {
       const userId = (req as any).userId;
       const userCommitments = await storage.getCommitmentsByUserId(userId);
-      
+
       // Enrich with last campaign status update timestamp
       const enrichedCommitments = await Promise.all(
         userCommitments.map(async (commitment) => {
@@ -520,14 +665,14 @@ export async function registerRoutes(
           const lastTransition = adminLogs
             .filter(log => log.action === "state_transition" && log.newState)
             .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
-          
+
           return {
             ...commitment,
             lastCampaignStatusUpdate: lastTransition?.createdAt || commitment.campaign.createdAt,
           };
         })
       );
-      
+
       res.json(enrichedCommitments);
     } catch (error) {
       console.error("[USER] Error fetching user commitments:", error);
@@ -565,7 +710,7 @@ export async function registerRoutes(
           timestamp: log.createdAt,
           reason: log.reason || undefined,
         }));
-      
+
       // Compute last status update timestamp
       const lastStatusUpdate = statusTransitions.length > 0
         ? statusTransitions.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0].timestamp
@@ -588,7 +733,7 @@ export async function registerRoutes(
     try {
       const userId = (req as any).userId;
       const entries = await storage.getEscrowEntriesByUserId(userId);
-      
+
       // Map to list format (exclude supplier-private pricing details)
       const movements = entries.map(entry => ({
         id: entry.id,
@@ -601,7 +746,7 @@ export async function registerRoutes(
         campaignId: entry.campaign.id,
         campaignName: entry.campaign.title,
       }));
-      
+
       res.json(movements);
     } catch (error) {
       console.error("[USER] Error fetching escrow movements:", error);
@@ -614,20 +759,20 @@ export async function registerRoutes(
     try {
       const userId = (req as any).userId;
       const entryId = req.params.id;
-      
+
       const entry = await storage.getEscrowEntryById(entryId);
       if (!entry) {
         return res.status(404).json({ error: "Escrow movement not found" });
       }
-      
+
       // Verify ownership
       if (entry.commitment.userId !== userId) {
         return res.status(403).json({ error: "Access denied" });
       }
-      
+
       // Get all escrow entries for this commitment (for timeline)
       const relatedEntries = await storage.getEscrowEntriesByCommitment(entry.commitmentId);
-      
+
       res.json({
         id: entry.id,
         entryType: entry.entryType,
@@ -660,7 +805,7 @@ export async function registerRoutes(
     try {
       const userId = (req as any).userId;
       const entries = await storage.getEscrowEntriesByUserId(userId);
-      
+
       // Filter to only REFUND entries
       const refunds = entries
         .filter(entry => entry.entryType === "REFUND")
@@ -675,7 +820,7 @@ export async function registerRoutes(
           campaignId: entry.campaign.id,
           campaignName: entry.campaign.title,
         }));
-      
+
       res.json(refunds);
     } catch (error) {
       console.error("[USER] Error fetching refunds:", error);
@@ -688,25 +833,25 @@ export async function registerRoutes(
     try {
       const userId = (req as any).userId;
       const refundId = req.params.id;
-      
+
       const entry = await storage.getEscrowEntryById(refundId);
       if (!entry) {
         return res.status(404).json({ error: "Refund not found" });
       }
-      
+
       // Verify it's a REFUND type
       if (entry.entryType !== "REFUND") {
         return res.status(404).json({ error: "Refund not found" });
       }
-      
+
       // Verify ownership
       if (entry.commitment.userId !== userId) {
         return res.status(403).json({ error: "Access denied" });
       }
-      
+
       // Get all escrow entries for this commitment (for lifecycle timeline)
       const relatedEntries = await storage.getEscrowEntriesByCommitment(entry.commitmentId);
-      
+
       res.json({
         id: entry.id,
         entryType: entry.entryType,
@@ -740,21 +885,21 @@ export async function registerRoutes(
   app.get("/api/campaigns", async (req, res) => {
     try {
       const allCampaigns = await storage.getCampaignsWithStats();
-      
+
       // Filter to only PUBLISHED campaigns
       const publishedCampaigns = allCampaigns.filter(
         (c: any) => c.adminPublishStatus === "PUBLISHED"
       );
-      
+
       // Redact monetary fields for public/list view
       // Only expose: id, title, description, state, imageUrl, progress percentage
       const redactedCampaigns = publishedCampaigns.map((c: any) => {
         const targetAmount = parseFloat(c.targetAmount) || 0;
         const totalCommitted = c.totalCommitted || 0;
-        const progressPercent = targetAmount > 0 
+        const progressPercent = targetAmount > 0
           ? Math.min(Math.round((totalCommitted / targetAmount) * 100), 100)
           : 0;
-        
+
         return {
           id: c.id,
           title: c.title,
@@ -766,7 +911,7 @@ export async function registerRoutes(
           createdAt: c.createdAt,
         };
       });
-      
+
       res.json(redactedCampaigns);
     } catch (error) {
       console.error("Error fetching campaigns:", error);
@@ -783,37 +928,37 @@ export async function registerRoutes(
       if (!campaign) {
         return res.status(404).json({ error: "Campaign not found" });
       }
-      
+
       // Check if user is authenticated via alpmera_user cookie
       const sessionToken = req.cookies?.alpmera_user;
       let isAuthenticated = false;
-      
+
       if (sessionToken) {
         const session = await storage.getUserSession(sessionToken);
         if (session && new Date(session.expiresAt) > new Date()) {
           isAuthenticated = true;
         }
       }
-      
+
       const publishStatus = (campaign as any).adminPublishStatus || "DRAFT";
-      
+
       // Non-authenticated users can only see PUBLISHED campaigns
       if (!isAuthenticated && publishStatus !== "PUBLISHED") {
         return res.status(404).json({ error: "Campaign not found" });
       }
-      
+
       // For authenticated members, return full campaign details (for joining flow)
       if (isAuthenticated) {
         return res.json(campaign);
       }
-      
+
       // For non-authenticated users, redact monetary fields but include more for detail view
       const targetAmount = parseFloat(campaign.targetAmount) || 0;
       const totalCommitted = campaign.totalCommitted || 0;
-      const progressPercent = targetAmount > 0 
+      const progressPercent = targetAmount > 0
         ? Math.min(Math.round((totalCommitted / targetAmount) * 100), 100)
         : 0;
-      
+
       res.json({
         id: campaign.id,
         title: campaign.title,
@@ -851,8 +996,8 @@ export async function registerRoutes(
       // IDEMPOTENCY CHECK: Require x-idempotency-key header
       const idempotencyKey = req.headers["x-idempotency-key"] as string | undefined;
       if (!idempotencyKey) {
-        return res.status(400).json({ 
-          error: "x-idempotency-key header is required for commitment operations" 
+        return res.status(400).json({
+          error: "x-idempotency-key header is required for commitment operations"
         });
       }
 
@@ -865,23 +1010,23 @@ export async function registerRoutes(
         // Already processed - return cached response
         if (existingKey.response) {
           try {
-            const responseStr = typeof existingKey.response === 'string' 
-              ? existingKey.response 
+            const responseStr = typeof existingKey.response === 'string'
+              ? existingKey.response
               : JSON.stringify(existingKey.response);
             const cachedResponse = JSON.parse(responseStr);
             return res.status(200).json({ ...cachedResponse, _idempotent: true });
           } catch {
             console.warn(`[IDEMPOTENCY] Malformed cached response for key ${idempotencyKey}`);
-            return res.status(200).json({ 
+            return res.status(200).json({
               message: "Request already processed",
-              _idempotent: true 
+              _idempotent: true
             });
           }
         }
         // Key exists but no response yet (unlikely race condition) - return safe response
-        return res.status(200).json({ 
+        return res.status(200).json({
           message: "Request already being processed",
-          _idempotent: true 
+          _idempotent: true
         });
       }
 
@@ -897,14 +1042,14 @@ export async function registerRoutes(
       // Validate request using Zod schema
       const parseResult = commitmentRequestSchema.safeParse(req.body);
       if (!parseResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: parseResult.error.flatten() 
+        return res.status(400).json({
+          error: "Validation failed",
+          details: parseResult.error.flatten()
         });
       }
 
       const { participantName, participantEmail, quantity } = parseResult.data;
-      
+
       // SERVER-SIDE CALCULATION: amount = quantity * unitPrice
       // This prevents client-side tampering with commitment amounts
       const unitPrice = parseFloat(campaign.unitPrice);
@@ -914,14 +1059,14 @@ export async function registerRoutes(
       const maxCommitment = campaign.maxCommitment ? parseFloat(campaign.maxCommitment) : null;
 
       if (calculatedAmount < minCommitment) {
-        return res.status(400).json({ 
-          error: `Minimum commitment is ${minCommitment.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}` 
+        return res.status(400).json({
+          error: `Minimum commitment is ${minCommitment.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}`
         });
       }
 
       if (maxCommitment && calculatedAmount > maxCommitment) {
-        return res.status(400).json({ 
-          error: `Maximum commitment is ${maxCommitment.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}` 
+        return res.status(400).json({
+          error: `Maximum commitment is ${maxCommitment.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}`
         });
       }
 
@@ -939,8 +1084,8 @@ export async function registerRoutes(
           const existing = await storage.getIdempotencyKey(idempotencyKey, scope);
           if (existing?.response) {
             try {
-              const responseStr = typeof existing.response === 'string' 
-                ? existing.response 
+              const responseStr = typeof existing.response === 'string'
+                ? existing.response
                 : JSON.stringify(existing.response);
               const cachedResponse = JSON.parse(responseStr);
               return res.status(200).json({ ...cachedResponse, _idempotent: true });
@@ -1014,6 +1159,315 @@ export async function registerRoutes(
     res.json({ validTransitions: VALID_TRANSITIONS });
   });
 
+  // ============================================
+  // ADMIN PRODUCT ENDPOINTS
+  // ============================================
+
+  // List all products
+  app.get("/api/admin/products", requireAdminAuth, async (req, res) => {
+    try {
+      const allProducts = await storage.getProducts();
+      res.json(allProducts);
+    } catch (error) {
+      console.error("[ADMIN] Error fetching products:", error);
+      res.status(500).json({ error: "Failed to fetch products" });
+    }
+  });
+
+  // Get single product
+  app.get("/api/admin/products/:id", requireAdminAuth, async (req, res) => {
+    try {
+      const product = await storage.getProduct(req.params.id);
+      if (!product) {
+        return res.status(404).json({ error: "Product not found" });
+      }
+      res.json(product);
+    } catch (error) {
+      console.error("[ADMIN] Error fetching product:", error);
+      res.status(500).json({ error: "Failed to fetch product" });
+    }
+  });
+
+  // Create product
+  app.post("/api/admin/products", requireAdminAuth, async (req, res) => {
+    try {
+      const { sku, name, brand, modelNumber, variant, category, shortDescription,
+        specs, primaryImageUrl, galleryImageUrls, referencePrices, internalNotes } = req.body;
+
+      // Validate required fields
+      if (!sku?.trim()) {
+        return res.status(400).json({ error: "SKU is required" });
+      }
+      if (!name?.trim()) {
+        return res.status(400).json({ error: "Name is required" });
+      }
+
+      // Check if SKU already exists (case-insensitive)
+      const existing = await storage.getProductBySku(sku.trim());
+      if (existing) {
+        return res.status(409).json({ error: "SKU already exists" });
+      }
+
+      // Validate SKU format (alphanumeric, dash, underscore)
+      if (!/^[A-Za-z0-9_-]+$/.test(sku.trim())) {
+        return res.status(400).json({ error: "SKU must contain only letters, numbers, dashes, and underscores" });
+      }
+
+      const product = await storage.createProduct({
+        sku: sku.trim(),
+        name: name.trim(),
+        brand: brand?.trim() || null,
+        modelNumber: modelNumber?.trim() || null,
+        variant: variant?.trim() || null,
+        category: category?.trim() || null,
+        shortDescription: shortDescription?.trim() || null,
+        specs: specs ? (typeof specs === "string" ? specs : JSON.stringify(specs)) : null,
+        primaryImageUrl: primaryImageUrl?.trim() || null,
+        galleryImageUrls: galleryImageUrls ? (typeof galleryImageUrls === "string" ? galleryImageUrls : JSON.stringify(galleryImageUrls)) : null,
+        referencePrices: referencePrices ? (typeof referencePrices === "string" ? referencePrices : JSON.stringify(referencePrices)) : null,
+        internalNotes: internalNotes?.trim() || null,
+      });
+
+      console.log(`[ADMIN] Product created: ${product.id} (${product.sku})`);
+      res.status(201).json(product);
+    } catch (error) {
+      console.error("[ADMIN] Error creating product:", error);
+      res.status(500).json({ error: "Failed to create product" });
+    }
+  });
+
+  // Update product (with append-only reference prices)
+  app.patch("/api/admin/products/:id", requireAdminAuth, async (req, res) => {
+    try {
+      const product = await storage.getProduct(req.params.id);
+      if (!product) {
+        return res.status(404).json({ error: "Product not found" });
+      }
+
+      const { sku, name, brand, modelNumber, variant, category, shortDescription,
+        specs, primaryImageUrl, galleryImageUrls, newReferencePrice, internalNotes } = req.body;
+
+      // If SKU is changing, validate it's not a duplicate
+      if (sku && sku.trim() !== product.sku) {
+        const existing = await storage.getProductBySku(sku.trim());
+        if (existing && existing.id !== product.id) {
+          return res.status(409).json({ error: "SKU already exists" });
+        }
+        if (!/^[A-Za-z0-9_-]+$/.test(sku.trim())) {
+          return res.status(400).json({ error: "SKU must contain only letters, numbers, dashes, and underscores" });
+        }
+      }
+
+      // Handle append-only reference prices
+      let updatedReferencePrices = product.referencePrices;
+      if (newReferencePrice) {
+        // Validate new reference price
+        if (!newReferencePrice.amount || newReferencePrice.amount <= 0) {
+          return res.status(400).json({ error: "Reference price amount is required and must be positive" });
+        }
+        if (!newReferencePrice.sourceType) {
+          return res.status(400).json({ error: "Reference price sourceType is required" });
+        }
+        if (!["MSRP", "RETAILER_LISTING", "SUPPLIER_QUOTE", "OTHER"].includes(newReferencePrice.sourceType)) {
+          return res.status(400).json({ error: "Invalid sourceType. Must be MSRP, RETAILER_LISTING, SUPPLIER_QUOTE, or OTHER" });
+        }
+
+        // Parse existing prices
+        let existingPrices: any[] = [];
+        if (product.referencePrices) {
+          try {
+            existingPrices = typeof product.referencePrices === "string"
+              ? JSON.parse(product.referencePrices)
+              : product.referencePrices;
+          } catch {
+            existingPrices = [];
+          }
+        }
+
+        // Append new price (append-only, never overwrite)
+        const priceEntry = {
+          amount: newReferencePrice.amount,
+          currency: newReferencePrice.currency || "USD",
+          sourceType: newReferencePrice.sourceType,
+          sourceNameOrUrl: newReferencePrice.sourceNameOrUrl || null,
+          capturedAt: new Date().toISOString(),
+          capturedBy: req.session?.adminUsername || "admin",
+          note: newReferencePrice.note || null,
+        };
+
+        existingPrices.push(priceEntry);
+        updatedReferencePrices = JSON.stringify(existingPrices);
+      }
+
+      const updates: any = {};
+      if (sku !== undefined) updates.sku = sku.trim();
+      if (name !== undefined) updates.name = name.trim();
+      if (brand !== undefined) updates.brand = brand?.trim() || null;
+      if (modelNumber !== undefined) updates.modelNumber = modelNumber?.trim() || null;
+      if (variant !== undefined) updates.variant = variant?.trim() || null;
+      if (category !== undefined) updates.category = category?.trim() || null;
+      if (shortDescription !== undefined) updates.shortDescription = shortDescription?.trim() || null;
+      if (specs !== undefined) updates.specs = specs ? (typeof specs === "string" ? specs : JSON.stringify(specs)) : null;
+      if (primaryImageUrl !== undefined) updates.primaryImageUrl = primaryImageUrl?.trim() || null;
+      if (galleryImageUrls !== undefined) updates.galleryImageUrls = galleryImageUrls ? (typeof galleryImageUrls === "string" ? galleryImageUrls : JSON.stringify(galleryImageUrls)) : null;
+      if (internalNotes !== undefined) updates.internalNotes = internalNotes?.trim() || null;
+      if (updatedReferencePrices !== product.referencePrices) updates.referencePrices = updatedReferencePrices;
+
+      const updated = await storage.updateProduct(product.id, updates);
+      console.log(`[ADMIN] Product updated: ${product.id} (${product.sku})`);
+      res.json(updated);
+    } catch (error) {
+      console.error("[ADMIN] Error updating product:", error);
+      res.status(500).json({ error: "Failed to update product" });
+    }
+  });
+
+  // Archive product (soft delete)
+  app.delete("/api/admin/products/:id", requireAdminAuth, async (req, res) => {
+    try {
+      const product = await storage.getProduct(req.params.id);
+      if (!product) {
+        return res.status(404).json({ error: "Product not found" });
+      }
+
+      const archived = await storage.archiveProduct(product.id);
+      console.log(`[ADMIN] Product archived: ${product.id} (${product.sku})`);
+      res.json(archived);
+    } catch (error) {
+      console.error("[ADMIN] Error archiving product:", error);
+      res.status(500).json({ error: "Failed to archive product" });
+    }
+  });
+
+  // Bulk product upload (CSV)
+  app.post("/api/admin/products/bulk", requireAdminAuth, async (req, res) => {
+    try {
+      const { products: productRows } = req.body;
+
+      if (!Array.isArray(productRows) || productRows.length === 0) {
+        return res.status(400).json({ error: "Products array is required" });
+      }
+
+      const results = {
+        totalRows: productRows.length,
+        created: 0,
+        skipped: 0,
+        errors: [] as { row: number; sku?: string; error: string }[],
+      };
+
+      const adminUsername = req.session?.adminUsername || "admin";
+
+      for (let i = 0; i < productRows.length; i++) {
+        const row = productRows[i];
+        const rowNum = i + 1;
+
+        try {
+          // Validate required fields
+          if (!row.sku?.trim()) {
+            results.errors.push({ row: rowNum, error: "SKU is required" });
+            results.skipped++;
+            continue;
+          }
+          if (!row.name?.trim()) {
+            results.errors.push({ row: rowNum, sku: row.sku, error: "Name is required" });
+            results.skipped++;
+            continue;
+          }
+
+          const sku = row.sku.trim();
+
+          // Validate SKU format
+          if (!/^[A-Za-z0-9_-]+$/.test(sku)) {
+            results.errors.push({ row: rowNum, sku, error: "SKU must contain only letters, numbers, dashes, and underscores" });
+            results.skipped++;
+            continue;
+          }
+
+          // Check if SKU already exists
+          const existing = await storage.getProductBySku(sku);
+          if (existing) {
+            results.errors.push({ row: rowNum, sku, error: "SKU already exists" });
+            results.skipped++;
+            continue;
+          }
+
+          // Parse specs if present
+          let specs = null;
+          if (row.specs) {
+            try {
+              const specPairs = row.specs.split("|").map((s: string) => {
+                const [key, value] = s.split(":");
+                if (!key || !value) throw new Error("Invalid spec format");
+                return { key: key.trim(), value: value.trim() };
+              });
+              specs = JSON.stringify(specPairs);
+            } catch {
+              results.errors.push({ row: rowNum, sku, error: "Specs must be in key:value format separated by |" });
+              results.skipped++;
+              continue;
+            }
+          }
+
+          // Parse gallery URLs if present
+          let galleryImageUrls = null;
+          if (row.galleryImageUrls) {
+            galleryImageUrls = JSON.stringify(row.galleryImageUrls.split("|").map((u: string) => u.trim()));
+          }
+
+          // Build reference price if amount and source provided
+          let referencePrices = null;
+          if (row.referencePriceAmount && row.referencePriceSource) {
+            if (!["MSRP", "RETAILER_LISTING", "SUPPLIER_QUOTE", "OTHER"].includes(row.referencePriceSource)) {
+              results.errors.push({ row: rowNum, sku, error: "Invalid referencePriceSource" });
+              results.skipped++;
+              continue;
+            }
+            referencePrices = JSON.stringify([{
+              amount: parseFloat(row.referencePriceAmount),
+              currency: "USD",
+              sourceType: row.referencePriceSource,
+              sourceNameOrUrl: row.referencePriceUrl?.trim() || null,
+              capturedAt: new Date().toISOString(),
+              capturedBy: adminUsername,
+              note: row.referencePriceNote?.trim() || null,
+            }]);
+          }
+
+          // Create product
+          await storage.createProduct({
+            sku,
+            name: row.name.trim(),
+            brand: row.brand?.trim() || null,
+            modelNumber: row.modelNumber?.trim() || null,
+            variant: row.variant?.trim() || null,
+            category: row.category?.trim() || null,
+            shortDescription: row.shortDescription?.trim() || null,
+            specs,
+            primaryImageUrl: row.primaryImageUrl?.trim() || null,
+            galleryImageUrls,
+            referencePrices,
+            internalNotes: null,
+          });
+
+          results.created++;
+        } catch (error: any) {
+          results.errors.push({ row: rowNum, sku: row.sku, error: error.message || "Unknown error" });
+          results.skipped++;
+        }
+      }
+
+      console.log(`[ADMIN] Bulk upload: ${results.created} created, ${results.skipped} skipped`);
+      res.json(results);
+    } catch (error) {
+      console.error("[ADMIN] Error in bulk upload:", error);
+      res.status(500).json({ error: "Failed to process bulk upload" });
+    }
+  });
+
+  // ============================================
+  // ADMIN CAMPAIGN ENDPOINTS
+  // ============================================
+
   // Admin: Transition campaign state
   // Protected by requireAdminAuth middleware - all access is logged
   app.post("/api/admin/campaigns/:id/transition", requireAdminAuth, async (req, res) => {
@@ -1021,9 +1475,9 @@ export async function registerRoutes(
       // Validate request
       const parseResult = transitionRequestSchema.safeParse(req.body);
       if (!parseResult.success) {
-        return res.status(400).json({ 
-          error: "Validation failed", 
-          details: parseResult.error.flatten() 
+        return res.status(400).json({
+          error: "Validation failed",
+          details: parseResult.error.flatten()
         });
       }
 
@@ -1038,8 +1492,8 @@ export async function registerRoutes(
       const validTransitions = VALID_TRANSITIONS[currentState];
 
       if (!validTransitions.includes(newState as CampaignState)) {
-        return res.status(400).json({ 
-          error: `Invalid transition from ${currentState} to ${newState}. Valid transitions: ${validTransitions.join(', ') || 'none'}` 
+        return res.status(400).json({
+          error: `Invalid transition from ${currentState} to ${newState}. Valid transitions: ${validTransitions.join(', ') || 'none'}`
         });
       }
 
@@ -1072,8 +1526,8 @@ export async function registerRoutes(
       // IDEMPOTENCY CHECK: Require x-idempotency-key header
       const idempotencyKey = req.headers["x-idempotency-key"] as string | undefined;
       if (!idempotencyKey) {
-        return res.status(400).json({ 
-          error: "x-idempotency-key header is required for refund operations" 
+        return res.status(400).json({
+          error: "x-idempotency-key header is required for refund operations"
         });
       }
 
@@ -1085,8 +1539,8 @@ export async function registerRoutes(
       if (existingKey) {
         if (existingKey.response) {
           try {
-            const responseStr = typeof existingKey.response === 'string' 
-              ? existingKey.response 
+            const responseStr = typeof existingKey.response === 'string'
+              ? existingKey.response
               : JSON.stringify(existingKey.response);
             const cachedResponse = JSON.parse(responseStr);
             return res.status(200).json({ ...cachedResponse, _idempotent: true });
@@ -1098,7 +1552,7 @@ export async function registerRoutes(
       }
 
       const { adminUsername } = req.body;
-      
+
       if (!adminUsername) {
         return res.status(400).json({ error: "Admin username is required for audit trail" });
       }
@@ -1125,8 +1579,8 @@ export async function registerRoutes(
           const existing = await storage.getIdempotencyKey(idempotencyKey, scope);
           if (existing?.response) {
             try {
-              const responseStr = typeof existing.response === 'string' 
-                ? existing.response 
+              const responseStr = typeof existing.response === 'string'
+                ? existing.response
                 : JSON.stringify(existing.response);
               const cachedResponse = JSON.parse(responseStr);
               return res.status(200).json({ ...cachedResponse, _idempotent: true });
@@ -1148,7 +1602,7 @@ export async function registerRoutes(
         // DOUBLE-PROCESSING GUARD: Only process LOCKED commitments
         if (commitment.status === "LOCKED") {
           const amountNum = parseFloat(commitment.amount);
-          
+
           // Validate escrow balance invariant
           if (currentBalance < amountNum) {
             console.error(`Escrow balance invariant violation: balance ${currentBalance} < refund amount ${amountNum}`);
@@ -1161,10 +1615,10 @@ export async function registerRoutes(
             });
             continue;
           }
-          
+
           // Update commitment status
           await storage.updateCommitmentStatus(commitment.id, "REFUNDED");
-          
+
           // Create escrow ledger entry (REFUND) - append-only
           await storage.createEscrowEntry({
             commitmentId: commitment.id,
@@ -1190,7 +1644,7 @@ export async function registerRoutes(
         reason: `Processed ${processedCount} refunds, skipped ${skippedCount} (already processed)`,
       });
 
-      const responseData = { 
+      const responseData = {
         message: "Refunds processed successfully",
         processed: processedCount,
         skipped: skippedCount,
@@ -1216,8 +1670,8 @@ export async function registerRoutes(
       // IDEMPOTENCY CHECK: Require x-idempotency-key header
       const idempotencyKey = req.headers["x-idempotency-key"] as string | undefined;
       if (!idempotencyKey) {
-        return res.status(400).json({ 
-          error: "x-idempotency-key header is required for release operations" 
+        return res.status(400).json({
+          error: "x-idempotency-key header is required for release operations"
         });
       }
 
@@ -1229,8 +1683,8 @@ export async function registerRoutes(
       if (existingKey) {
         if (existingKey.response) {
           try {
-            const responseStr = typeof existingKey.response === 'string' 
-              ? existingKey.response 
+            const responseStr = typeof existingKey.response === 'string'
+              ? existingKey.response
               : JSON.stringify(existingKey.response);
             const cachedResponse = JSON.parse(responseStr);
             return res.status(200).json({ ...cachedResponse, _idempotent: true });
@@ -1242,7 +1696,7 @@ export async function registerRoutes(
       }
 
       const { adminUsername } = req.body;
-      
+
       if (!adminUsername) {
         return res.status(400).json({ error: "Admin username is required for audit trail" });
       }
@@ -1269,8 +1723,8 @@ export async function registerRoutes(
           const existing = await storage.getIdempotencyKey(idempotencyKey, scope);
           if (existing?.response) {
             try {
-              const responseStr = typeof existing.response === 'string' 
-                ? existing.response 
+              const responseStr = typeof existing.response === 'string'
+                ? existing.response
                 : JSON.stringify(existing.response);
               const cachedResponse = JSON.parse(responseStr);
               return res.status(200).json({ ...cachedResponse, _idempotent: true });
@@ -1292,7 +1746,7 @@ export async function registerRoutes(
         // DOUBLE-PROCESSING GUARD: Only process LOCKED commitments
         if (commitment.status === "LOCKED") {
           const amountNum = parseFloat(commitment.amount);
-          
+
           // Validate escrow balance invariant
           if (currentBalance < amountNum) {
             console.error(`Escrow balance invariant violation: balance ${currentBalance} < release amount ${amountNum}`);
@@ -1305,10 +1759,10 @@ export async function registerRoutes(
             });
             continue;
           }
-          
+
           // Update commitment status
           await storage.updateCommitmentStatus(commitment.id, "RELEASED");
-          
+
           // Create escrow ledger entry (RELEASE) - append-only
           await storage.createEscrowEntry({
             commitmentId: commitment.id,
@@ -1334,7 +1788,7 @@ export async function registerRoutes(
         reason: `Released ${processedCount} commitments to supplier, skipped ${skippedCount} (already processed)`,
       });
 
-      const responseData = { 
+      const responseData = {
         message: "Funds released successfully",
         processed: processedCount,
         skipped: skippedCount,
@@ -1356,56 +1810,81 @@ export async function registerRoutes(
   // ALWAYS creates campaigns in AGGREGATION state and DRAFT publish status
   app.post("/api/admin/campaigns", requireAdminAuth, async (req, res) => {
     try {
-      const { 
-        adminUsername, title, description, rules, imageUrl, targetAmount, 
+      const {
+        adminUsername, title, description, rules, imageUrl, targetAmount,
         minCommitment, maxCommitment, unitPrice, aggregationDeadline,
         sku, productName, deliveryStrategy,
-        consolidationContactName, consolidationCompany, consolidationAddressLine1,
+        consolidationContactName, consolidationCompany, consolidationContactEmail, consolidationAddressLine1,
         consolidationAddressLine2, consolidationCity, consolidationState,
         consolidationPostalCode, consolidationCountry, consolidationPhone,
-        deliveryWindow, fulfillmentNotes
+        deliveryWindow, fulfillmentNotes,
+        // New product detail fields
+        brand, modelNumber, variant, shortDescription, specs,
+        primaryImageUrl, galleryImageUrls, referencePrices,
+        deliveryCostHandling, supplierDirectConfirmed
       } = req.body;
 
-      // Validate required fields
+      // Validate required fields - only title is required for draft creation
       if (!title || !title.trim()) {
         return res.status(400).json({ error: "Title is required" });
       }
-      if (!targetAmount || parseFloat(targetAmount) <= 0) {
-        return res.status(400).json({ error: "Target amount must be positive" });
-      }
-      if (!unitPrice || parseFloat(unitPrice) <= 0) {
-        return res.status(400).json({ error: "Unit price must be positive" });
-      }
-      if (!aggregationDeadline) {
-        return res.status(400).json({ error: "Aggregation deadline is required" });
-      }
 
-      const deadlineDate = new Date(aggregationDeadline);
-      if (isNaN(deadlineDate.getTime()) || deadlineDate <= new Date()) {
-        return res.status(400).json({ error: "Aggregation deadline must be a valid future date" });
+      // Use sensible defaults for DRAFT campaigns
+      const effectiveUnitPrice = unitPrice && parseFloat(unitPrice) > 0 ? unitPrice : "1";
+      const effectiveTargetAmount = targetAmount && parseFloat(targetAmount) > 0
+        ? targetAmount
+        : effectiveUnitPrice; // Default to 1 unit worth
+
+      // Default deadline: 30 days from now
+      let deadlineDate: Date;
+      if (aggregationDeadline) {
+        deadlineDate = new Date(aggregationDeadline);
+        if (isNaN(deadlineDate.getTime()) || deadlineDate <= new Date()) {
+          return res.status(400).json({ error: "Aggregation deadline must be a valid future date" });
+        }
+      } else {
+        deadlineDate = new Date();
+        deadlineDate.setDate(deadlineDate.getDate() + 30);
       }
 
       // Insert directly with all new fields
       const campaignId = crypto.randomUUID();
+      const adminUser = adminUsername || (req as any).adminUsername || "admin";
+
       await db.insert(campaigns).values({
         id: campaignId,
         title: title.trim(),
         description: description?.trim() || "",
         rules: rules?.trim() || "Standard campaign rules apply.",
         imageUrl: imageUrl?.trim() || null,
-        targetAmount: targetAmount.toString(),
-        minCommitment: minCommitment?.toString() || unitPrice.toString(),
+        targetAmount: effectiveTargetAmount.toString(),
+        minCommitment: minCommitment?.toString() || effectiveUnitPrice.toString(),
         maxCommitment: maxCommitment?.toString() || null,
-        unitPrice: unitPrice.toString(),
+        unitPrice: effectiveUnitPrice.toString(),
         state: "AGGREGATION",
         adminPublishStatus: "DRAFT",
         aggregationDeadline: deadlineDate,
         supplierAccepted: false,
         sku: sku?.trim() || null,
         productName: productName?.trim() || null,
+        // Product details
+        brand: brand?.trim() || null,
+        modelNumber: modelNumber?.trim() || null,
+        variant: variant?.trim() || null,
+        shortDescription: shortDescription?.trim() || null,
+        specs: specs ? (typeof specs === "string" ? specs : JSON.stringify(specs)) : null,
+        // Images
+        primaryImageUrl: primaryImageUrl?.trim() || null,
+        galleryImageUrls: galleryImageUrls ? (typeof galleryImageUrls === "string" ? galleryImageUrls : JSON.stringify(galleryImageUrls)) : null,
+        // Reference prices
+        referencePrices: referencePrices ? (typeof referencePrices === "string" ? referencePrices : JSON.stringify(referencePrices)) : null,
+        // Delivery
         deliveryStrategy: deliveryStrategy || "SUPPLIER_DIRECT",
+        deliveryCostHandling: deliveryCostHandling || null,
+        supplierDirectConfirmed: supplierDirectConfirmed || false,
         consolidationContactName: consolidationContactName?.trim() || null,
         consolidationCompany: consolidationCompany?.trim() || null,
+        consolidationContactEmail: consolidationContactEmail?.trim() || null,
         consolidationAddressLine1: consolidationAddressLine1?.trim() || null,
         consolidationAddressLine2: consolidationAddressLine2?.trim() || null,
         consolidationCity: consolidationCity?.trim() || null,
@@ -1420,10 +1899,18 @@ export async function registerRoutes(
       const campaignResult = await db.select().from(campaigns).where(eq(campaigns.id, campaignId)).limit(1);
       const campaign = campaignResult[0];
 
+      // Add to campaign admin events (append-only)
+      await db.insert(campaignAdminEvents).values({
+        campaignId: campaign.id,
+        adminId: adminUser,
+        eventType: "CREATED",
+        note: "Campaign created as DRAFT",
+      });
+
       // Log admin action - CAMPAIGN_CREATE
       await storage.createAdminActionLog({
         campaignId: campaign.id,
-        adminUsername: adminUsername || (req as any).adminUsername || "admin",
+        adminUsername: adminUser,
         action: "CAMPAIGN_CREATE",
         previousState: null,
         newState: "AGGREGATION",
@@ -1435,6 +1922,109 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error creating campaign:", error);
       res.status(500).json({ error: "Failed to create campaign" });
+    }
+  });
+
+  // Zod schema for campaign PATCH updates
+  const campaignUpdateSchema = z.object({
+    title: z.string().min(1).optional(),
+    description: z.string().optional(),
+    sku: z.string().optional(),
+    productName: z.string().optional(),
+    targetUnits: z.number().int().positive().optional(),
+    unitPrice: z.string().optional(),
+    brand: z.string().optional(),
+    modelNumber: z.string().optional(),
+    variant: z.string().optional(),
+    shortDescription: z.string().optional(),
+    primaryImageUrl: z.string().optional(),
+    galleryImageUrls: z.string().optional(),
+    specs: z.string().optional(),
+    referencePrices: z.string().optional(),
+    rules: z.string().optional(),
+    supplierDirectConfirmed: z.boolean().optional(),
+    deliveryStrategy: z.enum(["SUPPLIER_DIRECT", "BULK_TO_CONSOLIDATION"]).optional(),
+    deliveryWindow: z.string().optional(),
+    fulfillmentNotes: z.string().optional(),
+    consolidationContactName: z.string().optional(),
+    consolidationCompany: z.string().optional(),
+    consolidationContactEmail: z.string().email().optional().or(z.literal("")),
+    consolidationAddressLine1: z.string().optional(),
+    consolidationAddressLine2: z.string().optional(),
+    consolidationCity: z.string().optional(),
+    consolidationState: z.string().optional(),
+    consolidationPostalCode: z.string().optional(),
+    consolidationCountry: z.string().optional(),
+    consolidationPhone: z.string().optional(),
+  }).strict();
+
+  // Admin: Update campaign (PATCH for editable fields)
+  app.patch("/api/admin/campaigns/:id", requireAdminAuth, async (req, res) => {
+    try {
+      const campaignId = req.params.id;
+      const campaign = await db.select().from(campaigns).where(eq(campaigns.id, campaignId)).limit(1);
+
+      if (!campaign[0]) {
+        return res.status(404).json({ error: "Campaign not found" });
+      }
+
+      // Validate request body
+      const parseResult = campaignUpdateSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({
+          error: "Invalid update data",
+          details: parseResult.error.errors
+        });
+      }
+
+      const updates = parseResult.data;
+      const currentStatus = campaign[0].adminPublishStatus || "DRAFT";
+
+      // Define which fields can be edited per status
+      const draftEditableFields = [
+        "title", "description", "sku", "productName", "targetUnits", "unitPrice",
+        "brand", "modelNumber", "variant", "shortDescription", "primaryImageUrl",
+        "galleryImageUrls", "specs", "referencePrices", "rules",
+        "supplierDirectConfirmed", "deliveryStrategy", "deliveryWindow", "fulfillmentNotes",
+        "consolidationContactName", "consolidationCompany", "consolidationContactEmail",
+        "consolidationAddressLine1", "consolidationAddressLine2",
+        "consolidationCity", "consolidationState", "consolidationPostalCode",
+        "consolidationCountry", "consolidationPhone"
+      ];
+
+      // Published campaigns cannot edit core fields or deliveryStrategy
+      const publishedEditableFields = [
+        "brand", "modelNumber", "variant", "shortDescription", "primaryImageUrl",
+        "galleryImageUrls", "specs", "referencePrices", "rules",
+        "deliveryWindow", "fulfillmentNotes",
+        "consolidationContactName", "consolidationCompany", "consolidationContactEmail",
+        "consolidationAddressLine1", "consolidationAddressLine2",
+        "consolidationCity", "consolidationState", "consolidationPostalCode",
+        "consolidationCountry", "consolidationPhone"
+      ];
+
+      const allowedFields = currentStatus === "DRAFT" ? draftEditableFields : publishedEditableFields;
+
+      // Filter to only allowed fields
+      const filteredUpdates: Record<string, any> = {};
+      for (const key of Object.keys(updates)) {
+        if (allowedFields.includes(key) && (updates as any)[key] !== undefined) {
+          filteredUpdates[key] = (updates as any)[key];
+        }
+      }
+
+      if (Object.keys(filteredUpdates).length === 0) {
+        return res.status(400).json({ error: "No valid fields to update" });
+      }
+
+      // Apply the updates
+      await db.update(campaigns).set(filteredUpdates).where(eq(campaigns.id, campaignId));
+
+      console.log(`[ADMIN] Campaign ${campaignId} updated:`, Object.keys(filteredUpdates));
+      res.json({ success: true, updated: Object.keys(filteredUpdates) });
+    } catch (error) {
+      console.error("Error updating campaign:", error);
+      res.status(500).json({ error: "Failed to update campaign" });
     }
   });
 
@@ -1468,14 +2058,35 @@ export async function registerRoutes(
       // Include all campaign fields including publish status and consolidation
       const fullCampaign = await db.select().from(campaigns).where(eq(campaigns.id, req.params.id)).limit(1);
       const campaignData = fullCampaign[0];
+      // Get commitment count for deliveryStrategy lock determination
+      const campaignCommitments = await storage.getCommitments(req.params.id);
+      const hasCommitments = campaignCommitments.length > 0;
+
       res.json({
         ...campaign,
         adminPublishStatus: campaignData?.adminPublishStatus || "DRAFT",
+        // Core fields
+        minCommitment: campaignData?.minCommitment,
         sku: campaignData?.sku,
         productName: campaignData?.productName,
+        // Product details
+        brand: campaignData?.brand,
+        modelNumber: campaignData?.modelNumber,
+        variant: campaignData?.variant,
+        shortDescription: campaignData?.shortDescription,
+        specs: campaignData?.specs,
+        // Images
+        primaryImageUrl: campaignData?.primaryImageUrl,
+        galleryImageUrls: campaignData?.galleryImageUrls,
+        // Reference prices
+        referencePrices: campaignData?.referencePrices,
+        // Delivery
         deliveryStrategy: campaignData?.deliveryStrategy || "SUPPLIER_DIRECT",
+        deliveryCostHandling: campaignData?.deliveryCostHandling,
+        supplierDirectConfirmed: campaignData?.supplierDirectConfirmed,
         consolidationContactName: campaignData?.consolidationContactName,
         consolidationCompany: campaignData?.consolidationCompany,
+        consolidationContactEmail: campaignData?.consolidationContactEmail,
         consolidationAddressLine1: campaignData?.consolidationAddressLine1,
         consolidationAddressLine2: campaignData?.consolidationAddressLine2,
         consolidationCity: campaignData?.consolidationCity,
@@ -1485,10 +2096,34 @@ export async function registerRoutes(
         consolidationPhone: campaignData?.consolidationPhone,
         deliveryWindow: campaignData?.deliveryWindow,
         fulfillmentNotes: campaignData?.fulfillmentNotes,
+        // Publish tracking
+        publishedAt: campaignData?.publishedAt,
+        publishedByAdminId: campaignData?.publishedByAdminId,
+        // Edit permissions
+        hasCommitments,
+        commitmentCount: campaignCommitments.length,
       });
     } catch (error) {
       console.error("Error fetching admin campaign:", error);
       res.status(500).json({ error: "Failed to fetch campaign" });
+    }
+  });
+
+  // Admin: Validate campaign for publishing (precheck)
+  app.get("/api/admin/campaigns/:id/publish/validate", requireAdminAuth, async (req, res) => {
+    try {
+      const campaignId = req.params.id;
+      const campaign = await db.select().from(campaigns).where(eq(campaigns.id, campaignId)).limit(1);
+
+      if (!campaign[0]) {
+        return res.status(404).json({ error: "Campaign not found" });
+      }
+
+      const validation = validateCampaignPublishable(campaign[0]);
+      res.json(validation);
+    } catch (error) {
+      console.error("Error validating campaign:", error);
+      res.status(500).json({ error: "Failed to validate campaign" });
     }
   });
 
@@ -1497,27 +2132,50 @@ export async function registerRoutes(
     try {
       const campaignId = req.params.id;
       const campaign = await db.select().from(campaigns).where(eq(campaigns.id, campaignId)).limit(1);
-      
+
       if (!campaign[0]) {
         return res.status(404).json({ error: "Campaign not found" });
       }
-      
+
       const currentStatus = campaign[0].adminPublishStatus || "DRAFT";
       if (currentStatus === "PUBLISHED") {
         return res.status(400).json({ error: "Campaign is already published" });
       }
-      
+
+      // Validate campaign is ready to publish
+      const validation = validateCampaignPublishable(campaign[0]);
+      if (!validation.ok) {
+        return res.status(400).json({
+          error: "Campaign not ready to publish",
+          missing: validation.missing
+        });
+      }
+
+      const adminUsername = (req as any).adminUsername || "admin";
+
       await db.update(campaigns)
-        .set({ adminPublishStatus: "PUBLISHED" })
+        .set({
+          adminPublishStatus: "PUBLISHED",
+          publishedAt: new Date(),
+          publishedByAdminId: adminUsername,
+        })
         .where(eq(campaigns.id, campaignId));
-      
+
+      // Add to campaign admin events (append-only)
+      await db.insert(campaignAdminEvents).values({
+        campaignId,
+        adminId: adminUsername,
+        eventType: "PUBLISHED",
+        note: `Campaign published (was ${currentStatus})`,
+      });
+
       await storage.createAdminActionLog({
         campaignId,
-        adminUsername: (req as any).adminUsername || "admin",
+        adminUsername,
         action: "CAMPAIGN_PUBLISHED",
         reason: `Campaign published (was ${currentStatus})`,
       });
-      
+
       res.json({ success: true, adminPublishStatus: "PUBLISHED" });
     } catch (error) {
       console.error("Error publishing campaign:", error);
@@ -1530,27 +2188,27 @@ export async function registerRoutes(
     try {
       const campaignId = req.params.id;
       const campaign = await db.select().from(campaigns).where(eq(campaigns.id, campaignId)).limit(1);
-      
+
       if (!campaign[0]) {
         return res.status(404).json({ error: "Campaign not found" });
       }
-      
+
       const currentStatus = campaign[0].adminPublishStatus || "DRAFT";
       if (currentStatus !== "PUBLISHED") {
         return res.status(400).json({ error: "Can only hide published campaigns" });
       }
-      
+
       await db.update(campaigns)
         .set({ adminPublishStatus: "HIDDEN" })
         .where(eq(campaigns.id, campaignId));
-      
+
       await storage.createAdminActionLog({
         campaignId,
         adminUsername: (req as any).adminUsername || "admin",
         action: "CAMPAIGN_HIDDEN",
         reason: "Campaign hidden from public view",
       });
-      
+
       res.json({ success: true, adminPublishStatus: "HIDDEN" });
     } catch (error) {
       console.error("Error hiding campaign:", error);
@@ -1558,80 +2216,116 @@ export async function registerRoutes(
     }
   });
 
-  // Consolidation fields that can be edited while published (until fulfillment phase)
-  const CONSOLIDATION_FIELDS = [
-    "consolidationContactName", "consolidationCompany", "consolidationAddressLine1",
-    "consolidationAddressLine2", "consolidationCity", "consolidationState",
-    "consolidationPostalCode", "consolidationCountry", "consolidationPhone",
-    "deliveryWindow", "fulfillmentNotes"
+  // Fields editable when published (delivery + product details)
+  const PUBLISHED_EDITABLE_FIELDS = [
+    // Delivery fields
+    "consolidationContactName", "consolidationCompany", "consolidationContactEmail",
+    "consolidationAddressLine1", "consolidationAddressLine2", "consolidationCity",
+    "consolidationState", "consolidationPostalCode", "consolidationCountry",
+    "consolidationPhone", "deliveryWindow", "fulfillmentNotes", "deliveryCostHandling",
+    "supplierDirectConfirmed",
+    // Product detail fields (editable when published)
+    "brand", "modelNumber", "variant", "shortDescription", "specs", "variations", "media",
+    "primaryImageUrl", "galleryImageUrls", "referencePrices", "description"
   ];
-  
-  // Fields locked after publish
-  const CORE_FIELDS = [
-    "title", "description", "rules", "imageUrl", "targetAmount", "minCommitment",
-    "maxCommitment", "unitPrice", "aggregationDeadline", "sku", "productName", "deliveryStrategy"
-  ];
+
+  // Fields locked after publish (core campaign config)
+  const PUBLISHED_LOCKED_FIELDS_SET = new Set([
+    "title", "sku", "productName", "aggregationDeadline",
+    "targetAmount", "targetUnits", "unitPrice", "minCommitment", "maxCommitment"
+  ]);
+
+  // deliveryStrategy can only be changed if no commitments exist
+  const COMMITMENT_DEPENDENT_FIELDS = ["deliveryStrategy"];
 
   // Admin: Update campaign with field locking enforcement
   app.patch("/api/admin/campaigns/:id", requireAdminAuth, async (req, res) => {
     try {
       const campaignId = req.params.id;
       const campaign = await db.select().from(campaigns).where(eq(campaigns.id, campaignId)).limit(1);
-      
+
       if (!campaign[0]) {
         return res.status(404).json({ error: "Campaign not found" });
       }
-      
+
       const adminPublishStatus = campaign[0].adminPublishStatus || "DRAFT";
       const campaignState = campaign[0].state;
-      const isPublished = adminPublishStatus !== "DRAFT";
+      const isPublished = adminPublishStatus === "PUBLISHED";
       const isFulfillmentPhase = campaignState === "FULFILLMENT" || campaignState === "RELEASED";
-      
+
       const updateFields = req.body;
       const disallowedFields: string[] = [];
-      
+      const adminUsername = (req as any).adminUsername || "admin";
+
+      // Get commitment count for deliveryStrategy change validation
+      let commitmentCount = 0;
+      if (updateFields.deliveryStrategy && updateFields.deliveryStrategy !== campaign[0].deliveryStrategy) {
+        const commitmentsResult = await storage.getCommitments(campaignId);
+        commitmentCount = commitmentsResult.length;
+      }
+
       // Validate field locks
       for (const field of Object.keys(updateFields)) {
-        if (isPublished && CORE_FIELDS.includes(field)) {
+        // Lock core fields when published
+        if (isPublished && PUBLISHED_LOCKED_FIELDS_SET.has(field)) {
           disallowedFields.push(field);
         }
-        if (isFulfillmentPhase && CONSOLIDATION_FIELDS.includes(field)) {
+        // Lock deliveryStrategy when published AND has commitments
+        if (isPublished && COMMITMENT_DEPENDENT_FIELDS.includes(field) && commitmentCount > 0) {
+          disallowedFields.push(`${field} (has ${commitmentCount} commitments)`);
+        }
+        // Lock consolidation fields during fulfillment phase
+        if (isFulfillmentPhase && field.startsWith("consolidation")) {
           disallowedFields.push(field);
         }
       }
-      
+
       if (disallowedFields.length > 0) {
-        const message = isPublished && isFulfillmentPhase
+        const message = isFulfillmentPhase
           ? `Campaign is in fulfillment; these fields are locked: ${disallowedFields.join(", ")}`
-          : `Campaign is published; these core fields are locked: ${disallowedFields.join(", ")}`;
+          : `Campaign is published; these fields are locked: ${disallowedFields.join(", ")}`;
         return res.status(400).json({ error: "Field update not allowed", message, disallowedFields });
       }
-      
+
+      // Get changed fields for audit
+      const changedFields = getChangedFields(campaign[0], updateFields);
+
       // Build safe update object
       const safeUpdate: Record<string, any> = {};
       for (const [key, value] of Object.entries(updateFields)) {
-        if (!isPublished || CONSOLIDATION_FIELDS.includes(key)) {
-          // Map camelCase to snake_case for DB
-          const dbKey = key.replace(/([A-Z])/g, "_$1").toLowerCase();
-          safeUpdate[dbKey] = value;
-        }
+        // Skip locked fields
+        if (isPublished && PUBLISHED_LOCKED_FIELDS_SET.has(key)) continue;
+        // Map camelCase to snake_case for DB
+        const dbKey = key.replace(/([A-Z])/g, "_$1").toLowerCase();
+        safeUpdate[dbKey] = value;
       }
-      
+
       if (Object.keys(safeUpdate).length === 0) {
         return res.status(400).json({ error: "No valid fields to update" });
       }
-      
+
       await db.update(campaigns)
         .set(safeUpdate)
         .where(eq(campaigns.id, campaignId));
-      
+
+      // Add to campaign admin events (append-only) for PUBLISHED campaigns
+      if (isPublished && changedFields.length > 0) {
+        await db.insert(campaignAdminEvents).values({
+          campaignId,
+          adminId: adminUsername,
+          eventType: "UPDATED",
+          changedFields: JSON.stringify(changedFields),
+          note: `Updated ${changedFields.length} field(s)`,
+        });
+      }
+
       await storage.createAdminActionLog({
         campaignId,
-        adminUsername: (req as any).adminUsername || "admin",
+        adminUsername,
         action: "CAMPAIGN_UPDATED",
         reason: `Updated fields: ${Object.keys(updateFields).join(", ")}`,
       });
-      
+
       const updated = await db.select().from(campaigns).where(eq(campaigns.id, campaignId)).limit(1);
       res.json(updated[0]);
     } catch (error) {
@@ -1650,6 +2344,7 @@ export async function registerRoutes(
         participantName: c.participantName,
         participantEmail: c.participantEmail,
         quantity: c.quantity,
+        amount: c.amount,
         status: c.status,
         createdAt: c.createdAt,
         deliveryId: null,
@@ -1657,6 +2352,102 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching admin commitments:", error);
       res.status(500).json({ error: "Failed to fetch commitments" });
+    }
+  });
+
+  // Admin: Perform campaign action (unified action endpoint)
+  // Maps action codes to state transitions
+  app.post("/api/admin/campaigns/:id/action", requireAdminAuth, async (req, res) => {
+    try {
+      const campaignId = req.params.id;
+      const { actionCode } = req.body;
+      const adminUsername = (req as any).adminUsername || "admin";
+
+      if (!actionCode) {
+        return res.status(400).json({ error: "actionCode is required" });
+      }
+
+      const campaign = await storage.getCampaign(campaignId);
+      if (!campaign) {
+        return res.status(404).json({ error: "Campaign not found" });
+      }
+
+      const currentState = campaign.state as CampaignState;
+      let newState: CampaignState | null = null;
+      let reason = "";
+
+      // Map action codes to state transitions
+      switch (actionCode) {
+        case "MARK_FUNDED":
+          if (currentState !== "AGGREGATION") {
+            return res.status(400).json({ error: "Campaign must be in AGGREGATION state to mark as funded" });
+          }
+          newState = "SUCCESS";
+          reason = "Target met, campaign marked as funded by admin";
+          break;
+
+        case "START_FULFILLMENT":
+          if (currentState !== "SUCCESS") {
+            return res.status(400).json({ error: "Campaign must be in SUCCESS (funded) state to start fulfillment" });
+          }
+          if (!campaign.supplierAcceptedAt) {
+            return res.status(400).json({ error: "Supplier must accept before fulfillment can start" });
+          }
+          newState = "FULFILLMENT";
+          reason = "Fulfillment started by admin";
+          break;
+
+        case "RELEASE_ESCROW":
+          if (currentState !== "FULFILLMENT") {
+            return res.status(400).json({ error: "Campaign must be in FULFILLMENT state to release escrow" });
+          }
+          newState = "RELEASED";
+          reason = "Escrow released by admin after fulfillment";
+          break;
+
+        case "FAIL_CAMPAIGN":
+          if (currentState === "RELEASED" || currentState === "FAILED") {
+            return res.status(400).json({ error: "Cannot fail a campaign that is already released or failed" });
+          }
+          newState = "FAILED";
+          reason = "Campaign failed by admin";
+          break;
+
+        default:
+          return res.status(400).json({ error: `Unknown action code: ${actionCode}` });
+      }
+
+      // Check valid transitions
+      const validTransitions = VALID_TRANSITIONS[currentState];
+      if (!validTransitions.includes(newState)) {
+        return res.status(400).json({
+          error: `Invalid transition: ${currentState} -> ${newState}`,
+          allowedTransitions: validTransitions
+        });
+      }
+
+      // Perform the transition
+      await storage.updateCampaignState(campaignId, newState);
+
+      // Log the action
+      await storage.createAdminActionLog({
+        campaignId,
+        adminUsername,
+        action: "state_transition",
+        previousState: currentState,
+        newState,
+        reason,
+      });
+
+      res.json({
+        success: true,
+        previousState: currentState,
+        newState,
+        message: `Campaign transitioned from ${currentState} to ${newState}`
+      });
+    } catch (error) {
+      console.error("Error performing admin action:", error);
+      res.status(500).json({ error: "Failed to perform action" });
     }
   });
 
@@ -1690,13 +2481,13 @@ export async function registerRoutes(
     try {
       const campaigns = await storage.getCampaignsWithStats();
       const allEntries = await db.select().from(escrowLedger);
-      
+
       const inAggregation = campaigns.filter(c => c.state === "AGGREGATION").length;
-      const needsAction = campaigns.filter(c => 
-        c.state === "SUCCESS" || 
+      const needsAction = campaigns.filter(c =>
+        c.state === "SUCCESS" ||
         (c.state === "AGGREGATION" && new Date(c.aggregationDeadline) < new Date())
       ).length;
-      
+
       const totalLocked = allEntries
         .filter(e => e.entryType === "LOCK")
         .reduce((sum, e) => sum + parseFloat(e.amount), 0);
@@ -1706,7 +2497,7 @@ export async function registerRoutes(
       const totalReleased = allEntries
         .filter(e => e.entryType === "RELEASE")
         .reduce((sum, e) => sum + parseFloat(e.amount), 0);
-      
+
       res.json({
         tiles: {
           campaignsInAggregation: inAggregation,
@@ -1734,7 +2525,7 @@ export async function registerRoutes(
   app.get("/api/admin/clearing/snapshot", requireAdminAuth, async (req, res) => {
     try {
       const allEntries = await db.select().from(escrowLedger);
-      
+
       const totalLocked = allEntries
         .filter(e => e.entryType === "LOCK")
         .reduce((sum, e) => sum + parseFloat(e.amount), 0);
@@ -1744,7 +2535,7 @@ export async function registerRoutes(
       const totalReleased = allEntries
         .filter(e => e.entryType === "RELEASE")
         .reduce((sum, e) => sum + parseFloat(e.amount), 0);
-      
+
       res.json({
         inEscrow: totalLocked - totalReturned - totalReleased,
         released: totalReleased,
@@ -1785,7 +2576,7 @@ export async function registerRoutes(
         .where(eq(escrowLedger.entryType, "REFUND"))
         .orderBy(desc(escrowLedger.createdAt))
         .limit(200);
-      
+
       const result = await Promise.all(refundEntries.map(async (entry) => {
         const commitment = await db.select().from(commitments).where(eq(commitments.id, entry.commitmentId)).limit(1);
         const campaign = await db.select().from(campaigns).where(eq(campaigns.id, entry.campaignId)).limit(1);
@@ -1796,7 +2587,7 @@ export async function registerRoutes(
           campaignName: campaign[0]?.title || "Unknown",
         };
       }));
-      
+
       res.json(result);
     } catch (error) {
       console.error("Error fetching admin refunds:", error);
@@ -1848,15 +2639,15 @@ export async function registerRoutes(
         { reason_code: "quality_issue", label: "Quality Issue", description: "Refund due to product quality problems", scope: "commitment", active: "true" },
         { reason_code: "delivery_failure", label: "Delivery Failure", description: "Refund due to failed delivery", scope: "commitment", active: "true" },
       ];
-      
+
       const headers = ["reason_code", "label", "description", "scope", "active"];
       const rows = [headers.join(",")];
-      
+
       for (const reason of reasons) {
         const row = headers.map(h => `"${(reason[h as keyof typeof reason] || "").replace(/"/g, '""')}"`);
         rows.push(row.join(","));
       }
-      
+
       res.setHeader("Content-Type", "text/csv");
       res.setHeader("Content-Disposition", 'attachment; filename="refund_reasons_reference.csv"');
       res.send(rows.join("\n"));
@@ -1873,19 +2664,19 @@ export async function registerRoutes(
     try {
       const campaignId = req.params.id;
       const campaign = await storage.getCampaignWithStats(campaignId);
-      
+
       if (!campaign) {
         return res.status(404).json({ error: "Campaign not found" });
       }
-      
+
       const allCommitments = await storage.getCommitments(campaignId);
-      
+
       // Get escrow entries to calculate refundable amounts (source of truth)
       const escrowEntries = await db
         .select()
         .from(escrowLedger)
         .where(eq(escrowLedger.campaignId, campaignId));
-      
+
       // Calculate refundable amount per commitment from escrow ledger
       // This is the authoritative source - don't rely on commitment.status
       const eligibleCommitments = allCommitments
@@ -1898,7 +2689,7 @@ export async function registerRoutes(
             .filter(e => e.entryType === "REFUND" || e.entryType === "RELEASE")
             .reduce((sum, e) => sum + parseFloat(e.amount), 0);
           const refundableAmount = locked - returned;
-          
+
           return {
             commitment_code: c.referenceNumber,
             refundable_amount: refundableAmount.toFixed(2),
@@ -1909,22 +2700,22 @@ export async function registerRoutes(
           };
         })
         .filter((c: { refundable_amount: string }) => parseFloat(c.refundable_amount) > 0);
-      
+
       const headers = ["commitment_code", "refundable_amount", "currency", "current_status"];
       const rows = [headers.join(",")];
-      
+
       for (const commitment of eligibleCommitments) {
         const row = headers.map(h => `"${(commitment[h as keyof typeof commitment] || "").replace(/"/g, '""')}"`);
         rows.push(row.join(","));
       }
-      
+
       await storage.createAdminActionLog({
         campaignId,
         adminUsername: (req as any).adminUsername || "admin",
         action: "REFUND_ELIGIBLE_EXPORT",
         reason: `Exported ${eligibleCommitments.length} eligible commitments for refund planning`,
       });
-      
+
       res.setHeader("Content-Type", "text/csv");
       res.setHeader("Content-Disposition", `attachment; filename="eligible_refunds_${campaignId.slice(0, 8)}.csv"`);
       res.send(rows.join("\n"));
@@ -1939,15 +2730,15 @@ export async function registerRoutes(
     try {
       const campaignId = req.params.id;
       const campaign = await storage.getCampaignWithStats(campaignId);
-      
+
       if (!campaign) {
         return res.status(404).json({ error: "Campaign not found" });
       }
-      
+
       const template = `commitment_code,reason_code,note
 ABC12345,campaign_failed_refund,"Campaign did not reach target"
 DEF67890,admin_manual_refund,"Participant requested early refund"`;
-      
+
       res.setHeader("Content-Type", "text/csv");
       res.setHeader("Content-Disposition", `attachment; filename="refund_plan_template_${campaignId.slice(0, 8)}.csv"`);
       res.send(template);
@@ -1972,7 +2763,7 @@ DEF67890,admin_manual_refund,"Participant requested early refund"`;
           nextUpdateDueAt: null,
           isOverdue: false,
         }));
-      
+
       res.json(deliveries);
     } catch (error) {
       console.error("Error fetching deliveries:", error);
@@ -1987,10 +2778,10 @@ DEF67890,admin_manual_refund,"Participant requested early refund"`;
       if (!campaign) {
         return res.status(404).json({ error: "Campaign not found" });
       }
-      
+
       const commitmentsList = await storage.getCommitments(req.params.id);
       const deliveredCount = commitmentsList.filter(c => c.status === "RELEASED").length;
-      
+
       res.json({
         campaignId: campaign.id,
         campaignTitle: campaign.title,
@@ -2033,16 +2824,16 @@ DEF67890,admin_manual_refund,"Participant requested early refund"`;
     try {
       const campaignId = req.params.id;
       const { milestone, note } = req.body;
-      
+
       if (!milestone || !note) {
         return res.status(400).json({ error: "Milestone and note are required" });
       }
-      
+
       const campaign = await storage.getCampaignWithStats(campaignId);
       if (!campaign) {
         return res.status(404).json({ error: "Campaign not found" });
       }
-      
+
       const newEvent = {
         id: crypto.randomUUID(),
         milestone,
@@ -2050,12 +2841,12 @@ DEF67890,admin_manual_refund,"Participant requested early refund"`;
         createdAt: new Date().toISOString(),
         actor: (req as any).adminUsername || "admin",
       };
-      
+
       if (!campaignMilestones.has(campaignId)) {
         campaignMilestones.set(campaignId, []);
       }
       campaignMilestones.get(campaignId)!.push(newEvent);
-      
+
       // Log admin action
       await storage.createAdminActionLog({
         campaignId,
@@ -2063,7 +2854,7 @@ DEF67890,admin_manual_refund,"Participant requested early refund"`;
         action: "ADD_MILESTONE",
         reason: `${milestone}: ${note}`,
       });
-      
+
       res.json({ success: true, event: newEvent });
     } catch (error) {
       console.error("Error adding milestone:", error);
@@ -2089,11 +2880,11 @@ DEF67890,admin_manual_refund,"Participant requested early refund"`;
     try {
       const campaignId = req.params.id;
       const campaign = await storage.getCampaignWithStats(campaignId);
-      
+
       if (!campaign) {
         return res.status(404).json({ error: "Campaign not found" });
       }
-      
+
       // Strategy validation: direct export requires SUPPLIER_DIRECT or Standard (default)
       // BULK_TO_CONSOLIDATION campaigns cannot use direct export (PII protection)
       const strategy = (campaign as any).deliveryStrategy || "Standard";
@@ -2105,17 +2896,17 @@ DEF67890,admin_manual_refund,"Participant requested early refund"`;
           action: "FULFILLMENT_EXPORT_DENIED",
           reason: "Direct export not allowed for BULK_TO_CONSOLIDATION strategy",
         });
-        return res.status(400).json({ 
+        return res.status(400).json({
           error: "Strategy mismatch",
           message: "Direct manifest export is not available for bulk consolidation campaigns. Use bulk export instead."
         });
       }
-      
+
       // Get eligible commitments: LOCKED status only (not refunded/released, not exception)
       // Since we don't have per-commitment delivery state yet, LOCKED is safest approximation
       const allCommitments = await storage.getCommitments(campaignId);
       const eligibleCommitments = allCommitments.filter((c: { status: string }) => c.status === "LOCKED");
-      
+
       // Get user profiles for delivery data
       const rows: string[] = [];
       const headers = [
@@ -2124,14 +2915,14 @@ DEF67890,admin_manual_refund,"Participant requested early refund"`;
         "phone", "email", "delivery_notes"
       ];
       rows.push(headers.join(","));
-      
+
       for (const commitment of eligibleCommitments) {
         // Get user profile if user_id exists
         let profile: any = null;
         if (commitment.userId) {
           profile = await storage.getUserProfile(commitment.userId);
         }
-        
+
         const row = [
           commitment.referenceNumber,
           "SKU-" + campaign.id.slice(0, 8).toUpperCase(), // Placeholder SKU
@@ -2150,7 +2941,7 @@ DEF67890,admin_manual_refund,"Participant requested early refund"`;
         ].map(v => `"${(v || "").replace(/"/g, '""')}"`);
         rows.push(row.join(","));
       }
-      
+
       // Log audit event
       await storage.createAdminActionLog({
         campaignId,
@@ -2158,7 +2949,7 @@ DEF67890,admin_manual_refund,"Participant requested early refund"`;
         action: "FULFILLMENT_EXPORT_CREATED",
         reason: JSON.stringify({ strategy: "SUPPLIER_DIRECT", rowCount: eligibleCommitments.length }),
       });
-      
+
       res.setHeader("Content-Type", "text/csv");
       res.setHeader("Content-Disposition", `attachment; filename="manifest-direct-${campaignId.slice(0, 8)}.csv"`);
       res.send(rows.join("\n"));
@@ -2174,18 +2965,18 @@ DEF67890,admin_manual_refund,"Participant requested early refund"`;
     try {
       const campaignId = req.params.id;
       const campaign = await storage.getCampaignWithStats(campaignId);
-      
+
       if (!campaign) {
         return res.status(404).json({ error: "Campaign not found" });
       }
-      
+
       // Get eligible commitments: LOCKED status only
       const allCommitments = await storage.getCommitments(campaignId);
       const eligibleCommitments = allCommitments.filter((c: { status: string }) => c.status === "LOCKED");
-      
+
       // Calculate total quantity
       const totalQuantity = eligibleCommitments.reduce((sum: number, c: { quantity: number }) => sum + c.quantity, 0);
-      
+
       // Build bulk manifest (no end-user PII)
       const headers = [
         "sku", "product_name", "total_quantity",
@@ -2194,7 +2985,7 @@ DEF67890,admin_manual_refund,"Participant requested early refund"`;
         "consolidation_state", "consolidation_postal_code", "consolidation_country",
         "consolidation_phone", "delivery_window", "fulfillment_notes"
       ];
-      
+
       const row = [
         "SKU-" + campaign.id.slice(0, 8).toUpperCase(),
         campaign.title,
@@ -2211,7 +3002,7 @@ DEF67890,admin_manual_refund,"Participant requested early refund"`;
         "TBD",
         `Total eligible commitments: ${eligibleCommitments.length}`
       ].map(v => `"${(v || "").replace(/"/g, '""')}"`);
-      
+
       // Log audit event
       await storage.createAdminActionLog({
         campaignId,
@@ -2219,7 +3010,7 @@ DEF67890,admin_manual_refund,"Participant requested early refund"`;
         action: "FULFILLMENT_EXPORT_CREATED",
         reason: JSON.stringify({ strategy: "BULK_TO_CONSOLIDATION", rowCount: 1, totalQuantity }),
       });
-      
+
       res.setHeader("Content-Type", "text/csv");
       res.setHeader("Content-Disposition", `attachment; filename="manifest-bulk-${campaignId.slice(0, 8)}.csv"`);
       res.send([headers.join(","), row.join(",")].join("\n"));
@@ -2234,7 +3025,7 @@ DEF67890,admin_manual_refund,"Participant requested early refund"`;
     try {
       const headers = ["commitment_code", "milestone_code", "carrier", "tracking_url", "note"];
       const exampleRow = ["ALP-XXXX-XXXX", "SHIPPED", "UPS", "https://tracking.example.com/...", "Shipped via ground"];
-      
+
       res.setHeader("Content-Type", "text/csv");
       res.setHeader("Content-Disposition", `attachment; filename="delivery-updates-template.csv"`);
       res.send([headers.join(","), exampleRow.join(",")].join("\n"));

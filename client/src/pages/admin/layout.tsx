@@ -25,6 +25,7 @@ import {
   Loader2,
   ChevronDown,
   ChevronRight,
+  Package,
 } from "lucide-react";
 
 const navSections = [
@@ -57,6 +58,7 @@ const navSections = [
   {
     label: "Optional",
     items: [
+      { path: "/admin/products", label: "Products", icon: Package },
       { path: "/admin/suppliers", label: "Suppliers", icon: Users },
       { path: "/admin/exceptions", label: "Exceptions", icon: AlertTriangle },
       { path: "/admin/audit", label: "Audit", icon: FileText },
