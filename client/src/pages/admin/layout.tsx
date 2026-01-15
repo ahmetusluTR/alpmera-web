@@ -26,6 +26,7 @@ import {
   ChevronDown,
   ChevronRight,
   Package,
+  MapPin,
 } from "lucide-react";
 
 const navSections = [
@@ -56,10 +57,21 @@ const navSections = [
     ],
   },
   {
-    label: "Optional",
+    label: "Operations",
+    items: [
+      { path: "/admin/consolidation", label: "Consolidation", icon: MapPin },
+    ],
+  },
+  {
+    label: "Inventory",
     items: [
       { path: "/admin/products", label: "Products", icon: Package },
       { path: "/admin/suppliers", label: "Suppliers", icon: Users },
+    ],
+  },
+  {
+    label: "Optional",
+    items: [
       { path: "/admin/exceptions", label: "Exceptions", icon: AlertTriangle },
       { path: "/admin/audit", label: "Audit", icon: FileText },
     ],

@@ -37,6 +37,14 @@ import {
   type InsertProduct,
   type UpdateProduct,
   type ProductStatus,
+  type Supplier,
+  type InsertSupplier,
+  type UpdateSupplier,
+  suppliers,
+  type ConsolidationPoint,
+  type InsertConsolidationPoint,
+  type UpdateConsolidationPoint,
+  consolidationPoints,
   VALID_TRANSITIONS
 } from "@shared/schema";
 import { db } from "./db";
@@ -47,8 +55,8 @@ export interface IStorage {
   // Campaign operations
   getCampaigns(): Promise<Campaign[]>;
   getCampaign(id: string): Promise<Campaign | undefined>;
-  getCampaignWithStats(id: string): Promise<(Campaign & { participantCount: number; totalCommitted: number }) | undefined>;
-  getCampaignsWithStats(): Promise<(Campaign & { participantCount: number; totalCommitted: number })[]>;
+  getCampaignWithStats(id: string): Promise<(Campaign & { participantCount: number; totalCommitted: number; supplierName?: string; consolidationPointName?: string; productStatus?: string; supplierStatus?: string; consolidationPointStatus?: string }) | undefined>;
+  getCampaignsWithStats(): Promise<(Campaign & { participantCount: number; totalCommitted: number; supplierName?: string; consolidationPointName?: string; productStatus?: string; supplierStatus?: string; consolidationPointStatus?: string })[]>;
   createCampaign(campaign: InsertCampaign): Promise<Campaign>;
   updateCampaignState(id: string, state: CampaignState): Promise<Campaign | undefined>;
 
@@ -113,6 +121,21 @@ export interface IStorage {
   createProduct(product: InsertProduct): Promise<Product>;
   updateProduct(id: string, updates: UpdateProduct): Promise<Product | undefined>;
   archiveProduct(id: string): Promise<Product | undefined>;
+
+  // Supplier operations
+  getSuppliers(): Promise<Supplier[]>;
+  getSupplier(id: string): Promise<Supplier | undefined>;
+  createSupplier(supplier: InsertSupplier): Promise<Supplier>;
+  updateSupplier(id: string, updates: UpdateSupplier): Promise<Supplier | undefined>;
+  archiveSupplier(id: string): Promise<Supplier | undefined>;
+
+  // Consolidation Point operations
+  getConsolidationPoints(): Promise<ConsolidationPoint[]>;
+  getConsolidationPoint(id: string): Promise<ConsolidationPoint | undefined>;
+  createConsolidationPoint(point: InsertConsolidationPoint): Promise<ConsolidationPoint>;
+  updateConsolidationPoint(id: string, updates: UpdateConsolidationPoint): Promise<ConsolidationPoint | undefined>;
+  archiveConsolidationPoint(id: string): Promise<ConsolidationPoint | undefined>;
+  updateCampaign(id: string, updates: Partial<Campaign>): Promise<Campaign | undefined>;
 }
 
 // Generate unique reference number for commitments
@@ -138,7 +161,7 @@ export class DatabaseStorage implements IStorage {
     return campaign || undefined;
   }
 
-  async getCampaignWithStats(id: string): Promise<(Campaign & { participantCount: number; totalCommitted: number }) | undefined> {
+  async getCampaignWithStats(id: string): Promise<(Campaign & { participantCount: number; totalCommitted: number; supplierName?: string; consolidationPointName?: string; productStatus?: string; supplierStatus?: string; consolidationPointStatus?: string }) | undefined> {
     const campaign = await this.getCampaign(id);
     if (!campaign) return undefined;
 
@@ -150,14 +173,24 @@ export class DatabaseStorage implements IStorage {
       .from(commitments)
       .where(eq(commitments.campaignId, id));
 
+    const [product] = campaign.productId ? await db.select().from(products).where(eq(products.id, campaign.productId)) : [null];
+    const [supplier] = campaign.supplierId ? await db.select().from(suppliers).where(eq(suppliers.id, campaign.supplierId)) : [null];
+    const [point] = campaign.consolidationPointId ? await db.select().from(consolidationPoints).where(eq(consolidationPoints.id, campaign.consolidationPointId)) : [null];
+
     return {
-      ...campaign,
+      ...(campaign as any),
       participantCount: stats[0]?.count || 0,
       totalCommitted: stats[0]?.total || 0,
+      productName: product?.name || campaign.productName,
+      supplierName: supplier?.name,
+      consolidationPointName: point?.name,
+      productStatus: product?.status,
+      supplierStatus: supplier?.status,
+      consolidationPointStatus: point?.status,
     };
   }
 
-  async getCampaignsWithStats(): Promise<(Campaign & { participantCount: number; totalCommitted: number })[]> {
+  async getCampaignsWithStats(): Promise<(Campaign & { participantCount: number; totalCommitted: number; supplierName?: string; consolidationPointName?: string; productStatus?: string; supplierStatus?: string; consolidationPointStatus?: string })[]> {
     const allCampaigns = await this.getCampaigns();
 
     const campaignsWithStats = await Promise.all(
@@ -170,10 +203,20 @@ export class DatabaseStorage implements IStorage {
           .from(commitments)
           .where(eq(commitments.campaignId, campaign.id));
 
+        const [product] = campaign.productId ? await db.select().from(products).where(eq(products.id, campaign.productId)) : [null];
+        const [supplier] = campaign.supplierId ? await db.select().from(suppliers).where(eq(suppliers.id, campaign.supplierId)) : [null];
+        const [point] = campaign.consolidationPointId ? await db.select().from(consolidationPoints).where(eq(consolidationPoints.id, campaign.consolidationPointId)) : [null];
+
         return {
-          ...campaign,
+          ...(campaign as any),
           participantCount: stats[0]?.count || 0,
           totalCommitted: stats[0]?.total || 0,
+          productName: product?.name || campaign.productName,
+          supplierName: supplier?.name,
+          consolidationPointName: point?.name,
+          productStatus: product?.status,
+          supplierStatus: supplier?.status,
+          consolidationPointStatus: point?.status,
         };
       })
     );
@@ -184,6 +227,15 @@ export class DatabaseStorage implements IStorage {
   async createCampaign(campaign: InsertCampaign): Promise<Campaign> {
     const [created] = await db.insert(campaigns).values(campaign).returning();
     return created;
+  }
+
+  async updateCampaign(id: string, updates: Partial<Campaign>): Promise<Campaign | undefined> {
+    const [updated] = await db
+      .update(campaigns)
+      .set(updates)
+      .where(eq(campaigns.id, id))
+      .returning();
+    return updated || undefined;
   }
 
   async updateCampaignState(id: string, state: CampaignState): Promise<Campaign | undefined> {
@@ -565,6 +617,103 @@ export class DatabaseStorage implements IStorage {
       .update(products)
       .set({ status: "ARCHIVED", updatedAt: new Date() })
       .where(eq(products.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  // Supplier operations
+  async getSuppliers(): Promise<Supplier[]> {
+    return await db
+      .select()
+      .from(suppliers)
+      .orderBy(desc(suppliers.createdAt));
+  }
+
+  async getSupplier(id: string): Promise<Supplier | undefined> {
+    const [supplier] = await db.select().from(suppliers).where(eq(suppliers.id, id));
+    return supplier || undefined;
+  }
+
+  async createSupplier(supplier: InsertSupplier): Promise<Supplier> {
+    const [created] = await db.insert(suppliers).values(supplier).returning();
+    return created;
+  }
+
+  async updateSupplier(id: string, updates: UpdateSupplier): Promise<Supplier | undefined> {
+    console.log(`[STORAGE] Updating supplier ${id} with:`, JSON.stringify(updates, null, 2));
+    const [updated] = await db
+      .update(suppliers)
+      .set({
+        name: updates.name,
+        contactName: updates.contactName,
+        contactEmail: updates.contactEmail,
+        phone: updates.phone,
+        website: updates.website,
+        region: updates.region,
+        notes: updates.notes,
+        status: updates.status,
+        updatedAt: new Date()
+      })
+      .where(eq(suppliers.id, id))
+      .returning();
+    console.log(`[STORAGE] Result:`, updated?.status);
+    return updated || undefined;
+  }
+
+  async archiveSupplier(id: string): Promise<Supplier | undefined> {
+    const [updated] = await db
+      .update(suppliers)
+      .set({ status: "ARCHIVED", updatedAt: new Date() })
+      .where(eq(suppliers.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  // Consolidation Point operations
+  async getConsolidationPoints(): Promise<ConsolidationPoint[]> {
+    return await db
+      .select()
+      .from(consolidationPoints)
+      .orderBy(desc(consolidationPoints.createdAt));
+  }
+
+  async getConsolidationPoint(id: string): Promise<ConsolidationPoint | undefined> {
+    const [point] = await db.select().from(consolidationPoints).where(eq(consolidationPoints.id, id));
+    return point || undefined;
+  }
+
+  async createConsolidationPoint(point: InsertConsolidationPoint): Promise<ConsolidationPoint> {
+    const [created] = await db.insert(consolidationPoints).values(point).returning();
+    return created;
+  }
+
+  async updateConsolidationPoint(id: string, updates: UpdateConsolidationPoint): Promise<ConsolidationPoint | undefined> {
+    console.log(`[STORAGE] Updating consolidation point ${id} with:`, JSON.stringify(updates, null, 2));
+    const [updated] = await db
+      .update(consolidationPoints)
+      .set({
+        name: updates.name,
+        addressLine1: updates.addressLine1,
+        addressLine2: updates.addressLine2,
+        city: updates.city,
+        state: updates.state,
+        postalCode: updates.postalCode,
+        country: updates.country,
+        status: updates.status,
+        notes: updates.notes,
+        updatedAt: new Date()
+      })
+      .where(eq(consolidationPoints.id, id))
+      .returning();
+    console.log(`[STORAGE] Result:`, updated?.status);
+    return updated || undefined;
+  }
+
+  async archiveConsolidationPoint(id: string): Promise<ConsolidationPoint | undefined> {
+    const [updated] = await db
+      .update(consolidationPoints)
+      .set({ status: "ARCHIVED", updatedAt: new Date() })
+      .where(eq(consolidationPoints.id, id))
       .returning();
     return updated || undefined;
   }

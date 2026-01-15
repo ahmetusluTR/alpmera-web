@@ -62,6 +62,7 @@ export default function AdminProductDetail() {
     const [specs, setSpecs] = useState<ProductSpec[]>([]);
     const [primaryImageUrl, setPrimaryImageUrl] = useState("");
     const [galleryImageUrls, setGalleryImageUrls] = useState<string[]>([]);
+    const [status, setStatus] = useState<string>("ACTIVE");
     const [internalNotes, setInternalNotes] = useState("");
 
     // Reference Prices
@@ -88,6 +89,7 @@ export default function AdminProductDetail() {
             setCategory(product.category || "");
             setShortDescription(product.shortDescription || "");
             setPrimaryImageUrl(product.primaryImageUrl || "");
+            setStatus(product.status || "ACTIVE");
             setInternalNotes(product.internalNotes || "");
 
             try {
@@ -114,32 +116,35 @@ export default function AdminProductDetail() {
                 variant,
                 category,
                 shortDescription,
-                specs: specs.length ? specs : null,
+                specs: specs.length ? JSON.stringify(specs) : null,
                 primaryImageUrl,
-                galleryImageUrls: galleryImageUrls.length ? galleryImageUrls : null,
+                galleryImageUrls: galleryImageUrls.length ? JSON.stringify(galleryImageUrls) : null,
+                status,
                 internalNotes,
+                referencePrices: referencePrices.length ? JSON.stringify(referencePrices) : null
             };
 
-            // Handle Reference Prices
-            if (isNew) {
-                // For new product, include all reference prices as initial list (if we allowed adding in UI)
-                // Check if user filled out the "Add Note" section but didn't save?
-                // For simplicity, we only add what's in 'referencePrices' state for Create.
-                // But wait, the input form fields are separated.
-                // If user entered data in New Ref Price form, we should probably add it?
-                // Let's assume user must click "Add" to a local list for Create.
-                // BUT my backend Create API takes 'referencePrices' array.
-                // So for Create, I should assume 'referencePrices' state is populated.
-            } else {
-                // For Update, we can ONLY append via newReferencePrice one at a time via API
-                if (newRefPriceAmount) {
-                    data.newReferencePrice = {
-                        amount: parseFloat(newRefPriceAmount),
-                        currency: "USD",
-                        sourceType: newRefPriceSource,
-                        sourceNameOrUrl: newRefPriceUrl,
-                        note: newRefPriceNote
-                    };
+            // If user filled in the "Add New" form, append it to the data
+            if (newRefPriceAmount) {
+                const newPrice = {
+                    amount: parseFloat(newRefPriceAmount),
+                    currency: "USD",
+                    sourceType: newRefPriceSource,
+                    sourceNameOrUrl: newRefPriceUrl,
+                    note: newRefPriceNote,
+                    capturedAt: new Date().toISOString(),
+                    capturedBy: "admin"
+                };
+
+                if (isNew) {
+                    // For new products, we just include it in the initial array
+                    const currentPrices = [...referencePrices, newPrice];
+                    data.referencePrices = JSON.stringify(currentPrices);
+                } else {
+                    // For existing products, we use the special newReferencePrice endpoint logic or just send the full array
+                    // Since we updated the backend to support full override, we follow the override path
+                    const currentPrices = [...referencePrices, newPrice];
+                    data.referencePrices = JSON.stringify(currentPrices);
                 }
             }
 
@@ -154,16 +159,18 @@ export default function AdminProductDetail() {
         onSuccess: (data: Product) => {
             toast({
                 title: isNew ? "Product Created" : "Product Updated",
-                description: `Product ${data.sku} has been saved successfully.`,
+                description: `${name} has been saved successfully.`,
             });
+            queryClient.invalidateQueries({ queryKey: ["/api/admin/products"] });
             if (isNew) {
                 setLocation(`/admin/products/${data.id}`);
             } else {
-                // Clear new ref price form
+                queryClient.invalidateQueries({ queryKey: [`/api/admin/products/${productId}`] });
+                // Reset "Add New" form
                 setNewRefPriceAmount("");
+                setNewRefPriceSource("RETAILER_LISTING");
                 setNewRefPriceUrl("");
                 setNewRefPriceNote("");
-                queryClient.invalidateQueries({ queryKey: [`/api/admin/products/${productId}`] });
             }
         },
         onError: (error: Error) => {
@@ -409,6 +416,24 @@ export default function AdminProductDetail() {
 
                     {/* Sidebar Column */}
                     <div className="space-y-6">
+                        {/* Status */}
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Product Status</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <Select value={status} onValueChange={setStatus}>
+                                    <SelectTrigger id="status">
+                                        <SelectValue placeholder="Select status" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="ACTIVE">Active</SelectItem>
+                                        <SelectItem value="ARCHIVED">Archived</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </CardContent>
+                        </Card>
+
                         {/* Reference Prices */}
                         <Card>
                             <CardHeader>
@@ -452,19 +477,72 @@ export default function AdminProductDetail() {
                                 <Separator />
 
                                 <div className="space-y-4">
-                                    <h4 className="text-sm font-medium">History</h4>
+                                    <h4 className="text-sm font-medium">History (Editable)</h4>
                                     {referencePrices && referencePrices.length > 0 ? (
                                         <div className="space-y-4">
                                             {referencePrices.sort((a, b) => new Date(b.capturedAt).getTime() - new Date(a.capturedAt).getTime()).map((price, idx) => (
-                                                <div key={idx} className="text-sm border-l-2 border-primary pl-3 py-1">
-                                                    <div className="flex justify-between items-baseline">
-                                                        <span className="font-bold">${price.amount.toFixed(2)}</span>
-                                                        <span className="text-xs text-muted-foreground">{format(new Date(price.capturedAt), "MMM d, yyyy")}</span>
+                                                <div key={idx} className="p-3 border rounded-md space-y-2 relative">
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        className="absolute top-1 right-1 h-6 w-6 text-destructive"
+                                                        onClick={() => {
+                                                            const next = referencePrices.filter((_, i) => i !== idx);
+                                                            setReferencePrices(next);
+                                                        }}
+                                                    >
+                                                        <Trash2 className="h-3 w-3" />
+                                                    </Button>
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        <div className="space-y-1">
+                                                            <Label className="text-[10px]">Amount</Label>
+                                                            <Input
+                                                                type="number"
+                                                                step="0.01"
+                                                                value={price.amount}
+                                                                onChange={(e) => {
+                                                                    const next = [...referencePrices];
+                                                                    next[idx] = { ...next[idx], amount: parseFloat(e.target.value) };
+                                                                    setReferencePrices(next);
+                                                                }}
+                                                                className="h-7 text-xs"
+                                                            />
+                                                        </div>
+                                                        <div className="space-y-1">
+                                                            <Label className="text-[10px]">Source</Label>
+                                                            <Select
+                                                                value={price.sourceType}
+                                                                onValueChange={(v) => {
+                                                                    const next = [...referencePrices];
+                                                                    next[idx] = { ...next[idx], sourceType: v as any };
+                                                                    setReferencePrices(next);
+                                                                }}
+                                                            >
+                                                                <SelectTrigger className="h-7 text-xs">
+                                                                    <SelectValue />
+                                                                </SelectTrigger>
+                                                                <SelectContent>
+                                                                    <SelectItem value="MSRP">MSRP</SelectItem>
+                                                                    <SelectItem value="RETAILER_LISTING">Retailer</SelectItem>
+                                                                    <SelectItem value="SUPPLIER_QUOTE">Supplier</SelectItem>
+                                                                    <SelectItem value="OTHER">Other</SelectItem>
+                                                                </SelectContent>
+                                                            </Select>
+                                                        </div>
                                                     </div>
-                                                    <div className="text-xs text-muted-foreground mt-0.5">
-                                                        {price.sourceType} {price.sourceNameOrUrl && `• ${price.sourceNameOrUrl}`}
+                                                    <div className="space-y-1">
+                                                        <Label className="text-[10px]">URL / Link</Label>
+                                                        <Input
+                                                            value={price.sourceNameOrUrl || ""}
+                                                            onChange={(e) => {
+                                                                const next = [...referencePrices];
+                                                                next[idx] = { ...next[idx], sourceNameOrUrl: e.target.value };
+                                                                setReferencePrices(next);
+                                                            }}
+                                                            className="h-7 text-xs"
+                                                            placeholder="Source URL"
+                                                        />
                                                     </div>
-                                                    {price.note && <div className="text-xs italic mt-1">"{price.note}"</div>}
                                                 </div>
                                             ))}
                                         </div>

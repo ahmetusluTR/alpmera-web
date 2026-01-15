@@ -6,6 +6,8 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import pg from "pg";
+import { pool } from "./db";
+import { log } from "./log";
 
 const app = express();
 const httpServer = createServer(app);
@@ -38,14 +40,11 @@ app.use(express.urlencoded({ extended: false }));
 // Cookie parser - MUST be before routes for req.cookies access
 app.use(cookieParser());
 
-const pgPool = new pg.Pool({
-  connectionString: process.env.DATABASE_URL,
-});
 
 app.use(
   session({
     store: new PgSession({
-      pool: pgPool,
+      pool: pool as any, // Cast to any to satisfy connect-pg-simple types if needed
       tableName: "session",
       createTableIfMissing: true,
     }),
@@ -61,16 +60,6 @@ app.use(
   })
 );
 
-export function log(message: string, source = "express") {
-  const formattedTime = new Date().toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: true,
-  });
-
-  console.log(`${formattedTime} [${source}] ${message}`);
-}
 
 app.use((req, res, next) => {
   const start = Date.now();
@@ -105,7 +94,11 @@ app.use((req, res, next) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
 
-    res.status(status).json({ message });
+    if (process.env.NODE_ENV === 'test') {
+      res.status(status).json({ message, error: err.toString(), stack: err.stack });
+    } else {
+      res.status(status).json({ message });
+    }
     throw err;
   });
 
@@ -131,7 +124,7 @@ app.use((req, res, next) => {
       reusePort: false,
     },
     () => {
-      log(`serving on port ${port}`);
+      log(`PID ${process.pid} listening on port ${port} (ENV: ${process.env.NODE_ENV || 'development'}, APP_ENV: ${process.env.APP_ENV || 'dev'})`);
     },
   );
 })();

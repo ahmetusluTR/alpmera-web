@@ -35,13 +35,15 @@ import AdminRefunds from "@/pages/admin/refunds";
 import AdminRefundPlans from "@/pages/admin/refund-plans";
 import AdminRefundPlanDetail from "@/pages/admin/refund-plan-detail";
 import AdminDeliveries from "@/pages/admin/deliveries";
+import AdminSuppliers from "@/pages/admin/suppliers";
+import AdminSupplierDetail from "@/pages/admin/supplier-detail";
+import AdminConsolidationPoints from "@/pages/admin/consolidation-points";
+import AdminConsolidationDetail from "@/pages/admin/consolidation-detail";
 import {
-  SuppliersPage,
   ExceptionsPage,
   AuditPage,
   AdminUsersPage,
   AdminUserDetailPage,
-  AdminSupplierDetailPage,
   AdminConsolidationPointsPage,
   AdminConsolidationPointDetailPage,
   AdminPaymentsEscrowPage,
@@ -177,7 +179,7 @@ function Router() {
       </Route>
 
       {/* ========== ADMIN ROUTES (Admin Auth Required) ========== */}
-      <Route path="/admin/sign-in" component={AdminSignInPage} />
+      <Route path="/admin/login" component={AdminSignInPage} />
       <Route path="/admin">
         <AdminGuard>
           <AdminControlRoom />
@@ -250,27 +252,27 @@ function Router() {
       {/* Admin Suppliers */}
       <Route path="/admin/suppliers">
         <AdminGuard>
-          <SuppliersPage />
+          <AdminSuppliers />
         </AdminGuard>
       </Route>
       <Route path="/admin/suppliers/:id">
         {(params) => (
           <AdminGuard>
-            <AdminSupplierDetailPage />
+            <AdminSupplierDetail />
           </AdminGuard>
         )}
       </Route>
 
       {/* Admin Consolidation Points */}
-      <Route path="/admin/consolidation-points">
+      <Route path="/admin/consolidation">
         <AdminGuard>
-          <AdminConsolidationPointsPage />
+          <AdminConsolidationPoints />
         </AdminGuard>
       </Route>
-      <Route path="/admin/consolidation-points/:id">
+      <Route path="/admin/consolidation/:id">
         {(params) => (
           <AdminGuard>
-            <AdminConsolidationPointDetailPage />
+            <AdminConsolidationDetail />
           </AdminGuard>
         )}
       </Route>

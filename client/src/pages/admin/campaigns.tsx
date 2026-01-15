@@ -23,15 +23,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
-  TableRow 
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow
 } from "@/components/ui/table";
-import { Search, RefreshCw, ArrowUp, ArrowDown, Plus, Loader2 } from "lucide-react";
+import { Search, RefreshCw, ArrowUp, ArrowDown, Plus, Loader2, AlertTriangle } from "lucide-react";
 import { format, addDays } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -46,6 +46,15 @@ interface CampaignListItem {
   totalCommitted: number;
   createdAt: string;
   updatedAt?: string;
+  productId?: string | null;
+  supplierId?: string | null;
+  consolidationPointId?: string | null;
+  productName?: string;
+  supplierName?: string;
+  consolidationPointName?: string;
+  productStatus?: string;
+  supplierStatus?: string;
+  consolidationPointStatus?: string;
 }
 
 // Map internal states to spec terminology for display
@@ -115,6 +124,7 @@ export default function CampaignsListPage() {
   const [search, setSearch] = useState("");
   const [stateFilter, setStateFilter] = useState("all");
   const [publishFilter, setPublishFilter] = useState("all");
+  const [prerequisiteFilter, setPrerequisiteFilter] = useState("all");
   const [sortBy, setSortBy] = useState("name");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -173,6 +183,13 @@ export default function CampaignsListPage() {
         const matchesId = c.id.toLowerCase().includes(searchLower);
         if (!matchesTitle && !matchesId) return false;
       }
+
+      if (prerequisiteFilter === "incomplete") {
+        if (c.productId && c.supplierId && c.consolidationPointId) return false;
+      } else if (prerequisiteFilter === "ready") {
+        if (!c.productId || !c.supplierId || !c.consolidationPointId) return false;
+      }
+
       return true;
     })
     .sort((a, b) => {
@@ -270,6 +287,16 @@ export default function CampaignsListPage() {
               <SelectItem value="HIDDEN">Hidden</SelectItem>
             </SelectContent>
           </Select>
+          <Select value={prerequisiteFilter} onValueChange={setPrerequisiteFilter}>
+            <SelectTrigger className="w-[170px]" data-testid="select-prerequisite-filter">
+              <SelectValue placeholder="Prerequisites" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Check: All</SelectItem>
+              <SelectItem value="incomplete">Check: Incomplete</SelectItem>
+              <SelectItem value="ready">Check: Ready</SelectItem>
+            </SelectContent>
+          </Select>
           <Select value={sortBy} onValueChange={setSortBy}>
             <SelectTrigger className="w-[160px]" data-testid="select-sort">
               <SelectValue placeholder="Sort by" />
@@ -319,6 +346,7 @@ export default function CampaignsListPage() {
                       <TableHead>Name</TableHead>
                       <TableHead>Publish</TableHead>
                       <TableHead>Lifecycle</TableHead>
+                      <TableHead>Prerequisites (P/S/C)</TableHead>
                       <TableHead>Deadline</TableHead>
                       <TableHead className="text-right">Commitments</TableHead>
                       <TableHead className="text-right">Escrow Locked</TableHead>
@@ -336,7 +364,12 @@ export default function CampaignsListPage() {
                           data-testid={`row-campaign-${campaign.id}`}
                         >
                           <TableCell className="font-medium max-w-[200px] truncate">
-                            {campaign.title}
+                            <div className="flex items-center gap-2">
+                              {campaign.title}
+                              {publishStatus === "DRAFT" && (!campaign.productId || !campaign.supplierId || !campaign.consolidationPointId) && (
+                                <AlertTriangle className="h-4 w-4 text-amber-500" />
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell>
                             <Badge variant={publishBadge.variant} className="text-xs">
@@ -347,6 +380,34 @@ export default function CampaignsListPage() {
                             <Badge className={STATE_COLORS[campaign.state] || "bg-muted"}>
                               {STATE_DISPLAY_LABELS[campaign.state] || campaign.state}
                             </Badge>
+                          </TableCell>
+                          <TableCell className="max-w-[250px]">
+                            <div className="flex flex-col gap-1 text-[11px]">
+                              <div className="flex items-center gap-1.5 truncate">
+                                <Badge variant="outline" className={`h-4 px-1 text-[10px] ${!campaign.productId ? "border-amber-500 text-amber-600" : (campaign.productStatus === "ARCHIVED" ? "border-red-500 text-red-600" : "border-green-500 text-green-600")}`}>
+                                  P
+                                </Badge>
+                                <span className={!campaign.productId ? "text-muted-foreground italic" : (campaign.productStatus === "ARCHIVED" ? "line-through text-red-500" : "")}>
+                                  {campaign.productName || "Missing"}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1.5 truncate">
+                                <Badge variant="outline" className={`h-4 px-1 text-[10px] ${!campaign.supplierId ? "border-amber-500 text-amber-600" : (campaign.supplierStatus === "ARCHIVED" || campaign.supplierStatus === "INACTIVE" ? "border-red-500 text-red-600" : "border-green-500 text-green-600")}`}>
+                                  S
+                                </Badge>
+                                <span className={!campaign.supplierId ? "text-muted-foreground italic" : (campaign.supplierStatus === "ARCHIVED" || campaign.supplierStatus === "INACTIVE" ? "line-through text-red-500" : "")}>
+                                  {campaign.supplierName || "Missing"}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1.5 truncate">
+                                <Badge variant="outline" className={`h-4 px-1 text-[10px] ${!campaign.consolidationPointId ? "border-amber-500 text-amber-600" : (campaign.consolidationPointStatus === "ARCHIVED" || campaign.consolidationPointStatus === "INACTIVE" ? "border-red-500 text-red-600" : "border-green-500 text-green-600")}`}>
+                                  C
+                                </Badge>
+                                <span className={!campaign.consolidationPointId ? "text-muted-foreground italic" : (campaign.consolidationPointStatus === "ARCHIVED" || campaign.consolidationPointStatus === "INACTIVE" ? "line-through text-red-500" : "")}>
+                                  {campaign.consolidationPointName || "Missing"}
+                                </span>
+                              </div>
+                            </div>
                           </TableCell>
                           <TableCell className="text-sm text-muted-foreground">
                             {format(new Date(campaign.aggregationDeadline), "MMM d, yyyy")}

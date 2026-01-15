@@ -24,32 +24,34 @@ export function Layout({ children }: LayoutProps) {
             <Shield className="w-6 h-6 text-foreground" />
             <span className="font-semibold text-lg tracking-tight" data-testid="logo-text">Alpmera</span>
           </Link>
-          
+
           <nav className="flex items-center gap-4">
-            <Link 
-              href="/" 
+            <Link
+              href="/"
               className={`text-sm font-medium transition-colors ${location === "/" ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}
               data-testid="link-campaigns"
             >
               Campaigns
             </Link>
-            <Link 
-              href="/how-it-works" 
+            <Link
+              href="/how-it-works"
               className={`text-sm font-medium transition-colors ${location === "/how-it-works" ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}
               data-testid="link-how-it-works"
             >
               How It Works
             </Link>
-            <Link 
-              href="/admin" 
-              className="text-muted-foreground hover:text-foreground transition-colors"
-              data-testid="link-admin"
-            >
-              <Settings className="w-5 h-5" />
-            </Link>
-            
+            {isAuthenticated && (
+              <Link
+                href="/account"
+                className="text-muted-foreground hover:text-foreground transition-colors"
+                data-testid="link-account-settings"
+              >
+                <Settings className="w-5 h-5" />
+              </Link>
+            )}
+
             <div className="h-4 w-px bg-border" />
-            
+
             {isLoading ? (
               <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
             ) : isAuthenticated ? (
@@ -78,11 +80,11 @@ export function Layout({ children }: LayoutProps) {
           </nav>
         </div>
       </header>
-      
+
       <main className="pt-16">
         {children}
       </main>
-      
+
       <footer className="border-t border-border py-8 mt-16">
         <div className="max-w-6xl mx-auto px-6">
           <div className="flex items-center justify-between gap-4 text-sm text-muted-foreground">

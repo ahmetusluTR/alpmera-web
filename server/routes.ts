@@ -15,7 +15,13 @@ import {
   escrowLedger,
   commitments,
   campaigns,
-  campaignAdminEvents
+  campaignAdminEvents,
+  insertProductSchema,
+  updateProductSchema,
+  insertSupplierSchema,
+  updateSupplierSchema,
+  insertConsolidationPointSchema,
+  updateConsolidationPointSchema
 } from "@shared/schema";
 import { z } from "zod";
 import { eq, desc } from "drizzle-orm";
@@ -127,6 +133,11 @@ function validateCampaignPublishable(campaign: any): { ok: boolean; missing: str
   if (campaign.deliveryStrategy === "SUPPLIER_DIRECT" && !campaign.supplierDirectConfirmed) {
     missing.push("supplierDirectConfirmed");
   }
+
+  // Prerequisites validation (Phase 1.5)
+  if (!campaign.productId) missing.push("productId");
+  if (!campaign.supplierId) missing.push("supplierId");
+  if (!campaign.consolidationPointId) missing.push("consolidationPointId");
 
   return { ok: missing.length === 0, missing };
 }
@@ -338,6 +349,19 @@ export async function registerRoutes(
     });
   });
 
+  // ============================================
+  // ADMIN SECURITY BARRIER
+  // ============================================
+  // Enforce admin authentication for ALL /api/admin routes
+  // Except explicit allowlist (login/logout/session checks)
+  app.use("/api/admin", (req, res, next) => {
+    const path = req.path.replace(/\/$/, ""); // trim trailing slash
+    if (["/login", "/logout", "/session"].includes(path)) {
+      return next();
+    }
+    requireAdminAuth(req, res, next);
+  });
+
   // Register object storage routes for file uploads
   registerObjectStorageRoutes(app);
 
@@ -397,6 +421,285 @@ export async function registerRoutes(
       console.log(`[ADMIN] Logout: ${username}`);
       res.json({ success: true, message: "Logged out successfully" });
     });
+  });
+
+  // ============================================
+  // ADMIN PRODUCT MANAGEMENT (Protected)
+  // ============================================
+
+  // LIST PRODUCTS
+  app.get("/api/admin/products", async (req, res) => {
+    try {
+      const products = await storage.getProducts();
+      res.json(products);
+    } catch (error) {
+      console.error("[ADMIN] Error listing products:", error);
+      res.status(500).json({ error: "Failed to list products" });
+    }
+  });
+
+  // CREATE PRODUCT
+  app.post("/api/admin/products", async (req, res) => {
+    try {
+      const parsed = insertProductSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: "Invalid product data",
+          details: parsed.error.flatten()
+        });
+      }
+
+      // Check unique SKU
+      const existing = await storage.getProductBySku(parsed.data.sku);
+      if (existing) {
+        return res.status(409).json({
+          error: "SKU conflict",
+          message: `Product with SKU '${parsed.data.sku}' already exists.`
+        });
+      }
+
+      const product = await storage.createProduct(parsed.data);
+      console.log(`[ADMIN] Created product: ${product.sku} (${product.name})`);
+      res.status(201).json(product);
+    } catch (error) {
+      console.error("[ADMIN] Error creating product:", error);
+      res.status(500).json({ error: "Failed to create product" });
+    }
+  });
+
+  // GET PRODUCT BY ID
+  app.get("/api/admin/products/:id", async (req, res) => {
+    try {
+      const product = await storage.getProduct(req.params.id);
+      if (!product) {
+        return res.status(404).json({ error: "Product not found" });
+      }
+      res.json(product);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch product" });
+    }
+  });
+
+  // UPDATE PRODUCT
+  app.patch("/api/admin/products/:id", async (req, res) => {
+    try {
+      const parsed = updateProductSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: "Invalid update data",
+          details: parsed.error.flatten()
+        });
+      }
+
+      const updated = await storage.updateProduct(req.params.id, parsed.data);
+      if (!updated) {
+        return res.status(404).json({ error: "Product not found" });
+      }
+
+      console.log(`[ADMIN] Updated product: ${updated.sku}`);
+      res.json(updated);
+    } catch (error) {
+      console.error("[ADMIN] Error updating product:", error);
+      res.status(500).json({ error: "Failed to update product" });
+    }
+  });
+
+  // ARCHIVE PRODUCT (Soft Delete)
+  app.delete("/api/admin/products/:id", async (req, res) => {
+    try {
+      const archived = await storage.archiveProduct(req.params.id);
+      if (!archived) {
+        return res.status(404).json({ error: "Product not found" });
+      }
+      console.log(`[ADMIN] Archived product: ${archived.sku}`);
+      res.json({ success: true, message: "Product archived" });
+    } catch (error) {
+      console.error("[ADMIN] Error archiving product:", error);
+      res.status(500).json({ error: "Failed to archive product" });
+    }
+  });
+
+  // ============================================
+  // ADMIN SUPPLIER MANAGEMENT (Protected)
+  // ============================================
+
+  // LIST SUPPLIERS
+  app.get("/api/admin/suppliers", async (req, res) => {
+    try {
+      const suppliers = await storage.getSuppliers();
+      res.json(suppliers);
+    } catch (error) {
+      console.error("[ADMIN] Error listing suppliers:", error);
+      res.status(500).json({ error: "Failed to list suppliers" });
+    }
+  });
+
+  // CREATE SUPPLIER
+  app.post("/api/admin/suppliers", async (req, res) => {
+    try {
+      const parsed = insertSupplierSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: "Invalid supplier data",
+          details: parsed.error.flatten()
+        });
+      }
+
+      const supplier = await storage.createSupplier(parsed.data);
+      console.log(`[ADMIN] Created supplier: ${supplier.id} (${supplier.name})`);
+      res.status(201).json(supplier);
+    } catch (error) {
+      console.error("[ADMIN] Error creating supplier:", error);
+      res.status(500).json({ error: "Failed to create supplier" });
+    }
+  });
+
+  // GET SUPPLIER BY ID
+  app.get("/api/admin/suppliers/:id", async (req, res) => {
+    try {
+      const supplier = await storage.getSupplier(req.params.id);
+      if (!supplier) {
+        return res.status(404).json({ error: "Supplier not found" });
+      }
+      res.json(supplier);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch supplier" });
+    }
+  });
+
+  // UPDATE SUPPLIER
+  app.patch("/api/admin/suppliers/:id", async (req, res) => {
+    try {
+      console.log(`[ADMIN] UPDATING SUPPLIER ${req.params.id} ...`);
+      console.log(`[ADMIN] RAW BODY:`, JSON.stringify(req.body, null, 2));
+
+      const parsed = updateSupplierSchema.safeParse(req.body);
+      if (!parsed.success) {
+        console.error("[ADMIN] Validation failed:", parsed.error.format());
+        return res.status(400).json({
+          error: "Invalid update data",
+          details: parsed.error.flatten()
+        });
+      }
+
+      console.log(`[ADMIN] PARSED DATA:`, JSON.stringify(parsed.data, null, 2));
+      const updated = await storage.updateSupplier(req.params.id, parsed.data);
+      if (!updated) {
+        return res.status(404).json({ error: "Supplier not found" });
+      }
+
+      console.log(`[ADMIN] DB RESULT:`, JSON.stringify(updated, null, 2));
+      res.json(updated);
+    } catch (error) {
+      console.error("[ADMIN] Error updating supplier:", error);
+      res.status(500).json({ error: "Failed to update supplier" });
+    }
+  });
+
+  // ARCHIVE SUPPLIER
+  app.delete("/api/admin/suppliers/:id", async (req, res) => {
+    try {
+      const archived = await storage.archiveSupplier(req.params.id);
+      if (!archived) {
+        return res.status(404).json({ error: "Supplier not found" });
+      }
+      res.json(archived);
+    } catch (error) {
+      console.error("[ADMIN] Error archiving supplier:", error);
+      res.status(500).json({ error: "Failed to archive supplier" });
+    }
+  });
+
+
+  // ============================================
+  // ADMIN CONSOLIDATION POINTS (Protected)
+  // ============================================
+
+  // LIST CONSOLIDATION POINTS
+  app.get("/api/admin/consolidation-points", async (req, res) => {
+    try {
+      const points = await storage.getConsolidationPoints();
+      res.json(points);
+    } catch (error) {
+      console.error("[ADMIN] Error listing consolidation points:", error);
+      res.status(500).json({ error: "Failed to list consolidation points" });
+    }
+  });
+
+  // CREATE CONSOLIDATION POINT
+  app.post("/api/admin/consolidation-points", async (req, res) => {
+    try {
+      const parsed = insertConsolidationPointSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: "Invalid consolidation point data",
+          details: parsed.error.flatten()
+        });
+      }
+
+      const point = await storage.createConsolidationPoint(parsed.data);
+      res.status(201).json(point);
+    } catch (error) {
+      console.error("[ADMIN] Error creating consolidation point:", error);
+      res.status(500).json({ error: "Failed to create consolidation point" });
+    }
+  });
+
+  // GET CONSOLIDATION POINT BY ID
+  app.get("/api/admin/consolidation-points/:id", async (req, res) => {
+    try {
+      const point = await storage.getConsolidationPoint(req.params.id);
+      if (!point) {
+        return res.status(404).json({ error: "Consolidation point not found" });
+      }
+      res.json(point);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch consolidation point" });
+    }
+  });
+
+  // UPDATE CONSOLIDATION POINT
+  app.patch("/api/admin/consolidation-points/:id", async (req, res) => {
+    try {
+      console.log(`[ADMIN] UPDATING CONSOLIDATION POINT ${req.params.id} ...`);
+      console.log(`[ADMIN] RAW BODY:`, JSON.stringify(req.body, null, 2));
+
+      const parsed = updateConsolidationPointSchema.safeParse(req.body);
+      if (!parsed.success) {
+        console.error("[ADMIN] Validation failed:", parsed.error.format());
+        return res.status(400).json({
+          error: "Invalid update data",
+          details: parsed.error.flatten()
+        });
+      }
+
+      console.log(`[ADMIN] PARSED DATA:`, JSON.stringify(parsed.data, null, 2));
+      const updated = await storage.updateConsolidationPoint(req.params.id, parsed.data);
+      if (!updated) {
+        return res.status(404).json({ error: "Consolidation point not found" });
+      }
+
+      console.log(`[ADMIN] DB RESULT:`, JSON.stringify(updated, null, 2));
+      res.json(updated);
+    } catch (error) {
+      console.error("[ADMIN] Error updating consolidation point:", error);
+      res.status(500).json({ error: "Failed to update consolidation point" });
+    }
+  });
+
+  // ARCHIVE CONSOLIDATION POINT
+  app.delete("/api/admin/consolidation-points/:id", async (req, res) => {
+    try {
+      const archived = await storage.archiveConsolidationPoint(req.params.id);
+      if (!archived) {
+        return res.status(404).json({ error: "Consolidation point not found" });
+      }
+      console.log(`[ADMIN] Archived consolidation point: ${archived.id}`);
+      res.json({ success: true, message: "Consolidation point archived" });
+    } catch (error) {
+      console.error("[ADMIN] Error archiving consolidation point:", error);
+      res.status(500).json({ error: "Failed to archive consolidation point" });
+    }
   });
 
   // Check admin session status
@@ -1297,7 +1600,7 @@ export async function registerRoutes(
       }
 
       const { sku, name, brand, modelNumber, variant, category, shortDescription,
-        specs, primaryImageUrl, galleryImageUrls, newReferencePrice, internalNotes } = req.body;
+        specs, primaryImageUrl, galleryImageUrls, newReferencePrice, referencePrices, internalNotes } = req.body;
 
       // If SKU is changing, validate it's not a duplicate
       if (sku && sku.trim() !== product.sku) {
@@ -1310,10 +1613,31 @@ export async function registerRoutes(
         }
       }
 
-      // Handle append-only reference prices
+      // Handle reference prices
       let updatedReferencePrices = product.referencePrices;
-      if (newReferencePrice) {
-        // Validate new reference price
+
+      // 1. If FULL referencePrices array is provided, use it (Full Override Mode)
+      if (referencePrices !== undefined) {
+        if (Array.isArray(referencePrices)) {
+          // Basic validation of entries
+          for (const price of referencePrices) {
+            if (!price.amount || price.amount <= 0) {
+              return res.status(400).json({ error: "All reference prices must have a positive amount" });
+            }
+            if (!price.sourceType) {
+              return res.status(400).json({ error: "All reference prices must have a sourceType" });
+            }
+          }
+          updatedReferencePrices = JSON.stringify(referencePrices);
+        } else if (referencePrices === null) {
+          updatedReferencePrices = null;
+        } else {
+          updatedReferencePrices = typeof referencePrices === "string" ? referencePrices : JSON.stringify(referencePrices);
+        }
+      }
+      // 2. If ONLY newReferencePrice is provided, append it (Legacy/Incremental Mode)
+      else if (newReferencePrice) {
+        // ... rest of append logic
         if (!newReferencePrice.amount || newReferencePrice.amount <= 0) {
           return res.status(400).json({ error: "Reference price amount is required and must be positive" });
         }
@@ -1324,7 +1648,6 @@ export async function registerRoutes(
           return res.status(400).json({ error: "Invalid sourceType. Must be MSRP, RETAILER_LISTING, SUPPLIER_QUOTE, or OTHER" });
         }
 
-        // Parse existing prices
         let existingPrices: any[] = [];
         if (product.referencePrices) {
           try {
@@ -1336,7 +1659,6 @@ export async function registerRoutes(
           }
         }
 
-        // Append new price (append-only, never overwrite)
         const priceEntry = {
           amount: newReferencePrice.amount,
           currency: newReferencePrice.currency || "USD",
@@ -1946,6 +2268,10 @@ export async function registerRoutes(
         consolidationPhone: consolidationPhone?.trim() || null,
         deliveryWindow: deliveryWindow?.trim() || null,
         fulfillmentNotes: fulfillmentNotes?.trim() || null,
+        // Prerequisites
+        productId: req.body.productId || null,
+        supplierId: req.body.supplierId || null,
+        consolidationPointId: req.body.consolidationPointId || null,
       });
 
       const campaignResult = await db.select().from(campaigns).where(eq(campaigns.id, campaignId)).limit(1);
@@ -2008,6 +2334,9 @@ export async function registerRoutes(
     consolidationPostalCode: z.string().optional(),
     consolidationCountry: z.string().optional(),
     consolidationPhone: z.string().optional(),
+    productId: z.string().uuid().nullable().optional(),
+    supplierId: z.string().uuid().nullable().optional(),
+    consolidationPointId: z.string().uuid().nullable().optional(),
   }).strict();
 
   // Admin: Update campaign (PATCH for editable fields)
@@ -2041,7 +2370,8 @@ export async function registerRoutes(
         "consolidationContactName", "consolidationCompany", "consolidationContactEmail",
         "consolidationAddressLine1", "consolidationAddressLine2",
         "consolidationCity", "consolidationState", "consolidationPostalCode",
-        "consolidationCountry", "consolidationPhone"
+        "consolidationCountry", "consolidationPhone",
+        "productId", "supplierId", "consolidationPointId"
       ];
 
       // Published campaigns cannot edit core fields or deliveryStrategy
@@ -2093,6 +2423,15 @@ export async function registerRoutes(
         participantCount: c.participantCount,
         totalCommitted: c.totalCommitted,
         createdAt: c.createdAt,
+        productId: (c as any).productId,
+        supplierId: (c as any).supplierId,
+        consolidationPointId: (c as any).consolidationPointId,
+        productName: (c as any).productName,
+        supplierName: (c as any).supplierName,
+        consolidationPointName: (c as any).consolidationPointName,
+        productStatus: (c as any).productStatus,
+        supplierStatus: (c as any).supplierStatus,
+        consolidationPointStatus: (c as any).consolidationPointStatus,
       })));
     } catch (error) {
       console.error("Error fetching admin campaigns:", error);
@@ -2120,7 +2459,6 @@ export async function registerRoutes(
         // Core fields
         minCommitment: campaignData?.minCommitment,
         sku: campaignData?.sku,
-        productName: campaignData?.productName,
         // Product details
         brand: campaignData?.brand,
         modelNumber: campaignData?.modelNumber,
@@ -2148,6 +2486,16 @@ export async function registerRoutes(
         consolidationPhone: campaignData?.consolidationPhone,
         deliveryWindow: campaignData?.deliveryWindow,
         fulfillmentNotes: campaignData?.fulfillmentNotes,
+        // Prerequisites
+        productId: campaignData?.productId,
+        supplierId: campaignData?.supplierId,
+        consolidationPointId: campaignData?.consolidationPointId,
+        productName: (campaign as any).productName,
+        supplierName: (campaign as any).supplierName,
+        consolidationPointName: (campaign as any).consolidationPointName,
+        productStatus: (campaign as any).productStatus,
+        supplierStatus: (campaign as any).supplierStatus,
+        consolidationPointStatus: (campaign as any).consolidationPointStatus,
         // Publish tracking
         publishedAt: campaignData?.publishedAt,
         publishedByAdminId: campaignData?.publishedByAdminId,

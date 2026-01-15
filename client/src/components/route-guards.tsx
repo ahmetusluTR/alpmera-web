@@ -44,7 +44,7 @@ export function AdminGuard({ children }: GuardProps) {
   }
 
   if (!isAdmin) {
-    return <Redirect to="/admin/sign-in" />;
+    return <Redirect to="/admin/login" />;
   }
 
   return <>{children}</>;

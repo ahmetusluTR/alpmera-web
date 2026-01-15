@@ -7,14 +7,12 @@ import { z } from "zod";
 // USER AUTHENTICATION & PROFILE TABLES
 // ============================================
 
-// Users table - core user identity
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   email: text("email").notNull().unique(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// User profiles - extended user information for delivery
 export const userProfiles = pgTable("user_profiles", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id).unique(),
@@ -29,7 +27,6 @@ export const userProfiles = pgTable("user_profiles", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-// User sessions - for persistent login (httpOnly cookie-based)
 export const userSessions = pgTable("user_sessions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id),
@@ -38,64 +35,83 @@ export const userSessions = pgTable("user_sessions", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// Auth codes - temporary codes for passwordless login
 export const authCodes = pgTable("auth_codes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   email: text("email").notNull(),
-  codeHash: text("code_hash").notNull(), // bcrypt hashed 6-digit code
+  codeHash: text("code_hash").notNull(),
   expiresAt: timestamp("expires_at").notNull(),
   used: boolean("used").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// ============================================
-// EXTERNAL SESSION TABLE (connect-pg-simple)
-// ============================================
-// This table is managed by connect-pg-simple for express-session.
-// We declare it here as a stub so Drizzle doesn't try to drop it.
-// DO NOT modify this table via Drizzle migrations.
 export const session = pgTable("session", {
   sid: varchar("sid").primaryKey(),
   sess: text("sess").notNull(),
   expire: timestamp("expire", { precision: 6 }).notNull(),
 });
 
+// ============================================
+// SUPPLIERS TABLE (Admin-only)
+// ============================================
+
+export const supplierStatusEnum = pgEnum("supplier_status", ["ACTIVE", "INACTIVE", "ARCHIVED"]);
+
+export const suppliers = pgTable("suppliers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  contactName: text("contact_name"),
+  contactEmail: text("contact_email"),
+  phone: text("phone"),
+  website: text("website"),
+  region: text("region"),
+  notes: text("notes"),
+  status: supplierStatusEnum("status").notNull().default("ACTIVE"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// ============================================
+// CONSOLIDATION POINTS TABLE (Admin-only)
+// ============================================
+
+export const consolidationPointStatusEnum = pgEnum("consolidation_point_status", ["ACTIVE", "INACTIVE", "ARCHIVED"]);
+
+export const consolidationPoints = pgTable("consolidation_points", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  addressLine1: text("address_line1"),
+  addressLine2: text("address_line2"),
+  city: text("city"),
+  state: text("state"),
+  postalCode: text("postal_code"),
+  country: text("country"),
+  status: consolidationPointStatusEnum("status").notNull().default("ACTIVE"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
 
 // ============================================
 // PRODUCTS TABLE (Admin-only catalog)
 // ============================================
 
-// Product Status enum
-export const productStatusEnum = pgEnum("product_status", [
-  "ACTIVE",
-  "ARCHIVED"
-]);
+export const productStatusEnum = pgEnum("product_status", ["ACTIVE", "ARCHIVED"]);
 
-// Products table - stable product metadata (admin-only)
-// Products define WHAT an item is. Campaigns define WHEN/HOW coordination happens.
 export const products = pgTable("products", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  // Identity (required)
   sku: text("sku").notNull().unique(),
   name: text("name").notNull(),
-  // Descriptive metadata (optional)
   brand: text("brand"),
   modelNumber: text("model_number"),
   variant: text("variant"),
   category: text("category"),
-  shortDescription: text("short_description"), // max ~500 chars
-  // Specifications (JSON array of { key: string, value: string })
+  shortDescription: text("short_description"),
   specs: text("specs"),
-  // Media
   primaryImageUrl: text("primary_image_url"),
-  galleryImageUrls: text("gallery_image_urls"), // JSON array of strings
-  // Reference prices (append-only JSON array)
-  // Each entry: { amount, currency, sourceType, sourceNameOrUrl?, capturedAt, capturedBy, note? }
+  galleryImageUrls: text("gallery_image_urls"),
   referencePrices: text("reference_prices"),
-  // Internal
-  internalNotes: text("internal_notes"), // admin-only
+  internalNotes: text("internal_notes"),
   status: productStatusEnum("status").notNull().default("ACTIVE"),
-  // Timestamps
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -104,52 +120,11 @@ export const products = pgTable("products", {
 // CAMPAIGN TABLES
 // ============================================
 
-// Campaign State Machine: AGGREGATION → SUCCESS/FAILED → FULFILLMENT → RELEASED
+export const campaignStateEnum = pgEnum("campaign_state", ["AGGREGATION", "SUCCESS", "FAILED", "FULFILLMENT", "RELEASED"]);
+export const commitmentStatusEnum = pgEnum("commitment_status", ["LOCKED", "REFUNDED", "RELEASED"]);
+export const escrowEntryTypeEnum = pgEnum("escrow_entry_type", ["LOCK", "REFUND", "RELEASE"]);
+export const adminPublishStatusEnum = pgEnum("admin_publish_status", ["DRAFT", "PUBLISHED", "HIDDEN"]);
 
-export const campaignStateEnum = pgEnum("campaign_state", [
-  "AGGREGATION",
-  "SUCCESS",
-  "FAILED",
-  "FULFILLMENT",
-  "RELEASED"
-]);
-
-// Commitment Status
-export const commitmentStatusEnum = pgEnum("commitment_status", [
-  "LOCKED",
-  "REFUNDED",
-  "RELEASED"
-]);
-
-// Escrow Entry Types (append-only ledger)
-export const escrowEntryTypeEnum = pgEnum("escrow_entry_type", [
-  "LOCK",
-  "REFUND",
-  "RELEASE"
-]);
-
-// Admin Publish Status (separate from campaign state machine)
-// Controls visibility in public UI and editability in admin
-export const adminPublishStatusEnum = pgEnum("admin_publish_status", [
-  "DRAFT",
-  "PUBLISHED",
-  "HIDDEN"
-]);
-
-// Delivery Strategy enum
-export const deliveryStrategyEnum = pgEnum("delivery_strategy", [
-  "SUPPLIER_DIRECT",
-  "CONSOLIDATION_POINT"
-]);
-
-// Delivery Cost Handling enum
-export const deliveryCostHandlingEnum = pgEnum("delivery_cost_handling", [
-  "INCLUDED_IN_UNIT_PRICE",
-  "SEPARATE_POST_CAMPAIGN",
-  "SUPPLIER_COVERED"
-]);
-
-// Campaigns table
 export const campaigns = pgTable("campaigns", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   title: text("title").notNull(),
@@ -165,33 +140,25 @@ export const campaigns = pgTable("campaigns", {
   supplierAccepted: boolean("supplier_accepted").default(false),
   supplierAcceptedAt: timestamp("supplier_accepted_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-  // Admin publish status (separate from state machine)
   adminPublishStatus: adminPublishStatusEnum("admin_publish_status").notNull().default("DRAFT"),
   publishedAt: timestamp("published_at"),
   publishedByAdminId: text("published_by_admin_id"),
-  // SKU and product identification
   sku: text("sku"),
   productName: text("product_name"),
-  // Product details
   brand: text("brand"),
   modelNumber: text("model_number"),
   variant: text("variant"),
   shortDescription: text("short_description"),
-  specs: text("specs"), // JSON: array of { key: string, value: string }
-  variations: text("variations"), // JSON: array of { name: string, attributes: { key: value } }
-  // Target in UNITS (primary for Phase 1.5+)
+  specs: text("specs"),
+  variations: text("variations"),
   targetUnits: integer("target_units"),
-  // Images
   primaryImageUrl: text("primary_image_url"),
-  galleryImageUrls: text("gallery_image_urls"), // JSON: array of strings
-  media: text("media"), // JSON: array of { url: string, altText?: string, sortOrder: number }
-  // Reference prices (for transparency)
-  referencePrices: text("reference_prices"), // JSON: array of { amount, currency, source, url?, capturedAt?, note? }
-  // Delivery strategy
-  deliveryStrategy: text("delivery_strategy").default("SUPPLIER_DIRECT"), // SUPPLIER_DIRECT | CONSOLIDATION_POINT
-  deliveryCostHandling: text("delivery_cost_handling"), // INCLUDED_IN_UNIT_PRICE | SEPARATE_POST_CAMPAIGN | SUPPLIER_COVERED
+  galleryImageUrls: text("gallery_image_urls"),
+  media: text("media"),
+  referencePrices: text("reference_prices"),
+  deliveryStrategy: text("delivery_strategy").default("SUPPLIER_DIRECT"),
+  deliveryCostHandling: text("delivery_cost_handling"),
   supplierDirectConfirmed: boolean("supplier_direct_confirmed").default(false),
-  // Consolidation fields (editable while published, locked in fulfillment phase)
   consolidationContactName: text("consolidation_contact_name"),
   consolidationCompany: text("consolidation_company"),
   consolidationContactEmail: text("consolidation_contact_email"),
@@ -204,15 +171,17 @@ export const campaigns = pgTable("campaigns", {
   consolidationPhone: text("consolidation_phone"),
   deliveryWindow: text("delivery_window"),
   fulfillmentNotes: text("fulfillment_notes"),
+  productId: varchar("product_id").references(() => products.id),
+  supplierId: varchar("supplier_id").references(() => suppliers.id),
+  consolidationPointId: varchar("consolidation_point_id").references(() => consolidationPoints.id),
 });
 
-// Commitments table - user commitments to campaigns
 export const commitments = pgTable("commitments", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   campaignId: varchar("campaign_id").notNull().references(() => campaigns.id),
-  userId: varchar("user_id").references(() => users.id), // nullable FK - new commitments attach user_id when logged in
+  userId: varchar("user_id").references(() => users.id),
   participantName: text("participant_name").notNull(),
-  participantEmail: text("participant_email").notNull(), // kept for legacy/audit
+  participantEmail: text("participant_email").notNull(),
   amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
   quantity: integer("quantity").notNull(),
   status: commitmentStatusEnum("status").notNull().default("LOCKED"),
@@ -220,21 +189,17 @@ export const commitments = pgTable("commitments", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// Escrow Ledger - append-only record of all fund movements
-// Balances are DERIVED by summing entries, not stored (append-only ledger pattern)
-// Both actor and reason are REQUIRED for Phase 1 auditability
 export const escrowLedger = pgTable("escrow_ledger", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   commitmentId: varchar("commitment_id").notNull().references(() => commitments.id),
   campaignId: varchar("campaign_id").notNull().references(() => campaigns.id),
   entryType: escrowEntryTypeEnum("entry_type").notNull(),
   amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
-  actor: text("actor").notNull(), // Who performed this action (user email, admin username, or 'system')
-  reason: text("reason").notNull(), // Required audit reason (commitment_created, admin_refund, admin_release, etc.)
+  actor: text("actor").notNull(),
+  reason: text("reason").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// Supplier Acceptances - records when supplier accepts a successful campaign
 export const supplierAcceptances = pgTable("supplier_acceptances", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   campaignId: varchar("campaign_id").notNull().references(() => campaigns.id),
@@ -243,7 +208,6 @@ export const supplierAcceptances = pgTable("supplier_acceptances", {
   notes: text("notes"),
 });
 
-// Admin Action Log - audit trail for all admin actions
 export const adminActionLogs = pgTable("admin_action_logs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   campaignId: varchar("campaign_id").references(() => campaigns.id),
@@ -256,33 +220,24 @@ export const adminActionLogs = pgTable("admin_action_logs", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// Campaign Admin Events - append-only audit log for campaign changes
-// Tracks CREATED, UPDATED, PUBLISHED events with changed fields
-export const campaignAdminEventsEnum = pgEnum("campaign_admin_event_type", [
-  "CREATED",
-  "UPDATED",
-  "PUBLISHED"
-]);
+export const campaignAdminEventsEnum = pgEnum("campaign_admin_event_type", ["CREATED", "UPDATED", "PUBLISHED"]);
 
 export const campaignAdminEvents = pgTable("campaign_admin_events", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   campaignId: varchar("campaign_id").notNull().references(() => campaigns.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-  adminId: text("admin_id").notNull(), // admin email or username
+  adminId: text("admin_id").notNull(),
   eventType: campaignAdminEventsEnum("event_type").notNull(),
-  changedFields: text("changed_fields"), // JSON array of field names that changed
+  changedFields: text("changed_fields"),
   note: text("note"),
 });
 
-// Idempotency Keys - prevent duplicate money-affecting operations
-// Keys are scoped (key + scope unique) to allow key reuse across different operations
-// Keys are retained indefinitely for auditability (no TTL expiration)
 export const idempotencyKeys = pgTable("idempotency_keys", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   key: text("key").notNull(),
   scope: text("scope").notNull(),
   requestHash: text("request_hash"),
-  response: text("response"), // JSON string of cached response
+  response: text("response"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -294,170 +249,154 @@ export const usersRelations = relations(users, ({ one, many }) => ({
 }));
 
 export const userProfilesRelations = relations(userProfiles, ({ one }) => ({
-  user: one(users, {
-    fields: [userProfiles.userId],
-    references: [users.id],
-  }),
+  user: one(users, { fields: [userProfiles.userId], references: [users.id] }),
 }));
 
 export const userSessionsRelations = relations(userSessions, ({ one }) => ({
-  user: one(users, {
-    fields: [userSessions.userId],
-    references: [users.id],
-  }),
+  user: one(users, { fields: [userSessions.userId], references: [users.id] }),
 }));
 
-export const campaignsRelations = relations(campaigns, ({ many }) => ({
+export const campaignsRelations = relations(campaigns, ({ one, many }) => ({
   commitments: many(commitments),
   escrowEntries: many(escrowLedger),
   supplierAcceptances: many(supplierAcceptances),
   adminLogs: many(adminActionLogs),
+  product: one(products, { fields: [campaigns.productId], references: [products.id] }),
+  supplier: one(suppliers, { fields: [campaigns.supplierId], references: [suppliers.id] }),
+  consolidationPoint: one(consolidationPoints, { fields: [campaigns.consolidationPointId], references: [consolidationPoints.id] }),
 }));
 
 export const commitmentsRelations = relations(commitments, ({ one, many }) => ({
-  campaign: one(campaigns, {
-    fields: [commitments.campaignId],
-    references: [campaigns.id],
-  }),
-  user: one(users, {
-    fields: [commitments.userId],
-    references: [users.id],
-  }),
+  campaign: one(campaigns, { fields: [commitments.campaignId], references: [campaigns.id] }),
+  user: one(users, { fields: [commitments.userId], references: [users.id] }),
   escrowEntries: many(escrowLedger),
 }));
 
 export const escrowLedgerRelations = relations(escrowLedger, ({ one }) => ({
-  commitment: one(commitments, {
-    fields: [escrowLedger.commitmentId],
-    references: [commitments.id],
-  }),
-  campaign: one(campaigns, {
-    fields: [escrowLedger.campaignId],
-    references: [campaigns.id],
-  }),
+  commitment: one(commitments, { fields: [escrowLedger.commitmentId], references: [commitments.id] }),
+  campaign: one(campaigns, { fields: [escrowLedger.campaignId], references: [campaigns.id] }),
 }));
 
 export const supplierAcceptancesRelations = relations(supplierAcceptances, ({ one }) => ({
-  campaign: one(campaigns, {
-    fields: [supplierAcceptances.campaignId],
-    references: [campaigns.id],
-  }),
+  campaign: one(campaigns, { fields: [supplierAcceptances.campaignId], references: [campaigns.id] }),
 }));
 
 export const adminActionLogsRelations = relations(adminActionLogs, ({ one }) => ({
-  campaign: one(campaigns, {
-    fields: [adminActionLogs.campaignId],
-    references: [campaigns.id],
-  }),
-  commitment: one(commitments, {
-    fields: [adminActionLogs.commitmentId],
-    references: [commitments.id],
-  }),
+  campaign: one(campaigns, { fields: [adminActionLogs.campaignId], references: [campaigns.id] }),
+  commitment: one(commitments, { fields: [adminActionLogs.commitmentId], references: [commitments.id] }),
 }));
 
 export const campaignAdminEventsRelations = relations(campaignAdminEvents, ({ one }) => ({
-  campaign: one(campaigns, {
-    fields: [campaignAdminEvents.campaignId],
-    references: [campaigns.id],
-  }),
+  campaign: one(campaigns, { fields: [campaignAdminEvents.campaignId], references: [campaigns.id] }),
 }));
 
-// Insert Schemas
+// Schemas
+export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
+export const insertUserProfileSchema = createInsertSchema(userProfiles).omit({ id: true, updatedAt: true });
+export const updateUserProfileSchema = insertUserProfileSchema.partial().omit({ userId: true });
+export const insertUserSessionSchema = createInsertSchema(userSessions).omit({ id: true, createdAt: true });
+export const insertAuthCodeSchema = createInsertSchema(authCodes).omit({ id: true, createdAt: true });
+
+export const insertProductSchema = createInsertSchema(products).omit({ id: true, createdAt: true, updatedAt: true, status: true });
+export const updateProductSchema = z.object({
+  sku: z.string().optional(),
+  name: z.string().min(2).optional(),
+  brand: z.string().nullable().optional(),
+  modelNumber: z.string().nullable().optional(),
+  variant: z.string().nullable().optional(),
+  category: z.string().nullable().optional(),
+  shortDescription: z.string().nullable().optional(),
+  specs: z.string().nullable().optional(),
+  primaryImageUrl: z.string().nullable().optional(),
+  galleryImageUrls: z.string().nullable().optional(),
+  referencePrices: z.string().nullable().optional(),
+  internalNotes: z.string().nullable().optional(),
+  status: z.enum(["ACTIVE", "ARCHIVED"]).optional(),
+});
+
+export const insertSupplierSchema = createInsertSchema(suppliers).omit({ id: true, createdAt: true, updatedAt: true });
+export const updateSupplierSchema = z.object({
+  name: z.string().min(2).optional(),
+  contactName: z.string().nullable().optional(),
+  contactEmail: z.string().email().nullable().optional().or(z.literal("")),
+  phone: z.string().nullable().optional(),
+  website: z.string().nullable().optional(),
+  region: z.string().nullable().optional(),
+  notes: z.string().nullable().optional(),
+  status: z.enum(["ACTIVE", "INACTIVE", "ARCHIVED"]).optional(),
+});
+
+export const insertConsolidationPointSchema = createInsertSchema(consolidationPoints).omit({ id: true, createdAt: true, updatedAt: true });
+export const updateConsolidationPointSchema = z.object({
+  name: z.string().min(2).optional(),
+  addressLine1: z.string().nullable().optional(),
+  addressLine2: z.string().nullable().optional(),
+  city: z.string().nullable().optional(),
+  state: z.string().nullable().optional(),
+  postalCode: z.string().nullable().optional(),
+  country: z.string().nullable().optional(),
+  status: z.enum(["ACTIVE", "INACTIVE", "ARCHIVED"]).optional(),
+  notes: z.string().nullable().optional(),
+});
+
 export const insertCampaignSchema = createInsertSchema(campaigns).omit({
   id: true,
   createdAt: true,
   supplierAcceptedAt: true,
+}).extend({
+  targetAmount: z.string().or(z.number()).transform(v => v.toString()),
+  minCommitment: z.string().or(z.number()).transform(v => v.toString()),
+  maxCommitment: z.string().or(z.number()).nullable().transform(v => v?.toString()),
+  unitPrice: z.string().or(z.number()).transform(v => v.toString()),
+  aggregationDeadline: z.coerce.date(),
 });
+export const updateCampaignSchema = insertCampaignSchema.partial();
 
-export const insertCommitmentSchema = createInsertSchema(commitments).omit({
-  id: true,
-  createdAt: true,
-  status: true,
-  referenceNumber: true,
-});
-
-export const insertEscrowEntrySchema = createInsertSchema(escrowLedger).omit({
-  id: true,
-  createdAt: true,
-});
-
-export const insertSupplierAcceptanceSchema = createInsertSchema(supplierAcceptances).omit({
-  id: true,
-  acceptedAt: true,
-});
-
-export const insertAdminActionLogSchema = createInsertSchema(adminActionLogs).omit({
-  id: true,
-  createdAt: true,
-});
-
-export const insertIdempotencyKeySchema = createInsertSchema(idempotencyKeys).omit({
-  id: true,
-  createdAt: true,
-});
-
-export const insertCampaignAdminEventSchema = createInsertSchema(campaignAdminEvents).omit({
-  id: true,
-  createdAt: true,
-});
-
-// Product insert/update schemas
-export const insertProductSchema = createInsertSchema(products).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-  status: true, // defaults to ACTIVE
-});
-
-export const updateProductSchema = insertProductSchema.partial();
-
-// User-related insert schemas
-export const insertUserSchema = createInsertSchema(users).omit({
-  id: true,
-  createdAt: true,
-});
-
-export const insertUserProfileSchema = createInsertSchema(userProfiles).omit({
-  id: true,
-  updatedAt: true,
-});
-
-export const updateUserProfileSchema = insertUserProfileSchema.partial().omit({
-  userId: true,
-});
-
-export const insertUserSessionSchema = createInsertSchema(userSessions).omit({
-  id: true,
-  createdAt: true,
-});
-
-export const insertAuthCodeSchema = createInsertSchema(authCodes).omit({
-  id: true,
-  createdAt: true,
-});
+export const insertCommitmentSchema = createInsertSchema(commitments).omit({ id: true, createdAt: true, status: true, referenceNumber: true });
+export const insertEscrowEntrySchema = createInsertSchema(escrowLedger).omit({ id: true, createdAt: true });
+export const insertSupplierAcceptanceSchema = createInsertSchema(supplierAcceptances).omit({ id: true, acceptedAt: true });
+export const insertAdminActionLogSchema = createInsertSchema(adminActionLogs).omit({ id: true, createdAt: true });
+export const insertIdempotencyKeySchema = createInsertSchema(idempotencyKeys).omit({ id: true, createdAt: true });
+export const insertCampaignAdminEventSchema = createInsertSchema(campaignAdminEvents).omit({ id: true, createdAt: true });
 
 // Types
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
-
 export type UserProfile = typeof userProfiles.$inferSelect;
 export type InsertUserProfile = z.infer<typeof insertUserProfileSchema>;
 export type UpdateUserProfile = z.infer<typeof updateUserProfileSchema>;
-
 export type UserSession = typeof userSessions.$inferSelect;
 export type InsertUserSession = z.infer<typeof insertUserSessionSchema>;
-
 export type AuthCode = typeof authCodes.$inferSelect;
 export type InsertAuthCode = z.infer<typeof insertAuthCodeSchema>;
 
 export type Campaign = typeof campaigns.$inferSelect;
 export type InsertCampaign = z.infer<typeof insertCampaignSchema>;
+export type CampaignStatus = "DRAFT" | "PUBLISHED" | "HIDDEN" | "ARCHIVED";
+export type CampaignState = "AGGREGATION" | "SUCCESS" | "FAILED" | "FULFILLMENT" | "RELEASED";
 
 export type Commitment = typeof commitments.$inferSelect;
 export type InsertCommitment = z.infer<typeof insertCommitmentSchema>;
+export type CommitmentStatus = "LOCKED" | "REFUNDED" | "RELEASED";
 
 export type EscrowEntry = typeof escrowLedger.$inferSelect;
 export type InsertEscrowEntry = z.infer<typeof insertEscrowEntrySchema>;
+export type EscrowEntryType = "LOCK" | "REFUND" | "RELEASE";
+
+export type Product = typeof products.$inferSelect;
+export type InsertProduct = z.infer<typeof insertProductSchema>;
+export type UpdateProduct = z.infer<typeof updateProductSchema>;
+export type ProductStatus = "ACTIVE" | "ARCHIVED";
+
+export type Supplier = typeof suppliers.$inferSelect;
+export type InsertSupplier = z.infer<typeof insertSupplierSchema>;
+export type UpdateSupplier = z.infer<typeof updateSupplierSchema>;
+export type SupplierStatus = "ACTIVE" | "INACTIVE" | "ARCHIVED";
+
+export type ConsolidationPoint = typeof consolidationPoints.$inferSelect;
+export type InsertConsolidationPoint = z.infer<typeof insertConsolidationPointSchema>;
+export type UpdateConsolidationPoint = z.infer<typeof updateConsolidationPointSchema>;
+export type ConsolidationPointStatus = "ACTIVE" | "INACTIVE" | "ARCHIVED";
 
 export type SupplierAcceptance = typeof supplierAcceptances.$inferSelect;
 export type InsertSupplierAcceptance = z.infer<typeof insertSupplierAcceptanceSchema>;
@@ -472,37 +411,21 @@ export type CampaignAdminEvent = typeof campaignAdminEvents.$inferSelect;
 export type InsertCampaignAdminEvent = z.infer<typeof insertCampaignAdminEventSchema>;
 export type CampaignAdminEventType = "CREATED" | "UPDATED" | "PUBLISHED";
 
-// Campaign State type
-export type CampaignState = "AGGREGATION" | "SUCCESS" | "FAILED" | "FULFILLMENT" | "RELEASED";
-export type CommitmentStatus = "LOCKED" | "REFUNDED" | "RELEASED";
-export type EscrowEntryType = "LOCK" | "REFUND" | "RELEASE";
-
-// Product types
-export type Product = typeof products.$inferSelect;
-export type InsertProduct = z.infer<typeof insertProductSchema>;
-export type UpdateProduct = z.infer<typeof updateProductSchema>;
-export type ProductStatus = "ACTIVE" | "ARCHIVED";
-
-// Reference Price type (for JSON array in products.referencePrices)
-// Append-only: never overwrite existing entries
 export interface ReferencePrice {
   amount: number;
-  currency: string; // default "USD"
+  currency: string;
   sourceType: "MSRP" | "RETAILER_LISTING" | "SUPPLIER_QUOTE" | "OTHER";
   sourceNameOrUrl?: string;
-  capturedAt: string; // ISO datetime
-  capturedBy: string; // admin identifier
+  capturedAt: string;
+  capturedBy: string;
   note?: string;
 }
 
-// Product Specification type (for JSON array in products.specs)
 export interface ProductSpec {
   key: string;
   value: string;
 }
 
-
-// State machine valid transitions
 export const VALID_TRANSITIONS: Record<CampaignState, CampaignState[]> = {
   AGGREGATION: ["SUCCESS", "FAILED"],
   SUCCESS: ["FULFILLMENT", "FAILED"],
