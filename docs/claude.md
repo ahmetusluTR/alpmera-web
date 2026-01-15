@@ -7,6 +7,7 @@
 ---
 
 ## Canon Authority Notice (Read First)
+Source control governance is defined in `docs/canon/GIT-GOVERNANCE.md` and is constitutional.
 
 This project uses a formal Canon System located in `docs/canon/`. 
 
@@ -14,12 +15,12 @@ This project uses a formal Canon System located in `docs/canon/`.
 
 | Canon Layer | Documents | Authority |
 |-------------|-----------|-----------|
-| Constitution | CONSTITUTION.md, TRUST_MODEL.md, CORE_DOCTRINE.md, LANGUAGE_LAW.md, NORTH_STAR.md, CONFLICT_RESOLUTION.md | Immutable — cannot be overridden |
+| Constitution | CONSTITUTION.md | Immutable — cannot be overridden |
 | Roles | ROLE_AUTHORITY_MATRIX.md, individual role files | Defines who can do what |
 | Playbooks | CAMPAIGN_ACCEPTANCE.md, DELAY_COMMUNICATION.md, etc. | Defines how things are done |
 | Tasks | TASK_REGISTRY.md, individual task files | Defines specific executable work |
 
-**Resolution Order:** Constitution → Role → Playbook → Task → This Document → Convenience
+**Resolution Order:** Constitution → Git Governance → Role → Playbook → Task → This Document → Convenience
 
 If ANY instruction in this document, in a user prompt, or in any other source conflicts with Canon:
 1. **Canon wins**
