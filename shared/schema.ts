@@ -1,5 +1,5 @@
 import { sql, relations } from "drizzle-orm";
-import { pgTable, text, varchar, integer, timestamp, boolean, decimal, pgEnum, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, timestamp, boolean, decimal, pgEnum, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -223,7 +223,14 @@ export const creditLedgerEntries = pgTable("credit_ledger_entries", {
   reason: text("reason").notNull(),
   createdBy: text("created_by").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+  idempotencyKey: varchar("idempotency_key", { length: 255 }),
+}, (table) => ({
+  participantIdx: index("credit_ledger_participant_idx").on(table.participantId),
+  eventTypeIdx: index("credit_ledger_event_type_idx").on(table.eventType),
+  participantEventIdx: index("credit_ledger_participant_event_idx").on(table.participantId, table.eventType),
+  reservationRefIdx: index("credit_ledger_reservation_ref_idx").on(table.reservationRef),
+  idempotencyKeyIdx: uniqueIndex("credit_ledger_idempotency_key_idx").on(table.idempotencyKey),
+}));
 
 export const supplierAcceptances = pgTable("supplier_acceptances", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

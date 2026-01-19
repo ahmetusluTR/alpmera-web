@@ -13,7 +13,10 @@
     "db:push": "drizzle-kit push",
     "db:test:push": "cross-env NODE_ENV=test drizzle-kit push --config=drizzle-test.config.ts",
     "test": "cross-env NODE_ENV=test vitest run",
-    "db:test:reset": "cross-env NODE_ENV=test node -r dotenv/config --import tsx server/tests/reset-db.ts"
+    "db:test:reset": "cross-env NODE_ENV=test node -r dotenv/config --import tsx server/tests/reset-db.ts",
+    "seed:admin-demo": "node -r dotenv/config --import tsx scripts/seed-admin-demo.ts",
+    "seed:admin-demo:cleanup": "node -r dotenv/config --import tsx scripts/cleanup-admin-demo.ts",
+    "smoke:admin": "node -r dotenv/config --import tsx scripts/smoke-admin.ts"
   },
   "dependencies": {
     "@google-cloud/storage": "^7.18.0",

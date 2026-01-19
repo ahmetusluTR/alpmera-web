@@ -510,6 +510,252 @@ export async function registerRoutes(
     }
   });
 
+  // GET PARTICIPANT CREDIT SUMMARY
+  app.get("/api/admin/credits/participant/:participantId/summary", requireAdminAuth, async (req, res) => {
+    try {
+      const summary = await storage.getParticipantCreditSummary(req.params.participantId);
+      res.json(summary);
+    } catch (error) {
+      if (error instanceof Error && error.message === "Participant not found") {
+        res.status(404).json({ error: "Participant not found" });
+      } else {
+        console.error("[ADMIN] Error getting participant credit summary:", error);
+        res.status(500).json({ error: "Failed to get participant credit summary" });
+      }
+    }
+  });
+
+  // ============================================
+  // ADMIN PARTICIPANT MANAGEMENT (Protected)
+  // ============================================
+
+  // LIST PARTICIPANTS (search + pagination)
+  app.get("/api/admin/participants", requireAdminAuth, async (req, res) => {
+    try {
+      const { search, limit = "50", offset = "0" } = req.query;
+
+      const limitNum = parseInt(limit as string, 10);
+      const offsetNum = parseInt(offset as string, 10);
+
+      let query = db
+        .select({
+          id: users.id,
+          email: users.email,
+          fullName: users.fullName,
+          createdAt: users.createdAt,
+          phoneNumber: users.phoneNumber,
+        })
+        .from(users);
+
+      // Apply search filter if provided
+      if (search && typeof search === 'string') {
+        query = query.where(
+          sql`${users.id} ILIKE ${`%${search}%`} OR ${users.email} ILIKE ${`%${search}%`}`
+        ) as any;
+      }
+
+      const participants = await query
+        .orderBy(desc(users.createdAt))
+        .limit(limitNum)
+        .offset(offsetNum);
+
+      // Get total count
+      const [countResult] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(users);
+
+      res.json({
+        participants,
+        total: countResult?.count || 0,
+        limit: limitNum,
+        offset: offsetNum,
+      });
+    } catch (error) {
+      console.error("[ADMIN] Error listing participants:", error);
+      res.status(500).json({ error: "Failed to list participants" });
+    }
+  });
+
+  // GET PARTICIPANT DETAIL (identity + summary)
+  app.get("/api/admin/participants/:id", requireAdminAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      // Get user identity
+      const [user] = await db
+        .select({
+          id: users.id,
+          email: users.email,
+          fullName: users.fullName,
+          phoneNumber: users.phoneNumber,
+          createdAt: users.createdAt,
+        })
+        .from(users)
+        .where(eq(users.id, id));
+
+      if (!user) {
+        return res.status(404).json({ error: "Participant not found" });
+      }
+
+      // Get user profile if exists
+      const [profile] = await db
+        .select()
+        .from(userProfiles)
+        .where(eq(userProfiles.userId, id));
+
+      // Get summary statistics
+      // 1. Active commitments count
+      const [activeCommitmentsResult] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(commitments)
+        .where(eq(commitments.userId, id));
+
+      // 2. Total committed to escrow (lifetime)
+      const [totalEscrowResult] = await db
+        .select({ total: sql<string>`COALESCE(SUM(amount), 0)::text` })
+        .from(escrowLedger)
+        .where(
+          sql`${escrowLedger.commitmentId} IN (
+            SELECT id FROM ${commitments} WHERE ${commitments.userId} = ${id}
+          ) AND ${escrowLedger.entryType} = 'LOCK'`
+        );
+
+      // 3. Credit balance (use existing summary endpoint logic)
+      let creditSummary = null;
+      try {
+        creditSummary = await storage.getParticipantCreditSummary(id);
+      } catch (error) {
+        // Participant may not have credits yet
+        console.log(`[ADMIN] No credit summary for participant ${id}`);
+      }
+
+      // 4. Refunds pending count
+      const [refundsPendingResult] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(escrowLedger)
+        .where(
+          sql`${escrowLedger.commitmentId} IN (
+            SELECT id FROM ${commitments} WHERE ${commitments.userId} = ${id}
+          ) AND ${escrowLedger.entryType} = 'REFUND'`
+        );
+
+      res.json({
+        identity: {
+          id: user.id,
+          email: user.email,
+          fullName: user.fullName,
+          phoneNumber: user.phoneNumber,
+          createdAt: user.createdAt,
+          profile: profile || null,
+        },
+        summary: {
+          activeCommitmentsCount: activeCommitmentsResult?.count || 0,
+          totalCommittedEscrow: totalEscrowResult?.total || "0",
+          creditBalance: creditSummary?.totalBalance || "0",
+          creditCurrency: creditSummary?.currency || "USD",
+          refundsPending: refundsPendingResult?.count || 0,
+        },
+      });
+    } catch (error) {
+      console.error("[ADMIN] Error getting participant detail:", error);
+      res.status(500).json({ error: "Failed to get participant detail" });
+    }
+  });
+
+  // GET PARTICIPANT COMMITMENTS
+  app.get("/api/admin/participants/:id/commitments", requireAdminAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { limit = "50", offset = "0" } = req.query;
+
+      const limitNum = parseInt(limit as string, 10);
+      const offsetNum = parseInt(offset as string, 10);
+
+      const participantCommitments = await db
+        .select({
+          id: commitments.id,
+          referenceNumber: commitments.referenceNumber,
+          campaignId: commitments.campaignId,
+          campaignTitle: campaigns.title,
+          units: commitments.units,
+          totalAmount: commitments.totalAmount,
+          createdAt: commitments.createdAt,
+        })
+        .from(commitments)
+        .leftJoin(campaigns, eq(commitments.campaignId, campaigns.id))
+        .where(eq(commitments.userId, id))
+        .orderBy(desc(commitments.createdAt))
+        .limit(limitNum)
+        .offset(offsetNum);
+
+      const [countResult] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(commitments)
+        .where(eq(commitments.userId, id));
+
+      res.json({
+        commitments: participantCommitments,
+        total: countResult?.count || 0,
+        limit: limitNum,
+        offset: offsetNum,
+      });
+    } catch (error) {
+      console.error("[ADMIN] Error getting participant commitments:", error);
+      res.status(500).json({ error: "Failed to get participant commitments" });
+    }
+  });
+
+  // GET PARTICIPANT REFUNDS
+  app.get("/api/admin/participants/:id/refunds", requireAdminAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const participantRefunds = await db
+        .select({
+          id: escrowLedger.id,
+          amount: escrowLedger.amount,
+          createdAt: escrowLedger.createdAt,
+          reason: escrowLedger.reason,
+          campaignId: escrowLedger.campaignId,
+          commitmentId: escrowLedger.commitmentId,
+        })
+        .from(escrowLedger)
+        .where(
+          sql`${escrowLedger.commitmentId} IN (
+            SELECT id FROM ${commitments} WHERE ${commitments.userId} = ${id}
+          ) AND ${escrowLedger.entryType} = 'REFUND'`
+        )
+        .orderBy(desc(escrowLedger.createdAt))
+        .limit(50);
+
+      // Enrich with campaign and commitment details
+      const enriched = await Promise.all(
+        participantRefunds.map(async (refund) => {
+          const [campaign] = await db
+            .select({ title: campaigns.title })
+            .from(campaigns)
+            .where(eq(campaigns.id, refund.campaignId));
+
+          const [commitment] = await db
+            .select({ referenceNumber: commitments.referenceNumber })
+            .from(commitments)
+            .where(eq(commitments.id, refund.commitmentId));
+
+          return {
+            ...refund,
+            campaignTitle: campaign?.title || "Unknown",
+            commitmentReference: commitment?.referenceNumber || "Unknown",
+          };
+        })
+      );
+
+      res.json({ refunds: enriched });
+    } catch (error) {
+      console.error("[ADMIN] Error getting participant refunds:", error);
+      res.status(500).json({ error: "Failed to get participant refunds" });
+    }
+  });
+
   // ============================================
   // ADMIN PRODUCT MANAGEMENT (Protected)
   // ============================================

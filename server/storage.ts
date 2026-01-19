@@ -155,6 +155,21 @@ export interface IStorage {
   getCreditLedgerEntry(id: string): Promise<CreditLedgerEntry | undefined>;
   createCreditLedgerEntry(entry: InsertCreditLedgerEntry): Promise<CreditLedgerEntry>;
   getParticipantCreditBalance(participantId: string): Promise<number>;
+  getCreditLedgerEntryByIdempotencyKey(idempotencyKey: string): Promise<CreditLedgerEntry | undefined>;
+  getParticipantCreditSummary(participantId: string): Promise<{
+    participantId: string;
+    participantEmail: string | null;
+    participantName: string | null;
+    currency: string;
+    totalBalance: string;
+    breakdown: {
+      lifetimeEarned: string;
+      lifetimeSpent: string;
+      currentlyReserved: string;
+      availableBalance: string;
+    };
+    lastUpdated: string | null;
+  }>;
 }
 
 // Generate unique reference number for commitments
@@ -782,7 +797,7 @@ export class DatabaseStorage implements IStorage {
       .where(whereClause);
     const total = countResult?.count || 0;
 
-    // Get entries with participant email and campaign name
+    // Get entries with participant email and campaign title
     const entries = await db
       .select({
         id: creditLedgerEntries.id,
@@ -792,7 +807,7 @@ export class DatabaseStorage implements IStorage {
         amount: creditLedgerEntries.amount,
         currency: creditLedgerEntries.currency,
         campaignId: creditLedgerEntries.campaignId,
-        campaignName: campaigns.name,
+        campaignName: campaigns.title,
         commitmentId: creditLedgerEntries.commitmentId,
         ruleSetId: creditLedgerEntries.ruleSetId,
         awardId: creditLedgerEntries.awardId,
@@ -827,7 +842,7 @@ export class DatabaseStorage implements IStorage {
         amount: creditLedgerEntries.amount,
         currency: creditLedgerEntries.currency,
         campaignId: creditLedgerEntries.campaignId,
-        campaignName: campaigns.name,
+        campaignName: campaigns.title,
         commitmentId: creditLedgerEntries.commitmentId,
         ruleSetId: creditLedgerEntries.ruleSetId,
         awardId: creditLedgerEntries.awardId,
@@ -858,6 +873,106 @@ export class DatabaseStorage implements IStorage {
       .from(creditLedgerEntries)
       .where(eq(creditLedgerEntries.participantId, participantId));
     return parseFloat(result?.balance || "0");
+  }
+
+  async getCreditLedgerEntryByIdempotencyKey(idempotencyKey: string): Promise<CreditLedgerEntry | undefined> {
+    const [entry] = await db
+      .select()
+      .from(creditLedgerEntries)
+      .where(eq(creditLedgerEntries.idempotencyKey, idempotencyKey));
+    return entry || undefined;
+  }
+
+  async getParticipantCreditSummary(participantId: string): Promise<{
+    participantId: string;
+    participantEmail: string | null;
+    participantName: string | null;
+    currency: string;
+    totalBalance: string;
+    breakdown: {
+      lifetimeEarned: string;
+      lifetimeSpent: string;
+      currentlyReserved: string;
+      availableBalance: string;
+    };
+    lastUpdated: string | null;
+  }> {
+    // Get participant info
+    const [participant] = await db
+      .select({
+        email: users.email,
+        fullName: userProfiles.fullName,
+      })
+      .from(users)
+      .leftJoin(userProfiles, eq(users.id, userProfiles.userId))
+      .where(eq(users.id, participantId));
+
+    if (!participant) {
+      throw new Error("Participant not found");
+    }
+
+    // Get total balance
+    const [totalResult] = await db
+      .select({ balance: sql<string>`COALESCE(SUM(${creditLedgerEntries.amount}), 0)` })
+      .from(creditLedgerEntries)
+      .where(eq(creditLedgerEntries.participantId, participantId));
+
+    // Get lifetime earned (ISSUED events)
+    const [earnedResult] = await db
+      .select({ earned: sql<string>`COALESCE(SUM(${creditLedgerEntries.amount}), 0)` })
+      .from(creditLedgerEntries)
+      .where(
+        and(
+          eq(creditLedgerEntries.participantId, participantId),
+          eq(creditLedgerEntries.eventType, "ISSUED")
+        )
+      );
+
+    // Get currently reserved (RESERVED without matching RELEASED/APPLIED)
+    const [reservedResult] = await db
+      .select({ reserved: sql<string>`COALESCE(SUM(ABS(${creditLedgerEntries.amount})), 0)` })
+      .from(creditLedgerEntries)
+      .where(
+        and(
+          eq(creditLedgerEntries.participantId, participantId),
+          eq(creditLedgerEntries.eventType, "RESERVED"),
+          sql`NOT EXISTS (
+            SELECT 1 FROM ${creditLedgerEntries} cle2
+            WHERE cle2.participant_id = ${creditLedgerEntries.participantId}
+              AND cle2.reservation_ref = ${creditLedgerEntries.reservationRef}
+              AND cle2.event_type IN ('RELEASED', 'APPLIED')
+          )`
+        )
+      );
+
+    // Get last updated timestamp
+    const [lastUpdatedResult] = await db
+      .select({ lastUpdated: sql<string>`MAX(${creditLedgerEntries.createdAt})` })
+      .from(creditLedgerEntries)
+      .where(eq(creditLedgerEntries.participantId, participantId));
+
+    const totalBalance = parseFloat(totalResult?.balance || "0");
+    const lifetimeEarned = parseFloat(earnedResult?.earned || "0");
+    const currentlyReserved = parseFloat(reservedResult?.reserved || "0");
+    const availableBalance = totalBalance - currentlyReserved;
+
+    // Lifetime spent = total earned - current balance (simplified)
+    const lifetimeSpent = Math.max(0, lifetimeEarned - totalBalance);
+
+    return {
+      participantId,
+      participantEmail: participant.email,
+      participantName: participant.fullName,
+      currency: "USD",
+      totalBalance: totalBalance.toFixed(2),
+      breakdown: {
+        lifetimeEarned: lifetimeEarned.toFixed(2),
+        lifetimeSpent: lifetimeSpent.toFixed(2),
+        currentlyReserved: currentlyReserved.toFixed(2),
+        availableBalance: availableBalance.toFixed(2),
+      },
+      lastUpdated: lastUpdatedResult?.lastUpdated || null,
+    };
   }
 }
 

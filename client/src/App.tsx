@@ -42,6 +42,9 @@ import AdminConsolidationPoints from "@/pages/admin/consolidation-points";
 import AdminConsolidationDetail from "@/pages/admin/consolidation-detail";
 import AdminCredits from "@/pages/admin/credits";
 import AdminCreditDetail from "@/pages/admin/credit-detail";
+import AdminParticipantCredits from "@/pages/admin/participant-credits";
+import AdminParticipants from "@/pages/admin/participants";
+import AdminParticipantDetail from "@/pages/admin/participant-detail";
 import {
   ExceptionsPage,
   AuditPage,
@@ -252,6 +255,20 @@ function Router() {
         )}
       </Route>
 
+      {/* Admin Participants */}
+      <Route path="/admin/participants">
+        <AdminGuard>
+          <AdminParticipants />
+        </AdminGuard>
+      </Route>
+      <Route path="/admin/participants/:id">
+        {(params) => (
+          <AdminGuard>
+            <AdminParticipantDetail />
+          </AdminGuard>
+        )}
+      </Route>
+
       {/* Admin Suppliers */}
       <Route path="/admin/suppliers">
         <AdminGuard>
@@ -320,6 +337,13 @@ function Router() {
         {(params) => (
           <AdminGuard>
             <AdminCreditDetail />
+          </AdminGuard>
+        )}
+      </Route>
+      <Route path="/admin/participants/:id/credits">
+        {(params) => (
+          <AdminGuard>
+            <AdminParticipantCredits />
           </AdminGuard>
         )}
       </Route>

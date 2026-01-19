@@ -47,6 +47,11 @@ const navSections = [
   },
   {
     items: [
+      { path: "/admin/participants", label: "Participants", icon: Users },
+    ],
+  },
+  {
+    items: [
       { path: "/admin/refunds", label: "Refunds", icon: RotateCcw },
       { path: "/admin/refund-plans", label: "Refund Plans", icon: ClipboardList },
     ],
