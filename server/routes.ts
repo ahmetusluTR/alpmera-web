@@ -21,10 +21,12 @@ import {
   insertSupplierSchema,
   updateSupplierSchema,
   insertConsolidationPointSchema,
-  updateConsolidationPointSchema
+  updateConsolidationPointSchema,
+  users,
+  userProfiles
 } from "@shared/schema";
 import { z } from "zod";
-import { eq, desc } from "drizzle-orm";
+import { and, count, desc, eq, ilike, or, sum } from "drizzle-orm";
 import { createHash, randomBytes, randomInt, randomUUID } from "crypto";
 
 // Auth request schemas
@@ -541,17 +543,23 @@ export async function registerRoutes(
         .select({
           id: users.id,
           email: users.email,
-          fullName: users.fullName,
+          fullName: userProfiles.fullName,
           createdAt: users.createdAt,
-          phoneNumber: users.phoneNumber,
+          phoneNumber: userProfiles.phone,
         })
-        .from(users);
+        .from(users)
+        .leftJoin(userProfiles, eq(userProfiles.userId, users.id));
 
       // Apply search filter if provided
       if (search && typeof search === 'string') {
+        const searchValue = `%${search}%`;
         query = query.where(
-          sql`${users.id} ILIKE ${`%${search}%`} OR ${users.email} ILIKE ${`%${search}%`}`
-        ) as any;
+          or(
+            ilike(users.id, searchValue),
+            ilike(users.email, searchValue),
+            ilike(userProfiles.fullName, searchValue)
+          )
+        );
       }
 
       const participants = await query
@@ -561,7 +569,7 @@ export async function registerRoutes(
 
       // Get total count
       const [countResult] = await db
-        .select({ count: sql<number>`count(*)::int` })
+        .select({ count: count() })
         .from(users);
 
       res.json({
@@ -586,11 +594,12 @@ export async function registerRoutes(
         .select({
           id: users.id,
           email: users.email,
-          fullName: users.fullName,
-          phoneNumber: users.phoneNumber,
+          fullName: userProfiles.fullName,
+          phoneNumber: userProfiles.phone,
           createdAt: users.createdAt,
         })
         .from(users)
+        .leftJoin(userProfiles, eq(userProfiles.userId, users.id))
         .where(eq(users.id, id));
 
       if (!user) {
@@ -606,18 +615,20 @@ export async function registerRoutes(
       // Get summary statistics
       // 1. Active commitments count
       const [activeCommitmentsResult] = await db
-        .select({ count: sql<number>`count(*)::int` })
+        .select({ count: count() })
         .from(commitments)
         .where(eq(commitments.userId, id));
 
       // 2. Total committed to escrow (lifetime)
       const [totalEscrowResult] = await db
-        .select({ total: sql<string>`COALESCE(SUM(amount), 0)::text` })
+        .select({ total: sum(escrowLedger.amount) })
         .from(escrowLedger)
+        .innerJoin(commitments, eq(escrowLedger.commitmentId, commitments.id))
         .where(
-          sql`${escrowLedger.commitmentId} IN (
-            SELECT id FROM ${commitments} WHERE ${commitments.userId} = ${id}
-          ) AND ${escrowLedger.entryType} = 'LOCK'`
+          and(
+            eq(commitments.userId, id),
+            eq(escrowLedger.entryType, "LOCK")
+          )
         );
 
       // 3. Credit balance (use existing summary endpoint logic)
@@ -631,12 +642,14 @@ export async function registerRoutes(
 
       // 4. Refunds pending count
       const [refundsPendingResult] = await db
-        .select({ count: sql<number>`count(*)::int` })
+        .select({ count: count() })
         .from(escrowLedger)
+        .innerJoin(commitments, eq(escrowLedger.commitmentId, commitments.id))
         .where(
-          sql`${escrowLedger.commitmentId} IN (
-            SELECT id FROM ${commitments} WHERE ${commitments.userId} = ${id}
-          ) AND ${escrowLedger.entryType} = 'REFUND'`
+          and(
+            eq(commitments.userId, id),
+            eq(escrowLedger.entryType, "REFUND")
+          )
         );
 
       res.json({
@@ -689,7 +702,7 @@ export async function registerRoutes(
         .offset(offsetNum);
 
       const [countResult] = await db
-        .select({ count: sql<number>`count(*)::int` })
+        .select({ count: count() })
         .from(commitments)
         .where(eq(commitments.userId, id));
 
@@ -720,10 +733,12 @@ export async function registerRoutes(
           commitmentId: escrowLedger.commitmentId,
         })
         .from(escrowLedger)
+        .innerJoin(commitments, eq(escrowLedger.commitmentId, commitments.id))
         .where(
-          sql`${escrowLedger.commitmentId} IN (
-            SELECT id FROM ${commitments} WHERE ${commitments.userId} = ${id}
-          ) AND ${escrowLedger.entryType} = 'REFUND'`
+          and(
+            eq(commitments.userId, id),
+            eq(escrowLedger.entryType, "REFUND")
+          )
         )
         .orderBy(desc(escrowLedger.createdAt))
         .limit(50);
