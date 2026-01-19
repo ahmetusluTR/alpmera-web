@@ -424,6 +424,93 @@ export async function registerRoutes(
   });
 
   // ============================================
+  // ADMIN CREDIT LEDGER (Protected, Read-Only)
+  // ============================================
+
+  // LIST CREDIT LEDGER ENTRIES
+  app.get("/api/admin/credits", requireAdminAuth, async (req, res) => {
+    try {
+      const {
+        participantId,
+        participantEmail,
+        eventType,
+        from,
+        to,
+        campaignId,
+        limit,
+        offset
+      } = req.query;
+
+      const filters: {
+        participantId?: string;
+        participantEmail?: string;
+        eventType?: any;
+        from?: Date;
+        to?: Date;
+        campaignId?: string;
+        limit?: number;
+        offset?: number;
+      } = {};
+
+      if (participantId && typeof participantId === 'string') {
+        filters.participantId = participantId;
+      }
+      if (participantEmail && typeof participantEmail === 'string') {
+        filters.participantEmail = participantEmail;
+      }
+      if (eventType && typeof eventType === 'string') {
+        filters.eventType = eventType as any;
+      }
+      if (from && typeof from === 'string') {
+        filters.from = new Date(from);
+      }
+      if (to && typeof to === 'string') {
+        filters.to = new Date(to);
+      }
+      if (campaignId && typeof campaignId === 'string') {
+        filters.campaignId = campaignId;
+      }
+      if (limit && typeof limit === 'string') {
+        filters.limit = parseInt(limit, 10);
+      }
+      if (offset && typeof offset === 'string') {
+        filters.offset = parseInt(offset, 10);
+      }
+
+      const result = await storage.getCreditLedgerEntries(filters);
+      res.json(result);
+    } catch (error) {
+      console.error("[ADMIN] Error listing credit ledger entries:", error);
+      res.status(500).json({ error: "Failed to list credit ledger entries" });
+    }
+  });
+
+  // GET CREDIT LEDGER ENTRY DETAIL
+  app.get("/api/admin/credits/:id", requireAdminAuth, async (req, res) => {
+    try {
+      const entry = await storage.getCreditLedgerEntry(req.params.id);
+      if (!entry) {
+        return res.status(404).json({ error: "Credit ledger entry not found" });
+      }
+      res.json(entry);
+    } catch (error) {
+      console.error("[ADMIN] Error getting credit ledger entry:", error);
+      res.status(500).json({ error: "Failed to get credit ledger entry" });
+    }
+  });
+
+  // GET PARTICIPANT CREDIT BALANCE
+  app.get("/api/admin/credits/participant/:participantId/balance", requireAdminAuth, async (req, res) => {
+    try {
+      const balance = await storage.getParticipantCreditBalance(req.params.participantId);
+      res.json({ balance: balance.toFixed(2), currency: "USD" });
+    } catch (error) {
+      console.error("[ADMIN] Error getting participant credit balance:", error);
+      res.status(500).json({ error: "Failed to get participant credit balance" });
+    }
+  });
+
+  // ============================================
   // ADMIN PRODUCT MANAGEMENT (Protected)
   // ============================================
 
@@ -610,6 +697,67 @@ export async function registerRoutes(
     }
   });
 
+  // BULK IMPORT SUPPLIERS (CSV)
+  app.post("/api/admin/suppliers/bulk", requireAdminAuth, async (req, res) => {
+    try {
+      const supplierRows = req.body;
+
+      if (!Array.isArray(supplierRows) || supplierRows.length === 0) {
+        return res.status(400).json({ error: "Suppliers array is required" });
+      }
+
+      const results = {
+        total: supplierRows.length,
+        successful: 0,
+        errors: 0,
+        details: [] as { row: number; name: string; status: string; success: boolean; error?: string }[],
+      };
+
+      for (let i = 0; i < supplierRows.length; i++) {
+        const row = supplierRows[i];
+        const rowNum = i + 1;
+
+        try {
+          if (!row.name?.trim()) {
+            results.errors++;
+            results.details.push({ row: rowNum, name: "", status: "", success: false, error: "Name is required" });
+            continue;
+          }
+
+          const supplierData = {
+            name: row.name.trim(),
+            contactName: row.contactName?.trim() || null,
+            contactEmail: row.contactEmail?.trim() || null,
+            phone: row.phone?.trim() || null,
+            website: row.website?.trim() || null,
+            region: row.region?.trim() || null,
+            notes: row.notes?.trim() || null,
+            status: row.status?.trim() || "ACTIVE",
+          };
+
+          const parsed = insertSupplierSchema.safeParse(supplierData);
+          if (!parsed.success) {
+            results.errors++;
+            results.details.push({ row: rowNum, name: row.name, status: supplierData.status, success: false, error: parsed.error.errors[0]?.message || "Validation failed" });
+            continue;
+          }
+
+          await storage.createSupplier(parsed.data);
+          results.successful++;
+          results.details.push({ row: rowNum, name: row.name, status: supplierData.status, success: true });
+        } catch (err: any) {
+          results.errors++;
+          results.details.push({ row: rowNum, name: row.name || "", status: "", success: false, error: err.message || "Unknown error" });
+        }
+      }
+
+      return res.json(results);
+    } catch (error) {
+      console.error("[ADMIN] Error in bulk supplier import:", error);
+      return res.status(500).json({ error: "Failed to process bulk import" });
+    }
+  });
+
 
   // ============================================
   // ADMIN CONSOLIDATION POINTS (Protected)
@@ -699,6 +847,73 @@ export async function registerRoutes(
     } catch (error) {
       console.error("[ADMIN] Error archiving consolidation point:", error);
       res.status(500).json({ error: "Failed to archive consolidation point" });
+    }
+  });
+
+  // BULK IMPORT CONSOLIDATION POINTS (CSV)
+  app.post("/api/admin/consolidation-points/bulk", requireAdminAuth, async (req, res) => {
+    try {
+      const pointRows = req.body;
+
+      if (!Array.isArray(pointRows) || pointRows.length === 0) {
+        return res.status(400).json({ error: "Consolidation points array is required" });
+      }
+
+      const results = {
+        total: pointRows.length,
+        successful: 0,
+        errors: 0,
+        details: [] as { row: number; name: string; status: string; success: boolean; error?: string }[],
+      };
+
+      for (let i = 0; i < pointRows.length; i++) {
+        const row = pointRows[i];
+        const rowNum = i + 1;
+
+        try {
+          // Check required field (name or location_name)
+          const name = row.name?.trim() || row.location_name?.trim();
+          if (!name) {
+            results.errors++;
+            results.details.push({ row: rowNum, name: "", status: "", success: false, error: "Name is required" });
+            continue;
+          }
+
+          const pointData = {
+            name,
+            addressLine1: row.addressLine1?.trim() || row.address_line1?.trim() || null,
+            addressLine2: row.addressLine2?.trim() || row.address_line2?.trim() || null,
+            city: row.city?.trim() || null,
+            state: row.state?.trim() || null,
+            postalCode: row.postalCode?.trim() || row.postal_code?.trim() || null,
+            country: row.country?.trim() || null,
+            contactName: row.contactName?.trim() || row.contact_name?.trim() || null,
+            contactEmail: row.contactEmail?.trim() || row.contact_email?.trim() || null,
+            contactPhone: row.contactPhone?.trim() || row.contact_phone?.trim() || null,
+            notes: row.notes?.trim() || null,
+            status: row.status?.trim() || "ACTIVE",
+          };
+
+          const parsed = insertConsolidationPointSchema.safeParse(pointData);
+          if (!parsed.success) {
+            results.errors++;
+            results.details.push({ row: rowNum, name, status: pointData.status, success: false, error: parsed.error.errors[0]?.message || "Validation failed" });
+            continue;
+          }
+
+          await storage.createConsolidationPoint(parsed.data);
+          results.successful++;
+          results.details.push({ row: rowNum, name, status: pointData.status, success: true });
+        } catch (err: any) {
+          results.errors++;
+          results.details.push({ row: rowNum, name: row.name || row.location_name || "", status: "", success: false, error: err.message || "Unknown error" });
+        }
+      }
+
+      return res.json(results);
+    } catch (error) {
+      console.error("[ADMIN] Error in bulk consolidation point import:", error);
+      return res.status(500).json({ error: "Failed to process bulk import" });
     }
   });
 

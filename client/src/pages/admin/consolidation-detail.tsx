@@ -34,6 +34,9 @@ export default function AdminConsolidationDetail() {
     const [state, setState] = useState("");
     const [postalCode, setPostalCode] = useState("");
     const [country, setCountry] = useState("");
+    const [contactName, setContactName] = useState("");
+    const [contactEmail, setContactEmail] = useState("");
+    const [contactPhone, setContactPhone] = useState("");
     const [notes, setNotes] = useState("");
     const [status, setStatus] = useState("ACTIVE");
 
@@ -51,6 +54,9 @@ export default function AdminConsolidationDetail() {
             setState(point.state || "");
             setPostalCode(point.postalCode || "");
             setCountry(point.country || "");
+            setContactName(point.contactName || "");
+            setContactEmail(point.contactEmail || "");
+            setContactPhone(point.contactPhone || "");
             setNotes(point.notes || "");
             setStatus(point.status);
         }
@@ -66,6 +72,9 @@ export default function AdminConsolidationDetail() {
                 state,
                 postalCode,
                 country,
+                contactName,
+                contactEmail,
+                contactPhone,
                 notes,
                 status
             };
@@ -73,6 +82,9 @@ export default function AdminConsolidationDetail() {
             // Clean up empty strings
             if (!data.addressLine1) delete (data as any).addressLine1;
             if (!data.addressLine2) delete (data as any).addressLine2;
+            if (!data.contactName) delete (data as any).contactName;
+            if (!data.contactEmail) delete (data as any).contactEmail;
+            if (!data.contactPhone) delete (data as any).contactPhone;
 
             let res;
             if (isNew) {
@@ -209,6 +221,28 @@ export default function AdminConsolidationDetail() {
                                             <Label htmlFor="country">Country</Label>
                                             <Input id="country" value={country} onChange={e => setCountry(e.target.value)} />
                                         </div>
+                                    </div>
+                                </div>
+                            </CardContent>
+                        </Card>
+
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Contact Information</CardTitle>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                                <div className="space-y-2">
+                                    <Label htmlFor="contactName">Contact Name</Label>
+                                    <Input id="contactName" value={contactName} onChange={e => setContactName(e.target.value)} placeholder="Primary contact person" />
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                        <Label htmlFor="contactEmail">Email</Label>
+                                        <Input id="contactEmail" type="email" value={contactEmail} onChange={e => setContactEmail(e.target.value)} placeholder="contact@example.com" />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label htmlFor="contactPhone">Phone</Label>
+                                        <Input id="contactPhone" value={contactPhone} onChange={e => setContactPhone(e.target.value)} placeholder="+1 (555) 123-4567" />
                                     </div>
                                 </div>
                             </CardContent>

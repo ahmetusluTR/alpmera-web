@@ -366,6 +366,10 @@ docs/canon/
 4. **No Optimism Bias** — Worst case acknowledged
 5. **Trust Debt Rule** — No shipping unclear/risky features
 
+### Related Architecture Specs
+
+Admin architecture specs live in docs/architecture/admin/ (subordinate to Canon)
+
 ### Forbidden Terms (Never Use)
 
 buy, order, checkout, purchase, pay for, sell, deal, discount

@@ -15,7 +15,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, Save, Archive, Loader2 } from "lucide-react";
+import { ArrowLeft, Save, Archive, Loader2, Edit } from "lucide-react";
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -36,6 +36,8 @@ export default function AdminSupplierDetail() {
     const [region, setRegion] = useState("");
     const [notes, setNotes] = useState("");
     const [status, setStatus] = useState("ACTIVE");
+
+    const [editMode, setEditMode] = useState(isNew);
 
     const { data: supplier, isLoading: isLoadingSupplier, refetch } = useQuery<Supplier>({
         queryKey: [`/api/admin/suppliers/${supplierId}`],
@@ -137,24 +139,32 @@ export default function AdminSupplierDetail() {
                     </Link>
                     <div className="flex-1">
                         <h1 className="text-2xl font-bold tracking-tight">
-                            {isNew ? "Create Supplier" : `Edit Supplier: ${name}`}
+                            {isNew ? "Create Supplier" : editMode ? `Edit Supplier: ${name}` : `Supplier: ${name}`}
                         </h1>
                         <p className="text-muted-foreground text-sm">
-                            {isNew ? "Add a new sourcing partner" : "Manage supplier details"}
+                            {isNew ? "Add a new sourcing partner" : editMode ? "Manage supplier details" : "View supplier information"}
                         </p>
                     </div>
                     <div className="flex items-center gap-2">
-                        {!isNew && status !== "ARCHIVED" && (
+                        {!isNew && !editMode && (
+                            <Button onClick={() => setEditMode(true)}>
+                                <Edit className="h-4 w-4 mr-2" />
+                                Edit
+                            </Button>
+                        )}
+                        {!isNew && status !== "ARCHIVED" && editMode && (
                             <Button variant="outline" className="text-destructive hover:text-destructive" onClick={() => archiveMutation.mutate()}>
                                 <Archive className="h-4 w-4 mr-2" />
                                 Archive
                             </Button>
                         )}
-                        <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
-                            {saveMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                            <Save className="h-4 w-4 mr-2" />
-                            Save Supplier
-                        </Button>
+                        {editMode && (
+                            <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
+                                {saveMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                                <Save className="h-4 w-4 mr-2" />
+                                Save Supplier
+                            </Button>
+                        )}
                     </div>
                 </div>
 
@@ -175,16 +185,28 @@ export default function AdminSupplierDetail() {
                             <CardContent className="space-y-4">
                                 <div className="space-y-2">
                                     <Label htmlFor="name">Company Name *</Label>
-                                    <Input id="name" value={name} onChange={e => setName(e.target.value)} placeholder="Official Business Name" />
+                                    {editMode ? (
+                                        <Input id="name" value={name} onChange={e => setName(e.target.value)} placeholder="Official Business Name" />
+                                    ) : (
+                                        <p className="text-sm font-medium">{name}</p>
+                                    )}
                                 </div>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="space-y-2">
                                         <Label htmlFor="region">Region</Label>
-                                        <Input id="region" value={region} onChange={e => setRegion(e.target.value)} placeholder="e.g. China - Shenzhen" />
+                                        {editMode ? (
+                                            <Input id="region" value={region} onChange={e => setRegion(e.target.value)} placeholder="e.g. China - Shenzhen" />
+                                        ) : (
+                                            <p className="text-sm">{region || "Not specified"}</p>
+                                        )}
                                     </div>
                                     <div className="space-y-2">
                                         <Label htmlFor="website">Website</Label>
-                                        <Input id="website" value={website} onChange={e => setWebsite(e.target.value)} placeholder="https://..." />
+                                        {editMode ? (
+                                            <Input id="website" value={website} onChange={e => setWebsite(e.target.value)} placeholder="https://..." />
+                                        ) : (
+                                            <p className="text-sm">{website ? <a href={website} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">{website}</a> : "Not specified"}</p>
+                                        )}
                                     </div>
                                 </div>
                             </CardContent>
@@ -197,7 +219,11 @@ export default function AdminSupplierDetail() {
                             <CardContent className="space-y-4">
                                 <div className="space-y-2">
                                     <Label htmlFor="contactName">Contact Name</Label>
-                                    <Input id="contactName" value={contactName} onChange={e => setContactName(e.target.value)} />
+                                    {editMode ? (
+                                        <Input id="contactName" value={contactName} onChange={e => setContactName(e.target.value)} />
+                                    ) : (
+                                        <p className="text-sm">{contactName || "Not specified"}</p>
+                                    )}
                                 </div>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="space-y-2">

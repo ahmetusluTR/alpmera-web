@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(powershell -Command \"Stop-Process -Id 25352 -Force\")"
+      "Bash(powershell -Command \"Stop-Process -Id 25352 -Force\")",
+      "Bash(npm run db:push:*)",
+      "Bash(npm run db:studio:*)"
     ]
   }
 }

@@ -139,28 +139,28 @@ export default function AdminProducts() {
                                     </TableRow>
                                 ) : (
                                     filteredProducts?.map((product) => (
-                                        <TableRow key={product.id}>
-                                            <TableCell className="font-mono text-xs">{product.sku}</TableCell>
-                                            <TableCell className="font-medium">{product.name}</TableCell>
-                                            <TableCell>{product.brand || "-"}</TableCell>
-                                            <TableCell>{product.category || "-"}</TableCell>
-                                            <TableCell>
-                                                <Badge variant={getStatusBadgeVariant(product.status) as any}>
-                                                    {product.status}
-                                                </Badge>
-                                            </TableCell>
-                                            <TableCell className="text-muted-foreground text-sm">
-                                                {format(new Date(product.createdAt), "MMM d, yyyy")}
-                                            </TableCell>
-                                            <TableCell className="text-right">
-                                                <Link href={`/admin/products/${product.id}`}>
+                                        <Link key={product.id} href={`/admin/products/${product.id}`}>
+                                            <TableRow className="cursor-pointer">
+                                                <TableCell className="font-mono text-xs">{product.sku}</TableCell>
+                                                <TableCell className="font-medium">{product.name}</TableCell>
+                                                <TableCell>{product.brand || "-"}</TableCell>
+                                                <TableCell>{product.category || "-"}</TableCell>
+                                                <TableCell>
+                                                    <Badge variant={getStatusBadgeVariant(product.status) as any}>
+                                                        {product.status}
+                                                    </Badge>
+                                                </TableCell>
+                                                <TableCell className="text-muted-foreground text-sm">
+                                                    {format(new Date(product.createdAt), "MMM d, yyyy")}
+                                                </TableCell>
+                                                <TableCell className="text-right">
                                                     <Button variant="ghost" size="sm">
                                                         <Edit className="h-4 w-4 mr-1" />
-                                                        Edit
+                                                        View
                                                     </Button>
-                                                </Link>
-                                            </TableCell>
-                                        </TableRow>
+                                                </TableCell>
+                                            </TableRow>
+                                        </Link>
                                     ))
                                 )}
                             </TableBody>

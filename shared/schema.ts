@@ -85,6 +85,9 @@ export const consolidationPoints = pgTable("consolidation_points", {
   state: text("state"),
   postalCode: text("postal_code"),
   country: text("country"),
+  contactName: text("contact_name"),
+  contactEmail: text("contact_email"),
+  contactPhone: text("contact_phone"),
   status: consolidationPointStatusEnum("status").notNull().default("ACTIVE"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -124,6 +127,7 @@ export const campaignStateEnum = pgEnum("campaign_state", ["AGGREGATION", "SUCCE
 export const commitmentStatusEnum = pgEnum("commitment_status", ["LOCKED", "REFUNDED", "RELEASED"]);
 export const escrowEntryTypeEnum = pgEnum("escrow_entry_type", ["LOCK", "REFUND", "RELEASE"]);
 export const adminPublishStatusEnum = pgEnum("admin_publish_status", ["DRAFT", "PUBLISHED", "HIDDEN"]);
+export const creditEventTypeEnum = pgEnum("credit_event_type", ["ISSUED", "RESERVED", "RELEASED", "APPLIED", "REVOKED", "EXPIRED"]);
 
 export const campaigns = pgTable("campaigns", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -197,6 +201,27 @@ export const escrowLedger = pgTable("escrow_ledger", {
   amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
   actor: text("actor").notNull(),
   reason: text("reason").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// ============================================
+// CREDIT LEDGER TABLE (Alpmera Credits)
+// ============================================
+
+export const creditLedgerEntries = pgTable("credit_ledger_entries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  participantId: varchar("participant_id").notNull().references(() => users.id),
+  eventType: creditEventTypeEnum("event_type").notNull(),
+  amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+  currency: varchar("currency", { length: 3 }).notNull().default("USD"),
+  campaignId: varchar("campaign_id").references(() => campaigns.id),
+  commitmentId: varchar("commitment_id").references(() => commitments.id),
+  ruleSetId: varchar("rule_set_id"),
+  awardId: varchar("award_id"),
+  reservationRef: varchar("reservation_ref"),
+  auditRef: varchar("audit_ref"),
+  reason: text("reason").notNull(),
+  createdBy: text("created_by").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -335,6 +360,9 @@ export const updateConsolidationPointSchema = z.object({
   state: z.string().nullable().optional(),
   postalCode: z.string().nullable().optional(),
   country: z.string().nullable().optional(),
+  contactName: z.string().nullable().optional(),
+  contactEmail: z.string().email().nullable().optional().or(z.literal("")),
+  contactPhone: z.string().nullable().optional(),
   status: z.enum(["ACTIVE", "INACTIVE", "ARCHIVED"]).optional(),
   notes: z.string().nullable().optional(),
 });
@@ -354,6 +382,7 @@ export const updateCampaignSchema = insertCampaignSchema.partial();
 
 export const insertCommitmentSchema = createInsertSchema(commitments).omit({ id: true, createdAt: true, status: true, referenceNumber: true });
 export const insertEscrowEntrySchema = createInsertSchema(escrowLedger).omit({ id: true, createdAt: true });
+export const insertCreditLedgerEntrySchema = createInsertSchema(creditLedgerEntries).omit({ id: true, createdAt: true });
 export const insertSupplierAcceptanceSchema = createInsertSchema(supplierAcceptances).omit({ id: true, acceptedAt: true });
 export const insertAdminActionLogSchema = createInsertSchema(adminActionLogs).omit({ id: true, createdAt: true });
 export const insertIdempotencyKeySchema = createInsertSchema(idempotencyKeys).omit({ id: true, createdAt: true });
@@ -382,6 +411,10 @@ export type CommitmentStatus = "LOCKED" | "REFUNDED" | "RELEASED";
 export type EscrowEntry = typeof escrowLedger.$inferSelect;
 export type InsertEscrowEntry = z.infer<typeof insertEscrowEntrySchema>;
 export type EscrowEntryType = "LOCK" | "REFUND" | "RELEASE";
+
+export type CreditLedgerEntry = typeof creditLedgerEntries.$inferSelect;
+export type InsertCreditLedgerEntry = z.infer<typeof insertCreditLedgerEntrySchema>;
+export type CreditEventType = "ISSUED" | "RESERVED" | "RELEASED" | "APPLIED" | "REVOKED" | "EXPIRED";
 
 export type Product = typeof products.$inferSelect;
 export type InsertProduct = z.infer<typeof insertProductSchema>;

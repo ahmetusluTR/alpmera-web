@@ -1,19 +1,19 @@
-import { ReactNode, useState, useEffect } from "react";
+import { ReactNode, useState } from "react";
 import { useLocation, Link } from "wouter";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { Layout } from "@/components/layout";
+import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useAdminAuth } from "@/lib/admin-auth";
 import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   LayoutDashboard,
   FileStack,
   Wallet,
+  Coins,
   RotateCcw,
   ClipboardList,
   Truck,
@@ -23,10 +23,9 @@ import {
   Shield,
   LogOut,
   Loader2,
-  ChevronDown,
-  ChevronRight,
   Package,
   MapPin,
+  ExternalLink,
 } from "lucide-react";
 
 const navSections = [
@@ -43,6 +42,7 @@ const navSections = [
   {
     items: [
       { path: "/admin/clearing", label: "Clearing", icon: Wallet },
+      { path: "/admin/credits", label: "Credits", icon: Coins },
     ],
   },
   {
@@ -87,22 +87,9 @@ export function AdminLayout({ children }: AdminLayoutProps) {
   const { toast } = useToast();
   const [adminUsername, setAdminUsername] = useState("admin");
   const [adminApiKey, setAdminApiKey] = useState("");
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const [loginError, setLoginError] = useState("");
 
-  const { data: sessionData, isLoading: sessionLoading } = useQuery<{ authenticated: boolean; username?: string }>({
-    queryKey: ["/api/admin/session"],
-    retry: false,
-  });
-
-  useEffect(() => {
-    if (sessionData && isAuthenticated === null) {
-      setIsAuthenticated(sessionData.authenticated);
-      if (sessionData.username) {
-        setAdminUsername(sessionData.username);
-      }
-    }
-  }, [sessionData, isAuthenticated]);
+  const { isAdmin, adminUsername: adminUser, isLoading: sessionLoading } = useAdminAuth();
 
   const loginMutation = useMutation({
     mutationFn: async () => {
@@ -113,7 +100,6 @@ export function AdminLayout({ children }: AdminLayoutProps) {
       return response.json();
     },
     onSuccess: (data) => {
-      setIsAuthenticated(true);
       setAdminApiKey("");
       setLoginError("");
       toast({ title: "Logged In", description: `Welcome, ${data.username}` });
@@ -130,92 +116,110 @@ export function AdminLayout({ children }: AdminLayoutProps) {
       return response.json();
     },
     onSuccess: () => {
-      setIsAuthenticated(false);
       toast({ title: "Logged Out", description: "You have been logged out." });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/session"] });
     },
   });
 
-  if (sessionLoading || isAuthenticated === null) {
+  if (sessionLoading) {
     return (
-      <Layout>
-        <div className="max-w-md mx-auto px-6 py-20">
-          <Card>
-            <CardContent className="p-8 text-center">
-              <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4" />
-              <p className="text-muted-foreground">Checking authentication...</p>
-            </CardContent>
-          </Card>
-        </div>
-      </Layout>
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Card>
+          <CardContent className="p-8 text-center">
+            <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4" />
+            <p className="text-muted-foreground">Checking authentication...</p>
+          </CardContent>
+        </Card>
+      </div>
     );
   }
 
-  if (!isAuthenticated) {
+  if (!isAdmin) {
     return (
-      <Layout>
-        <div className="max-w-md mx-auto px-6 py-20">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Shield className="w-5 h-5" />
-                Admin Login
-              </CardTitle>
-              <CardDescription>Enter your credentials to access the admin console</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="login-username">Username</Label>
-                <Input
-                  id="login-username"
-                  value={adminUsername}
-                  onChange={(e) => setAdminUsername(e.target.value)}
-                  placeholder="admin"
-                  data-testid="input-login-username"
-                />
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Card className="w-full max-w-md mx-4">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Shield className="w-5 h-5" />
+              Admin Login
+            </CardTitle>
+            <CardDescription>Enter your credentials to access the admin console</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="login-username">Username</Label>
+              <Input
+                id="login-username"
+                value={adminUsername}
+                onChange={(e) => setAdminUsername(e.target.value)}
+                placeholder="admin"
+                data-testid="input-login-username"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="login-api-key">Admin API Key</Label>
+              <Input
+                id="login-api-key"
+                type="password"
+                value={adminApiKey}
+                onChange={(e) => setAdminApiKey(e.target.value)}
+                placeholder="Enter admin API key"
+                data-testid="input-login-api-key"
+              />
+            </div>
+            {loginError && (
+              <div className="text-sm text-destructive" data-testid="text-login-error">
+                {loginError}
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="login-api-key">Admin API Key</Label>
-                <Input
-                  id="login-api-key"
-                  type="password"
-                  value={adminApiKey}
-                  onChange={(e) => setAdminApiKey(e.target.value)}
-                  placeholder="Enter admin API key"
-                  data-testid="input-login-api-key"
-                />
-              </div>
-              {loginError && (
-                <div className="text-sm text-destructive" data-testid="text-login-error">
-                  {loginError}
-                </div>
+            )}
+            <Button
+              className="w-full"
+              onClick={() => loginMutation.mutate()}
+              disabled={loginMutation.isPending || !adminApiKey}
+              data-testid="button-login"
+            >
+              {loginMutation.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Logging in...
+                </>
+              ) : (
+                "Login"
               )}
-              <Button
-                className="w-full"
-                onClick={() => loginMutation.mutate()}
-                disabled={loginMutation.isPending || !adminApiKey}
-                data-testid="button-login"
-              >
-                {loginMutation.isPending ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Logging in...
-                  </>
-                ) : (
-                  "Login"
-                )}
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-      </Layout>
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
     );
   }
 
   return (
-    <Layout>
-      <div className="flex min-h-[calc(100vh-4rem)]">
-        <nav className="w-56 border-r bg-muted/30 p-4 hidden md:block">
+    <div className="min-h-screen bg-background">
+      {/* Admin Header */}
+      <header className="fixed top-0 left-0 right-0 z-50 h-14 border-b bg-background/95 backdrop-blur-sm">
+        <div className="h-full flex items-center justify-between px-4">
+          <div className="flex items-center gap-2 w-56">
+            <Shield className="w-5 h-5 text-foreground" />
+            <span className="font-semibold text-sm tracking-tight">Alpmera Admin</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <a
+              href="/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
+            >
+              View Site
+              <ExternalLink className="w-3 h-3" />
+            </a>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Layout */}
+      <div className="flex pt-14 min-h-screen">
+        {/* Sidebar */}
+        <nav className="w-56 border-r bg-muted/30 p-4 hidden md:block fixed top-14 bottom-0 overflow-y-auto">
           <div className="flex flex-col gap-1">
             {navSections.map((section, sectionIdx) => (
               <div key={sectionIdx} className={section.label ? "mt-4" : ""}>
@@ -260,10 +264,11 @@ export function AdminLayout({ children }: AdminLayoutProps) {
           </div>
         </nav>
 
-        <main className="flex-1 p-6 overflow-auto">
+        {/* Content */}
+        <main className="flex-1 md:ml-56 p-6 overflow-auto">
           {children}
         </main>
       </div>
-    </Layout>
+    </div>
   );
 }

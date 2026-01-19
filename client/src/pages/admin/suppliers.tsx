@@ -21,7 +21,7 @@ import {
     TableHeader,
     TableRow
 } from "@/components/ui/table";
-import { Search, Plus, Users, Edit, Loader2 } from "lucide-react";
+import { Search, Plus, Users, Edit, Loader2, Upload } from "lucide-react";
 import { format } from "date-fns";
 import { type Supplier } from "@shared/schema";
 
@@ -62,6 +62,12 @@ export default function AdminSuppliers() {
                     <p className="text-muted-foreground">Manage your sourcing partners</p>
                 </div>
                 <div className="flex gap-2">
+                    <Link href="/admin/suppliers/bulk">
+                        <Button variant="outline">
+                            <Upload className="mr-2 h-4 w-4" />
+                            Bulk Import
+                        </Button>
+                    </Link>
                     <Link href="/admin/suppliers/new">
                         <Button>
                             <Plus className="mr-2 h-4 w-4" />
@@ -101,15 +107,15 @@ export default function AdminSuppliers() {
                 </CardHeader>
                 <CardContent>
                     <div className="rounded-md border">
-                        <Table>
+                        <Table className="table-fixed w-full">
                             <TableHeader>
                                 <TableRow>
-                                    <TableHead>Supplier Name</TableHead>
-                                    <TableHead>Contact</TableHead>
-                                    <TableHead>Region</TableHead>
-                                    <TableHead>Status</TableHead>
-                                    <TableHead>Created At</TableHead>
-                                    <TableHead className="text-right">Actions</TableHead>
+                                    <TableHead className="w-[25%]">Supplier Name</TableHead>
+                                    <TableHead className="w-[20%]">Contact</TableHead>
+                                    <TableHead className="w-[15%]">Region</TableHead>
+                                    <TableHead className="w-[10%]">Status</TableHead>
+                                    <TableHead className="w-[15%]">Created At</TableHead>
+                                    <TableHead className="w-[15%] text-right">Actions</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -134,24 +140,29 @@ export default function AdminSuppliers() {
                                     </TableRow>
                                 ) : (
                                     filteredSuppliers?.map((supplier) => (
-                                        <TableRow key={supplier.id}>
+                                        <TableRow
+                                            key={supplier.id}
+                                            className="cursor-pointer hover:bg-muted/50"
+                                            onClick={() => setLocation(`/admin/suppliers/${supplier.id}`)}
+                                        >
                                             <TableCell className="font-medium">
-                                                {supplier.name}
+                                                <div className="truncate">{supplier.name}</div>
                                                 {supplier.website && (
-                                                    <div className="text-xs text-muted-foreground truncate max-w-[200px]">
+                                                    <div className="text-xs text-muted-foreground truncate">
                                                         {supplier.website}
                                                     </div>
                                                 )}
                                             </TableCell>
                                             <TableCell>
-                                                {supplier.contactName ? (
+                                                {supplier.contactName || supplier.contactEmail || supplier.phone ? (
                                                     <div className="text-sm">
-                                                        <div>{supplier.contactName}</div>
-                                                        <div className="text-xs text-muted-foreground">{supplier.contactEmail}</div>
+                                                        {supplier.contactName && <div className="truncate font-medium">{supplier.contactName}</div>}
+                                                        {supplier.contactEmail && <div className="truncate text-muted-foreground">{supplier.contactEmail}</div>}
+                                                        {supplier.phone && <div className="text-xs text-muted-foreground truncate">{supplier.phone}</div>}
                                                     </div>
                                                 ) : "-"}
                                             </TableCell>
-                                            <TableCell>{supplier.region || "-"}</TableCell>
+                                            <TableCell className="truncate">{supplier.region || "-"}</TableCell>
                                             <TableCell>
                                                 <Badge variant={getStatusBadgeVariant(supplier.status) as any}>
                                                     {supplier.status}
@@ -161,12 +172,10 @@ export default function AdminSuppliers() {
                                                 {format(new Date(supplier.createdAt), "MMM d, yyyy")}
                                             </TableCell>
                                             <TableCell className="text-right">
-                                                <Link href={`/admin/suppliers/${supplier.id}`}>
-                                                    <Button variant="ghost" size="sm">
-                                                        <Edit className="h-4 w-4 mr-1" />
-                                                        Edit
-                                                    </Button>
-                                                </Link>
+                                                <Button variant="ghost" size="sm">
+                                                    <Edit className="h-4 w-4 mr-1" />
+                                                    Edit
+                                                </Button>
                                             </TableCell>
                                         </TableRow>
                                     ))

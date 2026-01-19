@@ -2,6 +2,7 @@ import {
   campaigns,
   commitments,
   escrowLedger,
+  creditLedgerEntries,
   supplierAcceptances,
   adminActionLogs,
   idempotencyKeys,
@@ -16,6 +17,9 @@ import {
   type InsertCommitment,
   type EscrowEntry,
   type InsertEscrowEntry,
+  type CreditLedgerEntry,
+  type InsertCreditLedgerEntry,
+  type CreditEventType,
   type SupplierAcceptance,
   type InsertSupplierAcceptance,
   type AdminActionLog,
@@ -136,6 +140,21 @@ export interface IStorage {
   updateConsolidationPoint(id: string, updates: UpdateConsolidationPoint): Promise<ConsolidationPoint | undefined>;
   archiveConsolidationPoint(id: string): Promise<ConsolidationPoint | undefined>;
   updateCampaign(id: string, updates: Partial<Campaign>): Promise<Campaign | undefined>;
+
+  // Credit Ledger operations (append-only)
+  getCreditLedgerEntries(filters?: {
+    participantId?: string;
+    participantEmail?: string;
+    eventType?: CreditEventType;
+    from?: Date;
+    to?: Date;
+    campaignId?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ entries: CreditLedgerEntry[]; total: number }>;
+  getCreditLedgerEntry(id: string): Promise<CreditLedgerEntry | undefined>;
+  createCreditLedgerEntry(entry: InsertCreditLedgerEntry): Promise<CreditLedgerEntry>;
+  getParticipantCreditBalance(participantId: string): Promise<number>;
 }
 
 // Generate unique reference number for commitments
@@ -716,6 +735,129 @@ export class DatabaseStorage implements IStorage {
       .where(eq(consolidationPoints.id, id))
       .returning();
     return updated || undefined;
+  }
+
+  // ============================================
+  // CREDIT LEDGER OPERATIONS (Append-only)
+  // ============================================
+
+  async getCreditLedgerEntries(filters?: {
+    participantId?: string;
+    participantEmail?: string;
+    eventType?: CreditEventType;
+    from?: Date;
+    to?: Date;
+    campaignId?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ entries: CreditLedgerEntry[]; total: number }> {
+    const limit = filters?.limit || 50;
+    const offset = filters?.offset || 0;
+
+    // Build WHERE conditions
+    const conditions = [];
+    if (filters?.participantId) {
+      conditions.push(eq(creditLedgerEntries.participantId, filters.participantId));
+    }
+    if (filters?.eventType) {
+      conditions.push(eq(creditLedgerEntries.eventType, filters.eventType));
+    }
+    if (filters?.campaignId) {
+      conditions.push(eq(creditLedgerEntries.campaignId, filters.campaignId));
+    }
+    if (filters?.from) {
+      conditions.push(sql`${creditLedgerEntries.createdAt} >= ${filters.from.toISOString()}`);
+    }
+    if (filters?.to) {
+      conditions.push(sql`${creditLedgerEntries.createdAt} <= ${filters.to.toISOString()}`);
+    }
+
+    // Handle participant email search via join
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    // Get total count
+    const [countResult] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(creditLedgerEntries)
+      .where(whereClause);
+    const total = countResult?.count || 0;
+
+    // Get entries with participant email and campaign name
+    const entries = await db
+      .select({
+        id: creditLedgerEntries.id,
+        participantId: creditLedgerEntries.participantId,
+        participantEmail: users.email,
+        eventType: creditLedgerEntries.eventType,
+        amount: creditLedgerEntries.amount,
+        currency: creditLedgerEntries.currency,
+        campaignId: creditLedgerEntries.campaignId,
+        campaignName: campaigns.name,
+        commitmentId: creditLedgerEntries.commitmentId,
+        ruleSetId: creditLedgerEntries.ruleSetId,
+        awardId: creditLedgerEntries.awardId,
+        reservationRef: creditLedgerEntries.reservationRef,
+        auditRef: creditLedgerEntries.auditRef,
+        reason: creditLedgerEntries.reason,
+        createdBy: creditLedgerEntries.createdBy,
+        createdAt: creditLedgerEntries.createdAt,
+      })
+      .from(creditLedgerEntries)
+      .leftJoin(users, eq(creditLedgerEntries.participantId, users.id))
+      .leftJoin(campaigns, eq(creditLedgerEntries.campaignId, campaigns.id))
+      .where(whereClause)
+      .orderBy(desc(creditLedgerEntries.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    return {
+      entries: entries as any,
+      total
+    };
+  }
+
+  async getCreditLedgerEntry(id: string): Promise<CreditLedgerEntry | undefined> {
+    const [entry] = await db
+      .select({
+        id: creditLedgerEntries.id,
+        participantId: creditLedgerEntries.participantId,
+        participantEmail: users.email,
+        participantName: users.fullName,
+        eventType: creditLedgerEntries.eventType,
+        amount: creditLedgerEntries.amount,
+        currency: creditLedgerEntries.currency,
+        campaignId: creditLedgerEntries.campaignId,
+        campaignName: campaigns.name,
+        commitmentId: creditLedgerEntries.commitmentId,
+        ruleSetId: creditLedgerEntries.ruleSetId,
+        awardId: creditLedgerEntries.awardId,
+        reservationRef: creditLedgerEntries.reservationRef,
+        auditRef: creditLedgerEntries.auditRef,
+        reason: creditLedgerEntries.reason,
+        createdBy: creditLedgerEntries.createdBy,
+        createdAt: creditLedgerEntries.createdAt,
+      })
+      .from(creditLedgerEntries)
+      .leftJoin(users, eq(creditLedgerEntries.participantId, users.id))
+      .leftJoin(campaigns, eq(creditLedgerEntries.campaignId, campaigns.id))
+      .where(eq(creditLedgerEntries.id, id));
+    return entry as any || undefined;
+  }
+
+  async createCreditLedgerEntry(entry: InsertCreditLedgerEntry): Promise<CreditLedgerEntry> {
+    const [created] = await db
+      .insert(creditLedgerEntries)
+      .values(entry)
+      .returning();
+    return created;
+  }
+
+  async getParticipantCreditBalance(participantId: string): Promise<number> {
+    const [result] = await db
+      .select({ balance: sql<string>`COALESCE(SUM(${creditLedgerEntries.amount}), 0)` })
+      .from(creditLedgerEntries)
+      .where(eq(creditLedgerEntries.participantId, participantId));
+    return parseFloat(result?.balance || "0");
   }
 }
 

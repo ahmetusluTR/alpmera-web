@@ -1,6 +1,6 @@
 # ALPMERA
 
-## PHASE 0–1 PRODUCT REQUIREMENTS DOCUMENT (PRD)
+## PHASE 0–1 PRODUCT REQUIREMENTS DOCUMENT (PRD – REVISED)
 
 **Status:** Canonical
 **Owner:** Architect & Execution Brain
@@ -11,18 +11,26 @@
 
 ## 1. EXECUTIVE INTENT
 
-Alpmera is a **private collective buying system** for people who understand that leverage is not negotiated individually — it is coordinated.
+Alpmera is a **structured collective buying operator** that transforms dispersed individual intent into coordinated purchasing outcomes — responsibly and predictably.
 
-Through **private campaigns and escrow-secured commitments**, Alpmera converts shared intent into enforceable purchasing power, without urgency, exposure, or persuasion.
+In Phase 0–1, Alpmera is **not a marketplace, not a connector, and not a broker.**
+
+It is an organization that:
+
+* designs campaigns
+* collects and manages funds
+* purchases directly from suppliers
+* manages fulfillment
+* issues refunds when campaigns fail
 
 This document defines:
 
-* the **minimum system** required to earn trust
-* the **constraints** that preserve legitimacy
+* the **minimum system required to earn trust**
+* the **constraints that protect users and Alpmera**
 * the **conditions under which Alpmera deserves to continue**
 
 This is not a growth document.
-It is a **credibility document**.
+It is a **credibility and operational discipline document.**
 
 > **Trust before price.
 > Rules before growth.
@@ -32,37 +40,48 @@ It is a **credibility document**.
 
 ## 2. DOCTRINE & NON-NEGOTIABLE PRINCIPLES
 
-### 2.1 What Alpmera Is
+### 2.1 What Alpmera Is (Phase 1–2 Reality)
 
-* A **private coordination layer** between buyers and suppliers
-* A **neutral clearing house** that enforces rules
-* Escrow-first by default
-* Campaign-driven by intent, not inventory
+Alpmera is:
 
-Alpmera does not sell products.
-It organizes **serious participation**.
+* an **end-to-end controlled collective buying OPERATOR**
+* the **owner of campaigns**
+* the **collector of funds**
+* the **purchasing and logistics coordinator**
+* the **issuer of refunds**
+
+Alpmera does not merely organize intent.
+Alpmera **executes outcomes.**
 
 ---
 
 ### 2.2 What Alpmera Is Not
 
-* Not a store
-* Not a reseller
-* Not a discount engine
-* Not a public marketplace
-* Not a social or promotional platform
+Alpmera is not:
 
-If it resembles any of the above, it is misaligned.
+* a marketplace
+* a reseller marketplace
+* a listing platform
+* a negotiation venue
+* a discount engine
+* a deal site
+* a peer-to-peer system
+
+If any design decision implies these, it is misaligned.
 
 ---
 
-### 2.3 Trust Doctrine
+### 2.3 Trust Doctrine (Operational Form)
 
 * Trust is finite and fragile
-* One ambiguous failure costs more than ten successes recover
+* One ambiguous failure outweighs many successes
 * Any unclear money flow is a system defect
 
-Alpmera favors **restraint over persuasion** and **process over promises**.
+Alpmera favors:
+
+* restraint over persuasion
+* process over promises
+* clarity over excitement
 
 ---
 
@@ -72,29 +91,30 @@ Alpmera favors **restraint over persuasion** and **process over promises**.
 
 * U.S.-based professionals
 * Comfortable committing **$500–$3,000**
-* Skeptical of advertising-driven pricing
-* Willing to wait if rules are explicit and enforced
-* Values privacy and procedural clarity
+* Skeptical of retail pricing games
+* Willing to wait when rules are explicit
+* Values process clarity over hype
 
-They are not chasing deals.
-They are avoiding manipulation.
+They are not bargain hunters.
+They are people who value **structured outcomes.**
 
 ---
 
 ### 3.2 Problem Alpmera Solves
 
-Premium buyers lack a **credible mechanism** to exercise collective leverage without:
+Individuals lack a **credible mechanism** to achieve manufacturer-level outcomes without:
 
-* opaque pricing
+* opaque intermediaries
 * unclear fund handling
-* supplier non-performance
-* emotional or social pressure
+* unreliable fulfillment
+* chaotic coordination
 
 Alpmera provides structure where:
 
-* commitment creates leverage
-* escrow enforces discipline
-* rules protect everyone equally
+* participation creates leverage
+* rules enforce discipline
+* responsibility is centralized
+* outcomes are predictable
 
 ---
 
@@ -102,13 +122,13 @@ Alpmera provides structure where:
 
 ### 4.1 Purpose
 
-Phase 0 exists to validate three truths only:
+Phase 0 exists to validate three truths:
 
-1. Users understand and accept escrow-based commitments
+1. Users understand and accept commitment-based participation
 2. Suppliers respect explicit acceptance rules
-3. Failure can be handled without trust erosion
+3. Failures can be handled without trust erosion
 
-If any fail, Alpmera stops.
+If any of these fail, Alpmera stops.
 
 ---
 
@@ -117,10 +137,10 @@ If any fail, Alpmera stops.
 Phase 0 does **not** optimize for:
 
 * scale
-* conversion
 * automation
 * virality
 * engagement mechanics
+* rapid growth
 
 This phase proves **worthiness**, not momentum.
 
@@ -131,83 +151,96 @@ This phase proves **worthiness**, not momentum.
 **Included**
 
 * Admin-created campaigns
-* User commitments
-* Escrow hold / release / refund
-* Manual supplier acceptance
+* User participation commitments
+* Fund collection, release, and refund
+* Manual supplier coordination
 * Manual dispute handling
 
 **Excluded**
 
 * Supplier self-service
-* User communication
-* Referrals
-* Public discovery
+* Public campaign discovery
 * Automated payouts
+* Growth features
+* Referral systems
 
 ---
 
 ### 4.4 Campaign State Machine (Immutable)
 
-1. **AGGREGATION**
-2. **SUCCESS**
-3. **FAILED**
-4. **FULFILLMENT**
-5. **RELEASED**
+```
+DESIGN → AGGREGATION → SUCCESS → PROCUREMENT → FULFILLMENT → COMPLETED
+            ↓
+          FAILED
+```
 
-No skips.
-All transitions logged and auditable.
+* No state skips
+* All transitions logged
+* All outcomes auditable
+
+**No Silent Transitions. Ever.**
 
 ---
 
-### 4.5 Money Flow (Protocol-Level)
+### 4.5 Money Flow (Protocol Level)
 
-* Funds are authorized and locked at commitment
-* No supplier access before acceptance
-* Release only after fulfillment confirmation
-* Refunds automatic on failure
+* Funds are collected at participation
+* Funds are held by Alpmera
+* Suppliers are paid only after success
+* Refunds issued automatically on failure
 
-Money handling is treated as **infrastructure**, not UX.
+**No third-party escrow is used in Phase 0–1.**
+Money handling is treated as **core infrastructure**, not a feature.
 
 ---
 
 ### 4.6 Supplier Rules
 
-* Suppliers do not list products
-* They respond to verified demand
+* Suppliers do not create campaigns
+* Alpmera initiates campaigns
+* Suppliers respond to verified demand
 * Acceptance is explicit and binding
 * Performance history is recorded
 
-Suppliers are participants, not owners.
+Suppliers are partners in execution, not platform owners.
 
 ---
 
-### 4.7 User Trust Signals
+### 4.7 Transparency With Guardrails
 
-**Visible**
+**Visible to Users**
 
-* Rules
-* Escrow explanation
-* State progression
+* Campaign rules
+* Responsibilities
+* Status progression
 * Refund guarantees
+* Outcome explanations
 
-**Hidden**
+**Never Exposed**
 
-* Supplier margins
-* User identities
-* Internal risk flags
+* Supplier pricing tiers
+* Alpmera margins
+* Internal costs
+* Total funds collected
+* Per-campaign economics
 
-Opacity prevents gaming; it does not reduce fairness.
+**Competitive Safety Rule**
+
+No UX or copy may allow competitors to reverse-engineer Alpmera’s unit economics.
 
 ---
 
 ### 4.8 Phase 0 Stop Conditions
 
-* Escrow disputed publicly
+Alpmera halts if any occur:
+
 * Refunds fail or delay
-* Supplier breaches post-acceptance
+* Supplier breaches after acceptance
+* Money flow becomes unclear
+* Users misunderstand core process
 * Trust ambiguity emerges
 
-No iteration through trust loss.
+There is no iteration through trust loss.
 
 ---
 
@@ -217,7 +250,7 @@ No iteration through trust loss.
 
 Phase 1 validates:
 
-* repeatability
+* repeatable execution
 * operational discipline
 * trust preservation under light scale
 
@@ -227,34 +260,53 @@ Phase 1 validates:
 
 1. Doctrine-first landing
 2. Campaign explanation
-3. Commitment decision
-4. Escrow confirmation
-5. Resolution outcome
+3. Participation decision
+4. Commitment confirmation
+5. Outcome resolution
 6. Transparent closure
+
+Users join campaigns Alpmera runs — nothing more, nothing less.
 
 ---
 
 ### 5.3 UX Philosophy
 
 * Calm, restrained design
-* High whitespace
-* Minimal actions
+* Minimal options
+* Clear responsibilities
 * Rules before buttons
 
-The interface should feel **confident, not persuasive**.
+The interface must feel:
+
+> **confident and accountable — not persuasive.**
 
 ---
 
-### 5.4 Escrow Language Rules
+### 5.4 Language Doctrine (Mandatory)
 
-Escrow language must remain:
+**Required Terms**
 
-* factual
-* neutral
-* explicit
+* join
+* participate
+* commit
+* campaign
+* fulfill
+* refund
 
-No motivational framing.
-No emotional promises.
+**Forbidden Terms**
+
+* buy
+* order
+* checkout
+* purchase
+* sell
+* deal
+* discount
+* marketplace
+
+**Copy Integrity Test**
+
+If a reasonable first-time user could think “I just bought something,” the language is invalid.
 
 ---
 
@@ -262,11 +314,11 @@ No emotional promises.
 
 Admins may:
 
-* freeze campaigns
-* force refunds
-* delay releases
-* resolve disputes
+* pause campaigns
+* cancel campaigns
+* issue refunds
 * annotate decisions
+* manage supplier coordination
 
 Admin power exists to **protect trust**, not optimize revenue.
 
@@ -282,22 +334,26 @@ Admin power exists to **protect trust**, not optimize revenue.
 
 * Refund execution time
 * Supplier reliability
-* Post-resolution trust sentiment
+* Post-resolution user confidence
+* Support ticket resolution quality
 
-Ignored:
+**Ignored in Phase 1**
 
 * GMV
 * DAU
-* conversion rates
+* raw conversion rates
+* growth vanity metrics
 
 ---
 
 ## 6. FAILURE CONTAINMENT
 
-* Campaigns isolated
-* No shared balances
+* Campaigns are isolated
+* No shared user balances
 * Supplier failures quarantined
-* Communication procedural, not emotional
+* Communication procedural and factual
+
+Failure handling must strengthen trust, not test it.
 
 ---
 
@@ -307,23 +363,47 @@ Phase 1 ends only when:
 
 * multiple campaigns complete cleanly
 * at least one failure handled correctly
-* users express confidence post-resolution
-* suppliers respect consequences
+* users express confidence after resolution
+* suppliers respect acceptance consequences
+* operations remain predictable
 
-Only then may scaling be discussed.
+Only after these are true may any scaling be discussed.
 
 ---
 
-## 8. FINAL NOTE
+## 8. COMPETITIVE SAFETY REQUIREMENTS
+
+All product design must ensure:
+
+* No exposure of internal economics
+* No display of total funds collected
+* No price comparison logic
+* No supplier tier visibility
+* No margin inference
+
+Transparency is limited to:
+
+* process
+* status
+* responsibilities
+* outcomes
+
+Economics remain intentionally opaque.
+
+---
+
+## 9. FINAL NOTE
 
 Alpmera is not fast.
 It is not loud.
 It is not everywhere.
 
-It is **deliberate**.
+It is **deliberate and responsible.**
 
 > **Alpmera exists for people who understand that collective power
-> is not negotiated — it is enforced by structure.**
+> is not negotiated — it is organized and executed.**
 
 ---
+
+**End of PRD – Phase 1–2 Operator Edition**
 

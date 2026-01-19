@@ -102,6 +102,11 @@ app.use((req, res, next) => {
     throw err;
   });
 
+  // API 404 guard: return JSON for unmatched /api/* routes (before Vite catch-all)
+  app.use("/api/*", (_req: Request, res: Response) => {
+    res.status(404).json({ error: "API endpoint not found" });
+  });
+
   // importantly only setup vite in development and after
   // setting up all the other routes so the catch-all route
   // doesn't interfere with the other routes

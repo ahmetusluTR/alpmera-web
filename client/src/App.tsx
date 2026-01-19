@@ -37,8 +37,11 @@ import AdminRefundPlanDetail from "@/pages/admin/refund-plan-detail";
 import AdminDeliveries from "@/pages/admin/deliveries";
 import AdminSuppliers from "@/pages/admin/suppliers";
 import AdminSupplierDetail from "@/pages/admin/supplier-detail";
+import AdminSupplierBulk from "@/pages/admin/supplier-bulk";
 import AdminConsolidationPoints from "@/pages/admin/consolidation-points";
 import AdminConsolidationDetail from "@/pages/admin/consolidation-detail";
+import AdminCredits from "@/pages/admin/credits";
+import AdminCreditDetail from "@/pages/admin/credit-detail";
 import {
   ExceptionsPage,
   AuditPage,
@@ -255,6 +258,11 @@ function Router() {
           <AdminSuppliers />
         </AdminGuard>
       </Route>
+      <Route path="/admin/suppliers/bulk">
+        <AdminGuard>
+          <AdminSupplierBulk />
+        </AdminGuard>
+      </Route>
       <Route path="/admin/suppliers/:id">
         {(params) => (
           <AdminGuard>
@@ -302,6 +310,18 @@ function Router() {
         <AdminGuard>
           <AdminLedger />
         </AdminGuard>
+      </Route>
+      <Route path="/admin/credits">
+        <AdminGuard>
+          <AdminCredits />
+        </AdminGuard>
+      </Route>
+      <Route path="/admin/credits/:id">
+        {(params) => (
+          <AdminGuard>
+            <AdminCreditDetail />
+          </AdminGuard>
+        )}
       </Route>
       <Route path="/admin/refunds">
         <AdminGuard>
