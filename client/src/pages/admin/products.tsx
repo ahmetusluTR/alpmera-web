@@ -105,16 +105,16 @@ export default function AdminProducts() {
                 </CardHeader>
                 <CardContent>
                     <div className="rounded-md border">
-                        <Table>
+                        <Table className="table-fixed w-full">
                             <TableHeader>
                                 <TableRow>
-                                    <TableHead>SKU</TableHead>
-                                    <TableHead>Name</TableHead>
-                                    <TableHead>Brand</TableHead>
-                                    <TableHead>Category</TableHead>
-                                    <TableHead>Status</TableHead>
-                                    <TableHead>Created At</TableHead>
-                                    <TableHead className="text-right">Actions</TableHead>
+                                    <TableHead className="w-[120px]">SKU</TableHead>
+                                    <TableHead className="w-[260px]">Name</TableHead>
+                                    <TableHead className="w-[160px]">Brand</TableHead>
+                                    <TableHead className="w-[160px]">Category</TableHead>
+                                    <TableHead className="w-[120px]">Status</TableHead>
+                                    <TableHead className="w-[160px]">Created At</TableHead>
+                                    <TableHead className="w-[120px] text-right">Actions</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -139,28 +139,38 @@ export default function AdminProducts() {
                                     </TableRow>
                                 ) : (
                                     filteredProducts?.map((product) => (
-                                        <Link key={product.id} href={`/admin/products/${product.id}`}>
-                                            <TableRow className="cursor-pointer">
-                                                <TableCell className="font-mono text-xs">{product.sku}</TableCell>
-                                                <TableCell className="font-medium">{product.name}</TableCell>
-                                                <TableCell>{product.brand || "-"}</TableCell>
-                                                <TableCell>{product.category || "-"}</TableCell>
-                                                <TableCell>
-                                                    <Badge variant={getStatusBadgeVariant(product.status) as any}>
-                                                        {product.status}
-                                                    </Badge>
-                                                </TableCell>
-                                                <TableCell className="text-muted-foreground text-sm">
-                                                    {format(new Date(product.createdAt), "MMM d, yyyy")}
-                                                </TableCell>
-                                                <TableCell className="text-right">
-                                                    <Button variant="ghost" size="sm">
-                                                        <Edit className="h-4 w-4 mr-1" />
-                                                        View
-                                                    </Button>
-                                                </TableCell>
-                                            </TableRow>
-                                        </Link>
+                                        <TableRow
+                                            key={product.id}
+                                            className="cursor-pointer"
+                                            role="link"
+                                            tabIndex={0}
+                                            onClick={() => setLocation(`/admin/products/${product.id}`)}
+                                            onKeyDown={(event) => {
+                                                if (event.key === "Enter" || event.key === " ") {
+                                                    event.preventDefault();
+                                                    setLocation(`/admin/products/${product.id}`);
+                                                }
+                                            }}
+                                        >
+                                            <TableCell className="font-mono text-xs truncate">{product.sku}</TableCell>
+                                            <TableCell className="font-medium truncate">{product.name}</TableCell>
+                                            <TableCell className="truncate">{product.brand || "-"}</TableCell>
+                                            <TableCell className="truncate">{product.category || "-"}</TableCell>
+                                            <TableCell>
+                                                <Badge variant={getStatusBadgeVariant(product.status) as any}>
+                                                    {product.status}
+                                                </Badge>
+                                            </TableCell>
+                                            <TableCell className="text-muted-foreground text-sm">
+                                                {format(new Date(product.createdAt), "MMM d, yyyy")}
+                                            </TableCell>
+                                            <TableCell className="text-right">
+                                                <Button variant="ghost" size="sm">
+                                                    <Edit className="h-4 w-4 mr-1" />
+                                                    View
+                                                </Button>
+                                            </TableCell>
+                                        </TableRow>
                                     ))
                                 )}
                             </TableBody>

@@ -14,17 +14,33 @@ export default function AdminSignInPage() {
   const [apiKey, setApiKey] = useState("");
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const refreshAdminSession = async () => {
+    await queryClient.fetchQuery({
+      queryKey: ["/api/admin/session"],
+      queryFn: async () => {
+        const res = await fetch("/api/admin/session", {
+          credentials: "include",
+          cache: "no-store",
+        });
+        if (!res.ok) {
+          const text = (await res.text()) || res.statusText;
+          throw new Error(`${res.status}: ${text}`);
+        }
+        return res.json();
+      },
+    });
+  };
 
   const loginMutation = useMutation({
     mutationFn: async (apiKey: string) => {
       return await apiRequest("POST", "/api/admin/login", { apiKey });
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       toast({
         title: "Admin access granted",
         description: "Welcome to the Admin Console.",
       });
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/session"] });
+      await refreshAdminSession();
       setLocation("/admin");
     },
     onError: (error: Error) => {

@@ -43,6 +43,7 @@ const navSections = [
     items: [
       { path: "/admin/clearing", label: "Clearing", icon: Wallet },
       { path: "/admin/credits", label: "Credits", icon: Coins },
+      { path: "/admin/commitments", label: "Commitments", icon: FileText },
     ],
   },
   {
@@ -93,6 +94,22 @@ export function AdminLayout({ children }: AdminLayoutProps) {
   const [adminUsername, setAdminUsername] = useState("admin");
   const [adminApiKey, setAdminApiKey] = useState("");
   const [loginError, setLoginError] = useState("");
+  const refreshAdminSession = async () => {
+    await queryClient.fetchQuery({
+      queryKey: ["/api/admin/session"],
+      queryFn: async () => {
+        const res = await fetch("/api/admin/session", {
+          credentials: "include",
+          cache: "no-store",
+        });
+        if (!res.ok) {
+          const text = (await res.text()) || res.statusText;
+          throw new Error(`${res.status}: ${text}`);
+        }
+        return res.json();
+      },
+    });
+  };
 
   const { isAdmin, adminUsername: adminUser, isLoading: sessionLoading } = useAdminAuth();
 
@@ -104,11 +121,11 @@ export function AdminLayout({ children }: AdminLayoutProps) {
       });
       return response.json();
     },
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       setAdminApiKey("");
       setLoginError("");
       toast({ title: "Logged In", description: `Welcome, ${data.username}` });
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/session"] });
+      await refreshAdminSession();
     },
     onError: (error: Error) => {
       setLoginError(error.message || "Invalid credentials");

@@ -45,6 +45,8 @@ import AdminCreditDetail from "@/pages/admin/credit-detail";
 import AdminParticipantCredits from "@/pages/admin/participant-credits";
 import AdminParticipants from "@/pages/admin/participants";
 import AdminParticipantDetail from "@/pages/admin/participant-detail";
+import AdminCommitments from "@/pages/admin/commitments";
+import AdminCommitmentDetail from "@/pages/admin/commitment-detail";
 import {
   ExceptionsPage,
   AuditPage,
@@ -265,6 +267,18 @@ function Router() {
         {(params) => (
           <AdminGuard>
             <AdminParticipantDetail />
+          </AdminGuard>
+        )}
+      </Route>
+      <Route path="/admin/commitments">
+        <AdminGuard>
+          <AdminCommitments />
+        </AdminGuard>
+      </Route>
+      <Route path="/admin/commitments/:id">
+        {(params) => (
+          <AdminGuard>
+            <AdminCommitmentDetail />
           </AdminGuard>
         )}
       </Route>

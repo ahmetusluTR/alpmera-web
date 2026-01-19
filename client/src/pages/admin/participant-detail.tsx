@@ -12,6 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, User, Mail, Phone, Calendar, CreditCard, FileText, DollarSign } from "lucide-react";
 import { format } from "date-fns";
 
@@ -42,8 +43,9 @@ interface Commitment {
   referenceNumber: string;
   campaignId: string;
   campaignTitle: string | null;
-  units: number;
-  totalAmount: string;
+  quantity: number;
+  amount: string;
+  status: string;
   createdAt: string;
 }
 
@@ -80,6 +82,12 @@ interface Refund {
 interface RefundsResponse {
   refunds: Refund[];
 }
+
+const COMMITMENT_STATUS_LABELS: Record<string, { label: string; variant: "default" | "secondary" | "outline" }> = {
+  LOCKED: { label: "Active", variant: "default" },
+  REFUNDED: { label: "Refunded", variant: "secondary" },
+  RELEASED: { label: "Released", variant: "outline" },
+};
 
 export default function ParticipantDetailPage() {
   const [, params] = useRoute("/admin/participants/:id");
@@ -325,6 +333,7 @@ export default function ParticipantDetailPage() {
                         <TableRow>
                           <TableHead>Reference #</TableHead>
                           <TableHead>Campaign</TableHead>
+                          <TableHead>Status</TableHead>
                           <TableHead>Units</TableHead>
                           <TableHead className="text-right">Amount</TableHead>
                           <TableHead>Created</TableHead>
@@ -343,9 +352,14 @@ export default function ParticipantDetailPage() {
                                 </a>
                               </Link>
                             </TableCell>
-                            <TableCell>{commitment.units}</TableCell>
+                            <TableCell>
+                              <Badge variant={COMMITMENT_STATUS_LABELS[commitment.status]?.variant || "outline"}>
+                                {COMMITMENT_STATUS_LABELS[commitment.status]?.label || commitment.status}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>{commitment.quantity}</TableCell>
                             <TableCell className="text-right font-mono">
-                              ${parseFloat(commitment.totalAmount).toFixed(2)}
+                              ${parseFloat(commitment.amount).toFixed(2)}
                             </TableCell>
                             <TableCell>
                               {format(new Date(commitment.createdAt), "MMM d, yyyy")}

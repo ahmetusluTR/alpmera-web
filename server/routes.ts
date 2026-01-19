@@ -26,7 +26,7 @@ import {
   userProfiles
 } from "@shared/schema";
 import { z } from "zod";
-import { and, count, desc, eq, ilike, or, sum } from "drizzle-orm";
+import { and, count, desc, eq, gte, ilike, lte, or, sql, sum } from "drizzle-orm";
 import { createHash, randomBytes, randomInt, randomUUID } from "crypto";
 
 // Auth request schemas
@@ -172,6 +172,30 @@ function sortObject(obj: any): any {
     return sorted;
   }
   return obj;
+}
+
+function getFirstGalleryImageUrl(value: unknown): string | null {
+  if (!value) return null;
+  if (Array.isArray(value)) {
+    const first = value.find((url) => typeof url === "string" && url.trim().length > 0);
+    return typeof first === "string" ? first.trim() : null;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        const first = parsed.find((url) => typeof url === "string" && url.trim().length > 0);
+        return typeof first === "string" ? first.trim() : null;
+      }
+    } catch {
+      // Fall back to delimited values.
+    }
+    const first = trimmed.split(/[|,]/).map((url) => url.trim()).find(Boolean);
+    return first || null;
+  }
+  return null;
 }
 
 // Get changed fields between old and new campaign data
@@ -617,7 +641,12 @@ export async function registerRoutes(
       const [activeCommitmentsResult] = await db
         .select({ count: count() })
         .from(commitments)
-        .where(eq(commitments.userId, id));
+        .where(
+          and(
+            eq(commitments.userId, id),
+            eq(commitments.status, "LOCKED")
+          )
+        );
 
       // 2. Total committed to escrow (lifetime)
       const [totalEscrowResult] = await db
@@ -690,14 +719,18 @@ export async function registerRoutes(
           referenceNumber: commitments.referenceNumber,
           campaignId: commitments.campaignId,
           campaignTitle: campaigns.title,
-          units: commitments.units,
-          totalAmount: commitments.totalAmount,
+          quantity: commitments.quantity,
+          amount: commitments.amount,
+          status: commitments.status,
           createdAt: commitments.createdAt,
         })
         .from(commitments)
         .leftJoin(campaigns, eq(commitments.campaignId, campaigns.id))
         .where(eq(commitments.userId, id))
-        .orderBy(desc(commitments.createdAt))
+        .orderBy(
+          sql`case when ${commitments.status} = 'LOCKED' then 0 else 1 end`,
+          desc(commitments.createdAt)
+        )
         .limit(limitNum)
         .offset(offsetNum);
 
@@ -768,6 +801,145 @@ export async function registerRoutes(
     } catch (error) {
       console.error("[ADMIN] Error getting participant refunds:", error);
       res.status(500).json({ error: "Failed to get participant refunds" });
+    }
+  });
+
+  // ============================================
+  // ADMIN COMMITMENTS (High-volume list + detail)
+  // ============================================
+
+  app.get("/api/admin/commitments", requireAdminAuth, async (req, res) => {
+    try {
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
+
+      const {
+        search,
+        status,
+        campaignId,
+        createdFrom,
+        createdTo,
+        page = "1",
+        pageSize = "25",
+      } = req.query;
+
+      const parsedPage = Math.max(parseInt(page as string, 10) || 1, 1);
+      const requestedPageSize = parseInt(pageSize as string, 10) || 25;
+      const allowedPageSizes = new Set([25, 50, 100]);
+      const size = allowedPageSizes.has(requestedPageSize) ? requestedPageSize : 25;
+      const offset = (parsedPage - 1) * size;
+
+      const conditions: any[] = [];
+      if (status && typeof status === "string" && status !== "ALL") {
+        conditions.push(eq(commitments.status, status as any));
+      }
+      if (campaignId && typeof campaignId === "string") {
+        conditions.push(eq(commitments.campaignId, campaignId));
+      }
+      if (search && typeof search === "string") {
+        const searchValue = `%${search}%`;
+        conditions.push(
+          or(
+            ilike(commitments.referenceNumber, searchValue),
+            ilike(commitments.participantEmail, searchValue),
+            ilike(commitments.participantName, searchValue),
+            ilike(commitments.id, searchValue)
+          )
+        );
+      }
+      if (createdFrom && typeof createdFrom === "string") {
+        const fromDate = new Date(createdFrom);
+        if (!Number.isNaN(fromDate.getTime())) {
+          fromDate.setHours(0, 0, 0, 0);
+          conditions.push(gte(commitments.createdAt, fromDate));
+        }
+      }
+      if (createdTo && typeof createdTo === "string") {
+        const toDate = new Date(createdTo);
+        if (!Number.isNaN(toDate.getTime())) {
+          toDate.setHours(23, 59, 59, 999);
+          conditions.push(lte(commitments.createdAt, toDate));
+        }
+      }
+
+      const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+      const rows = await db
+        .select({
+          id: commitments.id,
+          referenceNumber: commitments.referenceNumber,
+          participantName: commitments.participantName,
+          participantEmail: commitments.participantEmail,
+          campaignId: commitments.campaignId,
+          campaignTitle: campaigns.title,
+          quantity: commitments.quantity,
+          amount: commitments.amount,
+          status: commitments.status,
+          createdAt: commitments.createdAt,
+        })
+        .from(commitments)
+        .leftJoin(campaigns, eq(commitments.campaignId, campaigns.id))
+        .where(whereClause)
+        .orderBy(
+          sql`case when ${commitments.status} = 'LOCKED' then 0 else 1 end`,
+          desc(commitments.createdAt),
+          desc(commitments.id)
+        )
+        .limit(size)
+        .offset(offset);
+
+      const [countResult] = await db
+        .select({ count: count() })
+        .from(commitments)
+        .where(whereClause);
+
+      res.json({
+        rows,
+        total: countResult?.count || 0,
+        page: parsedPage,
+        pageSize: size,
+      });
+    } catch (error) {
+      console.error("[ADMIN] Error listing commitments:", error);
+      res.status(500).json({ error: "Failed to list commitments" });
+    }
+  });
+
+  app.get("/api/admin/commitments/:id", requireAdminAuth, async (req, res) => {
+    try {
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
+
+      const { id } = req.params;
+      const [commitment] = await db
+        .select({
+          id: commitments.id,
+          referenceNumber: commitments.referenceNumber,
+          participantName: commitments.participantName,
+          participantEmail: commitments.participantEmail,
+          userId: commitments.userId,
+          campaignId: commitments.campaignId,
+          campaignTitle: campaigns.title,
+          quantity: commitments.quantity,
+          amount: commitments.amount,
+          status: commitments.status,
+          createdAt: commitments.createdAt,
+        })
+        .from(commitments)
+        .leftJoin(campaigns, eq(commitments.campaignId, campaigns.id))
+        .where(eq(commitments.id, id))
+        .limit(1);
+
+      if (!commitment) {
+        return res.status(404).json({ error: "Commitment not found" });
+      }
+
+      res.json(commitment);
+    } catch (error) {
+      console.error("[ADMIN] Error getting commitment detail:", error);
+      res.status(500).json({ error: "Failed to get commitment detail" });
     }
   });
 
@@ -1180,6 +1352,9 @@ export async function registerRoutes(
 
   // Check admin session status
   app.get("/api/admin/session", (req, res) => {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
     if (req.session?.isAdmin === true) {
       res.json({
         authenticated: true,
@@ -1730,13 +1905,15 @@ export async function registerRoutes(
         const progressPercent = targetAmount > 0
           ? Math.min(Math.round((totalCommitted / targetAmount) * 100), 100)
           : 0;
+        const galleryFirst = getFirstGalleryImageUrl(c.galleryImageUrls);
+        const resolvedImageUrl = c.primaryImageUrl || galleryFirst || c.imageUrl;
 
         return {
           id: c.id,
           title: c.title,
           description: c.description,
           state: c.state,
-          imageUrl: c.imageUrl,
+          imageUrl: resolvedImageUrl,
           progressPercent,
           aggregationDeadline: c.aggregationDeadline,
           createdAt: c.createdAt,
@@ -1797,6 +1974,8 @@ export async function registerRoutes(
         rules: campaign.rules,
         state: campaign.state,
         imageUrl: campaign.imageUrl,
+        primaryImageUrl: (campaign as any).primaryImageUrl,
+        galleryImageUrls: (campaign as any).galleryImageUrls,
         progressPercent,
         aggregationDeadline: campaign.aggregationDeadline,
         createdAt: campaign.createdAt,

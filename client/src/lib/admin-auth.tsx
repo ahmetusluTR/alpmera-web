@@ -1,6 +1,6 @@
 import { createContext, useContext, useCallback, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { apiRequest, getQueryFn } from "./queryClient";
+import { apiRequest } from "./queryClient";
 
 interface AdminSession {
   authenticated: boolean;
@@ -22,7 +22,20 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
   
   const { data: session, isLoading, refetch } = useQuery<AdminSession>({
     queryKey: ["/api/admin/session"],
-    queryFn: getQueryFn<AdminSession>({ on401: "returnNull" }),
+    queryFn: async () => {
+      const res = await fetch("/api/admin/session", {
+        credentials: "include",
+        cache: "no-store",
+      });
+      if (res.status === 401) {
+        return null;
+      }
+      if (!res.ok) {
+        const text = (await res.text()) || res.statusText;
+        throw new Error(`${res.status}: ${text}`);
+      }
+      return res.json();
+    },
     retry: false,
     staleTime: 1000 * 60 * 5,
     refetchOnWindowFocus: true,
