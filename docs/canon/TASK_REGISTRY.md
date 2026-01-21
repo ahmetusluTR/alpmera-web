@@ -58,6 +58,12 @@ Each task represents a **unit of executable authority**.
 | TSK-009 | assess_operability        | OPS_FULFILLMENT_ARCHITECT             | EXECUTABLE |
 | TSK-010 | resolve_dispute           | FOUNDER_MODE                          | EXECUTABLE |
 | TSK-011 | communicate_status_change | UX_TRUST_DESIGNER                     | EXECUTABLE |
+| TSK-012 | define_high_volume_data_architecture | SYSTEM_ARCHITECT | EXECUTABLE |
+| TSK-013 | enforce_high_volume_data_standards | QA_LEAD | EXECUTABLE |
+| TSK-014 | remediate_data_performance | SYSTEM_ARCHITECT | EXECUTABLE |
+
+
+
 
 ---
 
@@ -78,6 +84,11 @@ Defines **who owns execution**, **who must provide input**, and **who consumes o
 | assess_operability        | OPS_FULFILLMENT_ARCHITECT | RISK                  | —                 | GATEKEEPER      |
 | resolve_dispute           | FOUNDER_MODE              | ESCROW, OPS, RISK, UX | —                 | —               |
 | communicate_status_change | UX_TRUST_DESIGNER         | OPS, ESCROW           | —                 | —               |
+| define_high_volume_data_architecture | SYSTEM_ARCHITECT | UX, OPS, QA | QA_LEAD | IMPLEMENTER |
+| enforce_high_volume_data_standards | QA_LEAD | SYSTEM_ARCHITECT | — | IMPLEMENTER |
+| remediate_data_performance | SYSTEM_ARCHITECT | QA | QA_LEAD | IMPLEMENTER |
+
+
 
 ---
 
@@ -99,6 +110,10 @@ Playbooks define the lawful process envelope.
 | assess_operability        | —                                     | FAILURE_HANDLING, DELAY_COMMUNICATION | CAMPAIGN_ACCEPTANCE |
 | resolve_dispute           | FAILURE_HANDLING, REFUND_RELEASE      | DELAY_COMMUNICATION                   | —                   |
 | communicate_status_change | —                                     | DELAY_COMMUNICATION, REFUND_RELEASE   | —                   |
+| define_high_volume_data_architecture | — | FAILURE_HANDLING | — |
+| enforce_high_volume_data_standards  | — | FAILURE_HANDLING | — |
+| remediate_data_performance          | — | FAILURE_HANDLING | — |
+
 
 ---
 

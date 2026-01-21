@@ -198,7 +198,12 @@ export default function AdminConsole() {
   const [newCampaignConsolidationCountry, setNewCampaignConsolidationCountry] = useState("USA");
 
   const { data: campaigns, isLoading: campaignsLoading } = useQuery<CampaignWithStats[]>({
-    queryKey: ["/api/campaigns"],
+    queryKey: ["/api/admin/campaigns", "legacy"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/campaigns?mode=legacy", { credentials: "include" });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
   });
 
   // Fetch state machine from server to prevent frontend/backend drift
@@ -243,7 +248,7 @@ export default function AdminConsole() {
         toast({ title: "State Transition Complete", description: "The campaign state has been updated." });
       }
       clearAdminIdempotencyKey("transition", variables.campaignId, variables.newState);
-      queryClient.invalidateQueries({ queryKey: ["/api/campaigns"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/campaigns"] });
       queryClient.invalidateQueries({ queryKey: ["/api/campaigns", selectedCampaignId] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/logs"] });
       setTransitionDialogOpen(false);
@@ -273,7 +278,7 @@ export default function AdminConsole() {
         toast({ title: "Refunds Processed", description: "All commitments have been refunded." });
       }
       clearAdminIdempotencyKey("refund", campaignId);
-      queryClient.invalidateQueries({ queryKey: ["/api/campaigns"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/campaigns"] });
       queryClient.invalidateQueries({ queryKey: ["/api/campaigns", selectedCampaignId, "commitments"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/logs"] });
     },
@@ -300,7 +305,7 @@ export default function AdminConsole() {
         toast({ title: "Funds Released", description: "All commitments have been released." });
       }
       clearAdminIdempotencyKey("release", campaignId);
-      queryClient.invalidateQueries({ queryKey: ["/api/campaigns"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/campaigns"] });
       queryClient.invalidateQueries({ queryKey: ["/api/campaigns", selectedCampaignId, "commitments"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/logs"] });
     },
@@ -353,7 +358,7 @@ export default function AdminConsole() {
     },
     onSuccess: (campaign) => {
       toast({ title: "Campaign Created", description: `Campaign "${campaign.title}" has been created in AGGREGATION state.` });
-      queryClient.invalidateQueries({ queryKey: ["/api/campaigns"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/campaigns"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/logs"] });
       setCreateCampaignDialogOpen(false);
       resetCreateCampaignForm();

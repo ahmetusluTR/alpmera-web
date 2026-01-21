@@ -1,0 +1,46 @@
+:root {
+  --brand-deep-sapphire: 220 63% 16%;
+  --brand-cloud-dancer: 44 27% 92%;
+  --brand-matte-copper: 29 57% 46%;
+  --brand-eucalyptus: 133 11% 33%;
+  --brand-ink: 220 40% 12%;
+  --brand-slate: 220 14% 36%;
+
+  --brand-font-sans: "Source Sans 3", "Inter", sans-serif;
+  --brand-font-serif: "Cormorant Garamond", "Georgia", serif;
+  --brand-font-mono: "IBM Plex Mono", monospace;
+  --font-size-base: 16px;
+
+  --brand-radius-lg: 0.5625rem;
+  --brand-radius-md: 0.375rem;
+  --brand-radius-sm: 0.1875rem;
+
+  --brand-shadow-2xs: 0 1px 1px 0 hsl(220 20% 20% / 0.06);
+  --brand-shadow-xs: 0 1px 2px 0 hsl(220 20% 20% / 0.08);
+  --brand-shadow-sm: 0 1px 2px 0 hsl(220 20% 20% / 0.10), 0 2px 4px -2px hsl(220 20% 20% / 0.08);
+  --brand-shadow: 0 1px 3px 0 hsl(220 20% 20% / 0.12), 0 1px 2px -1px hsl(220 20% 20% / 0.10);
+  --brand-shadow-md: 0 2px 6px -2px hsl(220 20% 20% / 0.14), 0 3px 10px -4px hsl(220 20% 20% / 0.12);
+  --brand-shadow-lg: 0 6px 18px -8px hsl(220 20% 20% / 0.18), 0 8px 22px -10px hsl(220 20% 20% / 0.16);
+  --brand-shadow-xl: 0 12px 30px -14px hsl(220 20% 20% / 0.22);
+  --brand-shadow-2xl: 0 20px 40px -18px hsl(220 20% 20% / 0.24);
+
+  --motion-fast: 150ms;
+  --motion-standard: 220ms;
+  --motion-slow: 320ms;
+  --motion-ease: cubic-bezier(0.2, 0, 0, 1);
+  --motion-ease-emphasized: cubic-bezier(0.2, 0, 0, 1.1);
+}
+
+.dark {
+  --brand-ink: 220 40% 92%;
+  --brand-slate: 220 12% 70%;
+
+  --brand-shadow-2xs: 0 1px 1px 0 hsl(220 30% 5% / 0.35);
+  --brand-shadow-xs: 0 1px 2px 0 hsl(220 30% 5% / 0.40);
+  --brand-shadow-sm: 0 1px 2px 0 hsl(220 30% 5% / 0.45), 0 2px 4px -2px hsl(220 30% 5% / 0.40);
+  --brand-shadow: 0 1px 3px 0 hsl(220 30% 5% / 0.45), 0 1px 2px -1px hsl(220 30% 5% / 0.40);
+  --brand-shadow-md: 0 2px 6px -2px hsl(220 30% 5% / 0.50), 0 3px 10px -4px hsl(220 30% 5% / 0.46);
+  --brand-shadow-lg: 0 6px 18px -8px hsl(220 30% 5% / 0.55), 0 8px 22px -10px hsl(220 30% 5% / 0.50);
+  --brand-shadow-xl: 0 12px 30px -14px hsl(220 30% 5% / 0.60);
+  --brand-shadow-2xl: 0 20px 40px -18px hsl(220 30% 5% / 0.65);
+}

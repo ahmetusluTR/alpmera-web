@@ -17,18 +17,46 @@ interface PublicCampaign {
   aggregationDeadline: string;
 }
 
+interface PublicCampaignResponse {
+  rows: PublicCampaign[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 export default function Home() {
-  const { data: campaigns, isLoading } = useQuery<PublicCampaign[]>({
-    queryKey: ["/api/campaigns"],
+  const { data: inProgressResponse, isLoading: inProgressLoading } = useQuery<PublicCampaignResponse>({
+    queryKey: ["/api/campaigns", "in-progress"],
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        page: "1",
+        pageSize: "6",
+        status: "AGGREGATION,SUCCESS",
+        sort: "deadline_asc",
+      });
+      const res = await fetch(`/api/campaigns?${params.toString()}`);
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
   });
 
-  const inProgressCampaigns = campaigns?.filter(c => 
-    c.state === "AGGREGATION" || c.state === "SUCCESS"
-  ) || [];
-  
-  const completedCampaigns = campaigns?.filter(c => 
-    c.state === "FULFILLMENT" || c.state === "RELEASED"
-  ).slice(0, 3) || [];
+  const { data: completedResponse } = useQuery<PublicCampaignResponse>({
+    queryKey: ["/api/campaigns", "completed"],
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        page: "1",
+        pageSize: "3",
+        status: "FULFILLMENT,RELEASED",
+        sort: "created_desc",
+      });
+      const res = await fetch(`/api/campaigns?${params.toString()}`);
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+  });
+
+  const inProgressCampaigns = inProgressResponse?.rows ?? [];
+  const completedCampaigns = completedResponse?.rows ?? [];
 
   return (
     <Layout>
@@ -92,7 +120,7 @@ export default function Home() {
             Campaigns are built through collective participation. Details are private to members.
           </p>
           
-          {isLoading ? (
+          {inProgressLoading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {[1, 2, 3].map((i) => (
                 <Card key={i} className="p-6">

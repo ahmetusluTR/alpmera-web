@@ -47,9 +47,9 @@ import AdminParticipants from "@/pages/admin/participants";
 import AdminParticipantDetail from "@/pages/admin/participant-detail";
 import AdminCommitments from "@/pages/admin/commitments";
 import AdminCommitmentDetail from "@/pages/admin/commitment-detail";
+import AdminAudit from "@/pages/admin/audit";
+import AdminExceptions from "@/pages/admin/exceptions";
 import {
-  ExceptionsPage,
-  AuditPage,
   AdminUsersPage,
   AdminUserDetailPage,
   AdminConsolidationPointsPage,
@@ -445,12 +445,12 @@ function Router() {
       {/* Legacy admin routes */}
       <Route path="/admin/exceptions">
         <AdminGuard>
-          <ExceptionsPage />
+          <AdminExceptions />
         </AdminGuard>
       </Route>
       <Route path="/admin/audit">
         <AdminGuard>
-          <AuditPage />
+          <AdminAudit />
         </AdminGuard>
       </Route>
 

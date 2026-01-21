@@ -1,18 +1,7 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { useLocation, Link } from "wouter";
 import { AdminLayout } from "./layout";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@/components/ui/select";
 import {
     Table,
     TableBody,
@@ -21,36 +10,33 @@ import {
     TableHeader,
     TableRow
 } from "@/components/ui/table";
-import { Search, Plus, Upload, Package, Edit, Loader2 } from "lucide-react";
+import { Plus, Upload, Edit } from "lucide-react";
 import { format } from "date-fns";
-import { type Product } from "@shared/schema";
+import { useAdminListEngine } from "@/lib/admin-list-engine";
+import { ListToolbar } from "@/components/admin/list-toolbar";
+import { ListPagination } from "@/components/admin/list-pagination";
+import { StatusBadge } from "@/components/admin/status-badge";
+import { ListEmptyState, ListMismatchBanner, ListSkeleton } from "@/components/admin/list-state";
 
 export default function AdminProducts() {
     const [, setLocation] = useLocation();
-    const [searchTerm, setSearchTerm] = useState("");
-    const [statusFilter, setStatusFilter] = useState<string>("ALL");
 
-    const { data: products, isLoading } = useQuery<Product[]>({
-        queryKey: ["/api/admin/products"],
+    const { rows, total, page, pageSize, isLoading, error, controls } = useAdminListEngine<ProductRow>({
+        endpoint: "/api/admin/products",
+        initialPageSize: 25,
+        initialStatus: "ALL",
+        initialSort: "created_desc",
     });
 
-    const filteredProducts = products?.filter(product => {
-        const matchesSearch =
-            product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            product.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            (product.brand && product.brand.toLowerCase().includes(searchTerm.toLowerCase()));
+    const STATUS_OPTIONS = [
+        { value: "ALL", label: "All statuses" },
+        { value: "ACTIVE", label: "Active" },
+        { value: "ARCHIVED", label: "Archived" },
+    ];
 
-        const matchesStatus = statusFilter === "ALL" || product.status === statusFilter;
-
-        return matchesSearch && matchesStatus;
-    });
-
-    const getStatusBadgeVariant = (status: string) => {
-        switch (status) {
-            case "ACTIVE": return "default";
-            case "ARCHIVED": return "secondary";
-            default: return "outline";
-        }
+    const STATUS_BADGES: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = {
+        ACTIVE: { label: "Active", variant: "default" },
+        ARCHIVED: { label: "Archived", variant: "secondary" },
     };
 
     return (
@@ -78,32 +64,22 @@ export default function AdminProducts() {
 
             <Card>
                 <CardHeader>
-                    <div className="flex justify-between items-center">
-                        <CardTitle>All Products</CardTitle>
-                        <div className="flex items-center gap-2">
-                            <div className="relative w-64">
-                                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                                <Input
-                                    placeholder="Search products..."
-                                    value={searchTerm}
-                                    onChange={(e) => setSearchTerm(e.target.value)}
-                                    className="pl-8"
-                                />
-                            </div>
-                            <Select value={statusFilter} onValueChange={setStatusFilter}>
-                                <SelectTrigger className="w-[180px]">
-                                    <SelectValue placeholder="Filter by status" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="ALL">All Statuses</SelectItem>
-                                    <SelectItem value="ACTIVE">Active</SelectItem>
-                                    <SelectItem value="ARCHIVED">Archived</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
-                    </div>
+                    <CardTitle>All Products</CardTitle>
                 </CardHeader>
                 <CardContent>
+                    <div className="mb-4">
+                        <ListToolbar
+                            searchValue={controls.searchInput}
+                            onSearchChange={controls.setSearchInput}
+                            searchPlaceholder="Search products"
+                            statusValue={controls.status}
+                            onStatusChange={controls.setStatus}
+                            statusOptions={STATUS_OPTIONS}
+                            pageSize={controls.pageSize}
+                            onPageSizeChange={controls.setPageSize}
+                            onClearFilters={controls.resetFilters}
+                        />
+                    </div>
                     <div className="rounded-md border">
                         <Table className="table-fixed w-full">
                             <TableHeader>
@@ -118,27 +94,30 @@ export default function AdminProducts() {
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {isLoading ? (
+                                {isLoading && (
                                     <TableRow>
-                                        <TableCell colSpan={7} className="h-24 text-center">
-                                            <div className="flex justify-center items-center">
-                                                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                                                <span className="ml-2 text-muted-foreground">Loading products...</span>
-                                            </div>
+                                        <TableCell colSpan={7}>
+                                            <ListSkeleton rows={6} columns={7} />
                                         </TableCell>
                                     </TableRow>
-                                ) : filteredProducts?.length === 0 ? (
+                                )}
+                                {error && (
                                     <TableRow>
                                         <TableCell colSpan={7} className="h-24 text-center">
-                                            <div className="flex flex-col items-center justify-center text-muted-foreground">
-                                                <Package className="h-8 w-8 mb-2 opacity-20" />
-                                                <p>No products found</p>
-                                                {searchTerm && <p className="text-sm">Try adjusting your search filters</p>}
-                                            </div>
+                                            <div className="text-muted-foreground">Unable to load products.</div>
                                         </TableCell>
                                     </TableRow>
-                                ) : (
-                                    filteredProducts?.map((product) => (
+                                )}
+                                {!isLoading && !error && rows.length === 0 && (
+                                    <TableRow>
+                                        <TableCell colSpan={7} className="p-4">
+                                            <ListMismatchBanner total={total} />
+                                            <ListEmptyState title="No products found" />
+                                        </TableCell>
+                                    </TableRow>
+                                )}
+                                {!isLoading && !error && rows.length > 0 && (
+                                    rows.map((product) => (
                                         <TableRow
                                             key={product.id}
                                             className="cursor-pointer"
@@ -157,9 +136,7 @@ export default function AdminProducts() {
                                             <TableCell className="truncate">{product.brand || "-"}</TableCell>
                                             <TableCell className="truncate">{product.category || "-"}</TableCell>
                                             <TableCell>
-                                                <Badge variant={getStatusBadgeVariant(product.status) as any}>
-                                                    {product.status}
-                                                </Badge>
+                                                <StatusBadge status={product.status} mapping={STATUS_BADGES} />
                                             </TableCell>
                                             <TableCell className="text-muted-foreground text-sm">
                                                 {format(new Date(product.createdAt), "MMM d, yyyy")}
@@ -176,11 +153,28 @@ export default function AdminProducts() {
                             </TableBody>
                         </Table>
                     </div>
-                    <div className="text-xs text-muted-foreground mt-4">
-                        Showing {filteredProducts?.length || 0} products
-                    </div>
+                    {!isLoading && !error && rows.length > 0 && (
+                        <div className="mt-4">
+                            <ListPagination
+                                page={page}
+                                pageSize={pageSize}
+                                total={total}
+                                onPageChange={controls.setPage}
+                            />
+                        </div>
+                    )}
                 </CardContent>
             </Card>
         </AdminLayout>
     );
+}
+
+interface ProductRow {
+    id: string;
+    sku: string;
+    name: string;
+    brand: string | null;
+    category: string | null;
+    status: string;
+    createdAt: string;
 }

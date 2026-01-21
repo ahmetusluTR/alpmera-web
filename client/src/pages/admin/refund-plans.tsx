@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { AdminLayout } from "./layout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -31,6 +31,9 @@ import {
   TableHeader, 
   TableRow 
 } from "@/components/ui/table";
+import { useAdminListEngine, type ListResponse } from "@/lib/admin-list-engine";
+import { ListPagination } from "@/components/admin/list-pagination";
+import { ListEmptyState, ListMismatchBanner } from "@/components/admin/list-state";
 import { 
   Search, 
   RefreshCw, 
@@ -50,8 +53,8 @@ interface Campaign {
   title: string;
   state: string;
   targetAmount: string;
-  currentAmount: string;
-  totalCommitments: number;
+  totalCommitted: number;
+  participantCount: number;
 }
 
 interface RefundPlan {
@@ -74,43 +77,40 @@ const STATE_BADGES: Record<string, { label: string; variant: "default" | "second
 
 export default function RefundPlansPage() {
   const [, setLocation] = useLocation();
-  const [search, setSearch] = useState("");
-  const [stateFilter, setStateFilter] = useState("all");
-  const [sortBy, setSortBy] = useState("title");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const queryClient = useQueryClient();
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [helpDialogOpen, setHelpDialogOpen] = useState(false);
 
-  const { data: campaigns, isLoading, error, refetch } = useQuery<Campaign[]>({
-    queryKey: ["/api/admin/campaigns"],
+  const { rows: campaigns, total, page, pageSize, isLoading, error, controls } = useAdminListEngine<Campaign>({
+    endpoint: "/api/admin/campaigns",
+    initialPageSize: 25,
+    initialStatus: "all",
+    initialSort: "name_asc",
   });
 
-  const { data: plans } = useQuery<RefundPlan[]>({
+  const { data: plans } = useQuery<ListResponse<RefundPlan>>({
     queryKey: ["/api/admin/refund-plans"],
   });
 
-  const filteredCampaigns = campaigns
-    ?.filter((c) => {
-      if (stateFilter !== "all" && c.state !== stateFilter) return false;
-      if (search && !c.title.toLowerCase().includes(search.toLowerCase())) return false;
-      return true;
-    })
-    .sort((a, b) => {
-      let cmp = 0;
-      if (sortBy === "title") {
-        cmp = a.title.localeCompare(b.title);
-      } else if (sortBy === "state") {
-        cmp = a.state.localeCompare(b.state);
-      } else if (sortBy === "commitments") {
-        cmp = a.totalCommitments - b.totalCommitments;
-      }
-      return sortDir === "desc" ? -cmp : cmp;
-    }) || [];
+  const { sortKey, sortDir } = useMemo(() => {
+    const [key, dir] = (controls.sort || "name_asc").split("_");
+    const normalizedKey = key || "name";
+    const normalizedDir = dir === "desc" ? "desc" : "asc";
+    return { sortKey: normalizedKey, sortDir: normalizedDir as "asc" | "desc" };
+  }, [controls.sort]);
+
+  const sortByValue = sortKey === "name" ? "title" : sortKey === "state" ? "state" : "commitments";
+
+  const handleSortByChange = (value: string) => {
+    const nextKey = value === "title" ? "name" : value === "state" ? "state" : "commitments";
+    controls.setSort(`${nextKey}_${sortDir}`);
+  };
 
   const toggleSortDir = () => {
-    setSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
+    const nextDir = sortDir === "asc" ? "desc" : "asc";
+    controls.setSort(`${sortKey}_${nextDir}`);
   };
 
   const handleCampaignSelect = (campaign: Campaign) => {
@@ -142,12 +142,12 @@ export default function RefundPlansPage() {
   };
 
   const campaignHasPlans = (campaignId: string) => {
-    return plans?.some(p => p.campaignId === campaignId) || false;
+    return plans?.rows?.some(p => p.campaignId === campaignId) || false;
   };
 
   if (selectedCampaign) {
     const stateBadge = STATE_BADGES[selectedCampaign.state] || { label: selectedCampaign.state, variant: "outline" as const };
-    const existingPlans = plans?.filter(p => p.campaignId === selectedCampaign.id) || [];
+    const existingPlans = plans?.rows?.filter(p => p.campaignId === selectedCampaign.id) || [];
     
     return (
       <AdminLayout>
@@ -178,9 +178,9 @@ export default function RefundPlansPage() {
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium">Commitments</CardTitle>
               </CardHeader>
-              <CardContent>
+            <CardContent>
                 <p className="text-2xl font-mono" data-testid="text-commitment-count">
-                  {selectedCampaign.totalCommitments}
+                  {selectedCampaign.participantCount}
                 </p>
               </CardContent>
             </Card>
@@ -190,7 +190,7 @@ export default function RefundPlansPage() {
               </CardHeader>
               <CardContent>
                 <p className="text-2xl font-mono" data-testid="text-current-amount">
-                  ${parseFloat(selectedCampaign.currentAmount || "0").toLocaleString()}
+                  ${Number(selectedCampaign.totalCommitted || 0).toLocaleString()}
                 </p>
               </CardContent>
             </Card>
@@ -416,13 +416,13 @@ export default function RefundPlansPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
               placeholder="Search campaigns..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              value={controls.searchInput}
+              onChange={(e) => controls.setSearchInput(e.target.value)}
               className="pl-9"
               data-testid="input-search-campaigns"
             />
           </div>
-          <Select value={stateFilter} onValueChange={setStateFilter}>
+          <Select value={controls.status} onValueChange={controls.setStatus}>
             <SelectTrigger className="w-[150px]" data-testid="select-state-filter">
               <SelectValue placeholder="State" />
             </SelectTrigger>
@@ -435,7 +435,7 @@ export default function RefundPlansPage() {
               <SelectItem value="RELEASED">Released</SelectItem>
             </SelectContent>
           </Select>
-          <Select value={sortBy} onValueChange={setSortBy}>
+          <Select value={sortByValue} onValueChange={handleSortByChange}>
             <SelectTrigger className="w-[130px]" data-testid="select-sort">
               <SelectValue placeholder="Sort by" />
             </SelectTrigger>
@@ -447,6 +447,21 @@ export default function RefundPlansPage() {
           </Select>
           <Button variant="outline" size="icon" onClick={toggleSortDir} data-testid="button-sort-dir">
             {sortDir === "asc" ? <ArrowUp className="w-4 h-4" /> : <ArrowDown className="w-4 h-4" />}
+          </Button>
+          <Select value={String(controls.pageSize)} onValueChange={(value) => controls.setPageSize(Number(value))}>
+            <SelectTrigger className="w-[130px]" data-testid="select-page-size">
+              <SelectValue placeholder="Page size" />
+            </SelectTrigger>
+            <SelectContent>
+              {[25, 50, 100].map((size) => (
+                <SelectItem key={size} value={String(size)}>
+                  {size} / page
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button variant="outline" onClick={controls.resetFilters} data-testid="button-clear-filters">
+            Clear filters
           </Button>
         </div>
 
@@ -461,13 +476,20 @@ export default function RefundPlansPage() {
             ) : error ? (
               <div className="text-center py-8">
                 <p className="text-muted-foreground mb-4">Unable to load campaigns.</p>
-                <Button variant="outline" onClick={() => refetch()} data-testid="button-retry">
+                <Button
+                  variant="outline"
+                  onClick={() => queryClient.invalidateQueries({ queryKey: ["/api/admin/campaigns"] })}
+                  data-testid="button-retry"
+                >
                   <RefreshCw className="w-4 h-4 mr-2" />
                   Retry
                 </Button>
               </div>
-            ) : filteredCampaigns.length === 0 ? (
-              <p className="text-muted-foreground text-center py-8">No campaigns found.</p>
+            ) : campaigns.length === 0 ? (
+              <div className="p-4">
+                <ListMismatchBanner total={total} />
+                <ListEmptyState title="No campaigns found" />
+              </div>
             ) : (
               <div className="overflow-x-auto">
                 <Table>
@@ -482,7 +504,7 @@ export default function RefundPlansPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredCampaigns.map((campaign) => {
+                    {campaigns.map((campaign) => {
                       const stateBadge = STATE_BADGES[campaign.state] || { label: campaign.state, variant: "outline" as const };
                       const hasPlans = campaignHasPlans(campaign.id);
                       return (
@@ -498,9 +520,9 @@ export default function RefundPlansPage() {
                           <TableCell>
                             <Badge variant={stateBadge.variant}>{stateBadge.label}</Badge>
                           </TableCell>
-                          <TableCell className="font-mono">{campaign.totalCommitments}</TableCell>
+                          <TableCell className="font-mono">{campaign.participantCount}</TableCell>
                           <TableCell className="font-mono">
-                            ${parseFloat(campaign.currentAmount || "0").toLocaleString()}
+                            ${Number(campaign.totalCommitted || 0).toLocaleString()}
                           </TableCell>
                           <TableCell>
                             {hasPlans ? (
@@ -521,6 +543,17 @@ export default function RefundPlansPage() {
             )}
           </CardContent>
         </Card>
+
+        {!isLoading && !error && campaigns.length > 0 && (
+          <div className="mt-4">
+            <ListPagination
+              page={page}
+              pageSize={pageSize}
+              total={total}
+              onPageChange={controls.setPage}
+            />
+          </div>
+        )}
       </div>
     </AdminLayout>
   );

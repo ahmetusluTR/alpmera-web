@@ -1,19 +1,13 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { AdminLayout } from "./layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Search, User, CreditCard, FileText, DollarSign } from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useAdminListEngine } from "@/lib/admin-list-engine";
+import { ListToolbar } from "@/components/admin/list-toolbar";
+import { ListPagination } from "@/components/admin/list-pagination";
+import { ListEmptyState, ListMismatchBanner, ListSkeleton } from "@/components/admin/list-state";
+import { User, CreditCard, FileText, DollarSign } from "lucide-react";
 import { format } from "date-fns";
 
 interface Participant {
@@ -24,49 +18,15 @@ interface Participant {
   createdAt: string;
 }
 
-interface ParticipantsResponse {
-  participants: Participant[];
-  total: number;
-  limit: number;
-  offset: number;
-}
-
 export default function ParticipantsPage() {
-  const [search, setSearch] = useState("");
-  const [searchInput, setSearchInput] = useState("");
-
-  const { data, isLoading, error } = useQuery<ParticipantsResponse>({
-    queryKey: ["/api/admin/participants", search],
-    queryFn: async () => {
-      const params = new URLSearchParams({
-        limit: "50",
-        offset: "0",
-      });
-      if (search) {
-        params.append("search", search);
-      }
-      const res = await fetch(`/api/admin/participants?${params.toString()}`, {
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error(await res.text());
-      return res.json();
-    },
+  const { rows, total, page, pageSize, isLoading, error, controls } = useAdminListEngine<Participant>({
+    endpoint: "/api/admin/participants",
+    initialPageSize: 25,
   });
-
-  const handleSearch = () => {
-    setSearch(searchInput);
-  };
-
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
-      handleSearch();
-    }
-  };
 
   return (
     <AdminLayout>
       <div className="space-y-6">
-        {/* Header */}
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Participants</h1>
           <p className="text-muted-foreground mt-2">
@@ -74,81 +34,57 @@ export default function ParticipantsPage() {
           </p>
         </div>
 
-        {/* Search */}
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">Search Participants</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="flex gap-2">
-              <Input
-                placeholder="Search by participant ID or email..."
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                onKeyPress={handleKeyPress}
-                className="flex-1"
-              />
-              <Button onClick={handleSearch}>
-                <Search className="w-4 h-4 mr-2" />
-                Search
-              </Button>
-              {search && (
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setSearch("");
-                    setSearchInput("");
-                  }}
-                >
-                  Clear
-                </Button>
-              )}
-            </div>
+            <ListToolbar
+              searchValue={controls.searchInput}
+              onSearchChange={controls.setSearchInput}
+              searchPlaceholder="Search by participant ID or email"
+              createdFrom={controls.createdFrom}
+              createdTo={controls.createdTo}
+              onCreatedFromChange={controls.setCreatedFrom}
+              onCreatedToChange={controls.setCreatedTo}
+              pageSize={controls.pageSize}
+              onPageSizeChange={(value) => controls.setPageSize(value)}
+              onClearFilters={controls.resetFilters}
+            />
           </CardContent>
         </Card>
 
-        {/* Results */}
         <Card>
           <CardHeader>
             <CardTitle>
               Participants
-              {data && (
-                <span className="text-sm font-normal text-muted-foreground ml-2">
-                  ({data.total} total)
-                </span>
-              )}
+              <span className="text-sm font-normal text-muted-foreground ml-2">
+                ({total} total)
+              </span>
             </CardTitle>
           </CardHeader>
           <CardContent>
             {isLoading && (
-              <div className="text-center py-8 text-muted-foreground">
-                Loading participants...
-              </div>
+              <ListSkeleton rows={6} columns={6} />
             )}
 
             {error && (
               <div className="text-center py-8">
-                <p className="text-destructive mb-4">
-                  ⚠️ Error loading participants
-                </p>
+                <p className="text-destructive mb-4">Error loading participants</p>
                 <p className="text-muted-foreground">
                   {error instanceof Error ? error.message : "Failed to load participants"}
                 </p>
               </div>
             )}
 
-            {data && data.participants.length === 0 && (
-              <div className="text-center py-8">
-                <p className="text-lg font-medium mb-2">No participants found</p>
-                <p className="text-muted-foreground">
-                  {search
-                    ? `No participants match "${search}"`
-                    : "No participants in the system"}
-                </p>
-              </div>
+            {!isLoading && !error && rows.length === 0 && (
+              <>
+                <ListMismatchBanner total={total} />
+                <ListEmptyState title="No participants found" />
+              </>
             )}
 
-            {data && data.participants.length > 0 && (
+            {!isLoading && rows.length > 0 && (
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
@@ -162,7 +98,7 @@ export default function ParticipantsPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {data.participants.map((participant) => (
+                    {rows.map((participant) => (
                       <TableRow key={participant.id}>
                         <TableCell className="font-mono text-sm">
                           {participant.id}
@@ -177,7 +113,7 @@ export default function ParticipantsPage() {
                         <TableCell>{participant.email}</TableCell>
                         <TableCell>
                           {participant.phoneNumber || (
-                            <span className="text-muted-foreground">—</span>
+                            <span className="text-muted-foreground">-</span>
                           )}
                         </TableCell>
                         <TableCell>
@@ -191,9 +127,7 @@ export default function ParticipantsPage() {
                                 View
                               </Button>
                             </Link>
-                            <Link
-                              href={`/admin/participants/${participant.id}/credits`}
-                            >
+                            <Link href={`/admin/participants/${participant.id}/credits`}>
                               <Button variant="outline" size="sm">
                                 <CreditCard className="w-4 h-4 mr-2" />
                                 Credits
@@ -217,6 +151,17 @@ export default function ParticipantsPage() {
                     ))}
                   </TableBody>
                 </Table>
+              </div>
+            )}
+
+            {!isLoading && rows.length > 0 && (
+              <div className="mt-4">
+                <ListPagination
+                  page={page}
+                  pageSize={pageSize}
+                  total={total}
+                  onPageChange={controls.setPage}
+                />
               </div>
             )}
           </CardContent>

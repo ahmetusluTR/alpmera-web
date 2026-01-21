@@ -1,11 +1,14 @@
-import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { AdminLayout } from "./layout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useState } from "react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useAdminListEngine } from "@/lib/admin-list-engine";
+import { ListToolbar } from "@/components/admin/list-toolbar";
+import { ListPagination } from "@/components/admin/list-pagination";
+import { StatusBadge } from "@/components/admin/status-badge";
+import { ListEmptyState, ListMismatchBanner, ListSkeleton } from "@/components/admin/list-state";
 import { format } from "date-fns";
 
 type CreditEventType = "ISSUED" | "RESERVED" | "RELEASED" | "APPLIED" | "REVOKED" | "EXPIRED";
@@ -14,62 +17,41 @@ interface CreditLedgerEntry {
   id: string;
   participantId: string;
   participantEmail?: string;
-  participantName?: string;
   eventType: CreditEventType;
   amount: string;
   currency: string;
   campaignId: string | null;
   campaignName?: string;
-  commitmentId: string | null;
-  ruleSetId: string | null;
-  awardId: string | null;
-  reservationRef: string | null;
-  auditRef: string | null;
   reason: string;
-  createdBy: string;
   createdAt: string;
 }
 
-interface CreditLedgerResponse {
-  entries: CreditLedgerEntry[];
-  total: number;
-  limit: number;
-  offset: number;
-}
+const EVENT_TYPE_OPTIONS = [
+  { value: "ALL", label: "All event types" },
+  { value: "ISSUED", label: "Issued" },
+  { value: "RESERVED", label: "Reserved" },
+  { value: "RELEASED", label: "Released" },
+  { value: "APPLIED", label: "Applied" },
+  { value: "REVOKED", label: "Revoked" },
+  { value: "EXPIRED", label: "Expired" },
+];
+
+const EVENT_TYPE_BADGES: Record<string, { label: string; variant: "default" | "secondary" | "outline" }> = {
+  ISSUED: { label: "Issued", variant: "default" },
+  RESERVED: { label: "Reserved", variant: "secondary" },
+  RELEASED: { label: "Released", variant: "outline" },
+  APPLIED: { label: "Applied", variant: "secondary" },
+  REVOKED: { label: "Revoked", variant: "outline" },
+  EXPIRED: { label: "Expired", variant: "outline" },
+};
 
 export default function CreditsPage() {
   const [, setLocation] = useLocation();
-  const [participantId, setParticipantId] = useState("");
-  const [eventTypeFilter, setEventTypeFilter] = useState<string>("all");
-  const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
-
-  // Build query params
-  const params = new URLSearchParams();
-  if (participantId) params.append("participantId", participantId);
-  if (eventTypeFilter && eventTypeFilter !== "all") params.append("eventType", eventTypeFilter);
-  if (fromDate) params.append("from", fromDate);
-  if (toDate) params.append("to", toDate);
-  params.append("limit", "50");
-  params.append("offset", "0");
-
-  const { data, isLoading, error } = useQuery<CreditLedgerResponse>({
-    queryKey: ["/api/admin/credits", params.toString()],
-    queryFn: async () => {
-      const res = await fetch(`/api/admin/credits?${params.toString()}`, {
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error(await res.text());
-      return res.json();
-    },
+  const { rows, total, page, pageSize, isLoading, error, controls } = useAdminListEngine<CreditLedgerEntry>({
+    endpoint: "/api/admin/credits",
+    initialPageSize: 25,
+    initialStatus: "ALL",
   });
-
-  const handleClearFilters = () => {
-    setParticipantId("");
-    setEventTypeFilter("all");
-    setFromDate("");
-    setToDate("");
-  };
 
   return (
     <AdminLayout>
@@ -81,7 +63,6 @@ export default function CreditsPage() {
           </p>
         </div>
 
-        {/* Filters */}
         <Card>
           <CardHeader>
             <CardTitle>Filters</CardTitle>
@@ -90,145 +71,96 @@ export default function CreditsPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="space-y-2">
-                <label htmlFor="participantId" className="text-sm font-medium">
-                  Participant ID
-                </label>
+            <ListToolbar
+              searchValue={controls.searchInput}
+              onSearchChange={controls.setSearchInput}
+              searchPlaceholder="Search by participant ID or email"
+              statusValue={controls.status}
+              onStatusChange={controls.setStatus}
+              statusOptions={EVENT_TYPE_OPTIONS}
+              createdFrom={controls.createdFrom}
+              createdTo={controls.createdTo}
+              onCreatedFromChange={controls.setCreatedFrom}
+              onCreatedToChange={controls.setCreatedTo}
+              pageSize={controls.pageSize}
+              onPageSizeChange={(value) => controls.setPageSize(value)}
+              onClearFilters={controls.resetFilters}
+              extraFilters={
                 <Input
-                  id="participantId"
-                  placeholder="Search by participant ID"
-                  value={participantId}
-                  onChange={(e) => setParticipantId(e.target.value)}
+                  placeholder="Participant ID"
+                  value={controls.extraFilters.participantId || ""}
+                  onChange={(e) =>
+                    controls.setExtraFilters({ ...controls.extraFilters, participantId: e.target.value })
+                  }
                 />
-              </div>
-
-              <div className="space-y-2">
-                <label htmlFor="eventType" className="text-sm font-medium">
-                  Event Type
-                </label>
-                <Select value={eventTypeFilter} onValueChange={setEventTypeFilter}>
-                  <SelectTrigger id="eventType">
-                    <SelectValue placeholder="All event types" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All</SelectItem>
-                    <SelectItem value="ISSUED">ISSUED</SelectItem>
-                    <SelectItem value="RESERVED">RESERVED</SelectItem>
-                    <SelectItem value="RELEASED">RELEASED</SelectItem>
-                    <SelectItem value="APPLIED">APPLIED</SelectItem>
-                    <SelectItem value="REVOKED">REVOKED</SelectItem>
-                    <SelectItem value="EXPIRED">EXPIRED</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <label htmlFor="fromDate" className="text-sm font-medium">
-                  From Date
-                </label>
-                <Input
-                  id="fromDate"
-                  type="date"
-                  value={fromDate}
-                  onChange={(e) => setFromDate(e.target.value)}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label htmlFor="toDate" className="text-sm font-medium">
-                  To Date
-                </label>
-                <Input
-                  id="toDate"
-                  type="date"
-                  value={toDate}
-                  onChange={(e) => setToDate(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div className="mt-4">
-              <Button variant="outline" onClick={handleClearFilters}>
-                Clear Filters
-              </Button>
-            </div>
+              }
+            />
           </CardContent>
         </Card>
 
-        {/* Credit Ledger Entries */}
         <Card>
           <CardHeader>
             <CardTitle>Credit Ledger Entries</CardTitle>
             <CardDescription>
-              {data ? `${data.total} total entries` : "Loading..."}
+              {isLoading ? "Loading..." : `${total} total entries`}
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {isLoading && (
-              <div className="text-center py-8 text-muted-foreground">
-                Loading credit ledger entries...
-              </div>
-            )}
+            {isLoading && <ListSkeleton rows={6} columns={7} />}
 
             {error && (
-              <div className="text-center py-8 text-destructive">
-                Error loading entries: {error.message}
+              <div className="text-center py-8">
+                <p className="text-destructive mb-2">Error loading entries</p>
+                <p className="text-muted-foreground">
+                  {error instanceof Error ? error.message : "Failed to load entries"}
+                </p>
               </div>
             )}
 
-            {data && data.entries.length === 0 && (
-              <div className="text-center py-8 text-muted-foreground">
-                No credit ledger entries found
-              </div>
+            {!isLoading && !error && rows.length === 0 && (
+              <>
+                <ListMismatchBanner total={total} />
+                <ListEmptyState title="No credit ledger entries found" />
+              </>
             )}
 
-            {data && data.entries.length > 0 && (
+            {!isLoading && rows.length > 0 && (
               <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="text-left py-3 px-4 font-medium">Created At</th>
-                      <th className="text-left py-3 px-4 font-medium">Participant</th>
-                      <th className="text-left py-3 px-4 font-medium">Event Type</th>
-                      <th className="text-right py-3 px-4 font-medium">Amount</th>
-                      <th className="text-left py-3 px-4 font-medium">Campaign</th>
-                      <th className="text-left py-3 px-4 font-medium">Reason</th>
-                      <th className="text-right py-3 px-4 font-medium">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.entries.map((entry) => (
-                      <tr key={entry.id} className="border-b hover:bg-muted/50">
-                        <td className="py-3 px-4 text-sm">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Created At</TableHead>
+                      <TableHead>Participant</TableHead>
+                      <TableHead>Event Type</TableHead>
+                      <TableHead className="text-right">Amount</TableHead>
+                      <TableHead>Campaign</TableHead>
+                      <TableHead>Reason</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {rows.map((entry) => (
+                      <TableRow key={entry.id}>
+                        <TableCell className="text-sm">
                           {format(new Date(entry.createdAt), "MMM d, yyyy HH:mm")}
-                        </td>
-                        <td className="py-3 px-4 text-sm">
+                        </TableCell>
+                        <TableCell className="text-sm">
                           <Link href={`/admin/participants/${entry.participantId}`}>
                             <a className="text-primary hover:underline">
                               {entry.participantEmail || entry.participantId.slice(0, 8)}
                             </a>
                           </Link>
-                        </td>
-                        <td className="py-3 px-4">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            entry.eventType === "ISSUED" ? "bg-green-100 text-green-800" :
-                            entry.eventType === "RESERVED" ? "bg-yellow-100 text-yellow-800" :
-                            entry.eventType === "RELEASED" ? "bg-blue-100 text-blue-800" :
-                            entry.eventType === "APPLIED" ? "bg-purple-100 text-purple-800" :
-                            entry.eventType === "REVOKED" ? "bg-red-100 text-red-800" :
-                            "bg-gray-100 text-gray-800"
-                          }`}>
-                            {entry.eventType}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-sm text-right font-mono">
+                        </TableCell>
+                        <TableCell>
+                          <StatusBadge status={entry.eventType} mapping={EVENT_TYPE_BADGES} />
+                        </TableCell>
+                        <TableCell className="text-sm text-right font-mono">
                           <span className={parseFloat(entry.amount) >= 0 ? "text-green-600" : "text-red-600"}>
                             {parseFloat(entry.amount) >= 0 ? "+" : ""}
                             {parseFloat(entry.amount).toFixed(2)} {entry.currency}
                           </span>
-                        </td>
-                        <td className="py-3 px-4 text-sm">
+                        </TableCell>
+                        <TableCell className="text-sm">
                           {entry.campaignId ? (
                             <Link href={`/admin/campaigns/${entry.campaignId}`}>
                               <a className="text-primary hover:underline">
@@ -238,11 +170,11 @@ export default function CreditsPage() {
                           ) : (
                             <span className="text-muted-foreground">—</span>
                           )}
-                        </td>
-                        <td className="py-3 px-4 text-sm max-w-xs truncate" title={entry.reason}>
+                        </TableCell>
+                        <TableCell className="text-sm max-w-xs truncate" title={entry.reason}>
                           {entry.reason}
-                        </td>
-                        <td className="py-3 px-4 text-right">
+                        </TableCell>
+                        <TableCell className="text-right">
                           <Button
                             variant="ghost"
                             size="sm"
@@ -250,11 +182,22 @@ export default function CreditsPage() {
                           >
                             View
                           </Button>
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     ))}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+
+            {!isLoading && rows.length > 0 && (
+              <div className="mt-4">
+                <ListPagination
+                  page={page}
+                  pageSize={pageSize}
+                  total={total}
+                  onPageChange={controls.setPage}
+                />
               </div>
             )}
           </CardContent>

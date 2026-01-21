@@ -1,18 +1,7 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { useLocation, Link } from "wouter";
 import { AdminLayout } from "./layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@/components/ui/select";
 import {
     Table,
     TableBody,
@@ -21,37 +10,35 @@ import {
     TableHeader,
     TableRow
 } from "@/components/ui/table";
-import { Search, Plus, Users, Edit, Loader2, Upload } from "lucide-react";
+import { Plus, Edit, Upload } from "lucide-react";
 import { format } from "date-fns";
-import { type Supplier } from "@shared/schema";
+import { useAdminListEngine } from "@/lib/admin-list-engine";
+import { ListToolbar } from "@/components/admin/list-toolbar";
+import { ListPagination } from "@/components/admin/list-pagination";
+import { StatusBadge } from "@/components/admin/status-badge";
+import { ListEmptyState, ListMismatchBanner, ListSkeleton } from "@/components/admin/list-state";
 
 export default function AdminSuppliers() {
     const [, setLocation] = useLocation();
-    const [searchTerm, setSearchTerm] = useState("");
-    const [statusFilter, setStatusFilter] = useState<string>("ALL");
 
-    const { data: suppliers, isLoading } = useQuery<Supplier[]>({
-        queryKey: ["/api/admin/suppliers"],
+    const { rows, total, page, pageSize, isLoading, error, controls } = useAdminListEngine<SupplierRow>({
+        endpoint: "/api/admin/suppliers",
+        initialPageSize: 25,
+        initialStatus: "ALL",
+        initialSort: "created_desc",
     });
 
-    const filteredSuppliers = suppliers?.filter(supplier => {
-        const matchesSearch =
-            supplier.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            (supplier.contactName && supplier.contactName.toLowerCase().includes(searchTerm.toLowerCase())) ||
-            (supplier.contactEmail && supplier.contactEmail.toLowerCase().includes(searchTerm.toLowerCase()));
+    const STATUS_OPTIONS = [
+        { value: "ALL", label: "All statuses" },
+        { value: "ACTIVE", label: "Active" },
+        { value: "INACTIVE", label: "Inactive" },
+        { value: "ARCHIVED", label: "Archived" },
+    ];
 
-        const matchesStatus = statusFilter === "ALL" || supplier.status === statusFilter;
-
-        return matchesSearch && matchesStatus;
-    });
-
-    const getStatusBadgeVariant = (status: string) => {
-        switch (status) {
-            case "ACTIVE": return "default";
-            case "INACTIVE": return "secondary";
-            case "ARCHIVED": return "outline";
-            default: return "outline";
-        }
+    const STATUS_BADGES: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = {
+        ACTIVE: { label: "Active", variant: "default" },
+        INACTIVE: { label: "Inactive", variant: "secondary" },
+        ARCHIVED: { label: "Archived", variant: "outline" },
     };
 
     return (
@@ -79,33 +66,22 @@ export default function AdminSuppliers() {
 
             <Card>
                 <CardHeader>
-                    <div className="flex justify-between items-center">
-                        <CardTitle>All Suppliers</CardTitle>
-                        <div className="flex items-center gap-2">
-                            <div className="relative w-64">
-                                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                                <Input
-                                    placeholder="Search suppliers..."
-                                    value={searchTerm}
-                                    onChange={(e) => setSearchTerm(e.target.value)}
-                                    className="pl-8"
-                                />
-                            </div>
-                            <Select value={statusFilter} onValueChange={setStatusFilter}>
-                                <SelectTrigger className="w-[180px]">
-                                    <SelectValue placeholder="Filter by status" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="ALL">All Statuses</SelectItem>
-                                    <SelectItem value="ACTIVE">Active</SelectItem>
-                                    <SelectItem value="INACTIVE">Inactive</SelectItem>
-                                    <SelectItem value="ARCHIVED">Archived</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
-                    </div>
+                    <CardTitle>All Suppliers</CardTitle>
                 </CardHeader>
                 <CardContent>
+                    <div className="mb-4">
+                        <ListToolbar
+                            searchValue={controls.searchInput}
+                            onSearchChange={controls.setSearchInput}
+                            searchPlaceholder="Search suppliers"
+                            statusValue={controls.status}
+                            onStatusChange={controls.setStatus}
+                            statusOptions={STATUS_OPTIONS}
+                            pageSize={controls.pageSize}
+                            onPageSizeChange={controls.setPageSize}
+                            onClearFilters={controls.resetFilters}
+                        />
+                    </div>
                     <div className="rounded-md border">
                         <Table className="table-fixed w-full">
                             <TableHeader>
@@ -119,27 +95,30 @@ export default function AdminSuppliers() {
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {isLoading ? (
+                                {isLoading && (
                                     <TableRow>
-                                        <TableCell colSpan={6} className="h-24 text-center">
-                                            <div className="flex justify-center items-center">
-                                                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                                                <span className="ml-2 text-muted-foreground">Loading suppliers...</span>
-                                            </div>
+                                        <TableCell colSpan={6}>
+                                            <ListSkeleton rows={6} columns={6} />
                                         </TableCell>
                                     </TableRow>
-                                ) : filteredSuppliers?.length === 0 ? (
+                                )}
+                                {error && (
                                     <TableRow>
                                         <TableCell colSpan={6} className="h-24 text-center">
-                                            <div className="flex flex-col items-center justify-center text-muted-foreground">
-                                                <Users className="h-8 w-8 mb-2 opacity-20" />
-                                                <p>No suppliers found</p>
-                                                {searchTerm && <p className="text-sm">Try adjusting your search filters</p>}
-                                            </div>
+                                            <div className="text-muted-foreground">Unable to load suppliers.</div>
                                         </TableCell>
                                     </TableRow>
-                                ) : (
-                                    filteredSuppliers?.map((supplier) => (
+                                )}
+                                {!isLoading && !error && rows.length === 0 && (
+                                    <TableRow>
+                                        <TableCell colSpan={6} className="p-4">
+                                            <ListMismatchBanner total={total} />
+                                            <ListEmptyState title="No suppliers found" />
+                                        </TableCell>
+                                    </TableRow>
+                                )}
+                                {!isLoading && !error && rows.length > 0 && (
+                                    rows.map((supplier) => (
                                         <TableRow
                                             key={supplier.id}
                                             className="cursor-pointer hover:bg-muted/50"
@@ -164,9 +143,7 @@ export default function AdminSuppliers() {
                                             </TableCell>
                                             <TableCell className="truncate">{supplier.region || "-"}</TableCell>
                                             <TableCell>
-                                                <Badge variant={getStatusBadgeVariant(supplier.status) as any}>
-                                                    {supplier.status}
-                                                </Badge>
+                                                <StatusBadge status={supplier.status} mapping={STATUS_BADGES} />
                                             </TableCell>
                                             <TableCell className="text-muted-foreground text-sm">
                                                 {format(new Date(supplier.createdAt), "MMM d, yyyy")}
@@ -183,8 +160,30 @@ export default function AdminSuppliers() {
                             </TableBody>
                         </Table>
                     </div>
+                    {!isLoading && !error && rows.length > 0 && (
+                        <div className="mt-4">
+                            <ListPagination
+                                page={page}
+                                pageSize={pageSize}
+                                total={total}
+                                onPageChange={controls.setPage}
+                            />
+                        </div>
+                    )}
                 </CardContent>
             </Card>
         </AdminLayout>
     );
+}
+
+interface SupplierRow {
+    id: string;
+    name: string;
+    contactName: string | null;
+    contactEmail: string | null;
+    phone: string | null;
+    website: string | null;
+    region: string | null;
+    status: string;
+    createdAt: string;
 }
