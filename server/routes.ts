@@ -23,6 +23,7 @@ import {
   updateSupplierSchema,
   insertConsolidationPointSchema,
   updateConsolidationPointSchema,
+  landingSubscribers,
   users,
   userProfiles
 } from "@shared/schema";
@@ -39,6 +40,37 @@ const authVerifySchema = z.object({
   email: z.string().email("Valid email is required"),
   code: z.string().length(6, "Code must be 6 digits"),
 });
+
+const LANDING_ALLOWED_TAGS = [
+  "Electronics",
+  "Home",
+  "Kitchen",
+  "Outdoors",
+  "Fitness",
+  "Kids",
+  "Office",
+  "Tools",
+  "Pets",
+  "Other"
+];
+
+const LANDING_RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
+const LANDING_RATE_LIMIT_MAX = 10;
+const landingRateLimit = new Map<string, { count: number; resetAt: number }>();
+
+function isLandingRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const entry = landingRateLimit.get(ip);
+  if (!entry || now > entry.resetAt) {
+    landingRateLimit.set(ip, { count: 1, resetAt: now + LANDING_RATE_LIMIT_WINDOW_MS });
+    return false;
+  }
+  if (entry.count >= LANDING_RATE_LIMIT_MAX) {
+    return true;
+  }
+  entry.count += 1;
+  return false;
+}
 
 // Generate a random 6-digit code
 function generateAuthCode(): string {
@@ -374,6 +406,106 @@ export async function registerRoutes(
       commit: appCommit,
       uptimeSeconds: Math.floor(process.uptime())
     });
+  });
+
+  // Landing subscriber count (public)
+  app.get("/api/landing/subscriber-count", async (req, res) => {
+    try {
+      const result = await db
+        .select({ count: count() })
+        .from(landingSubscribers)
+        .where(eq(landingSubscribers.status, "active"));
+
+      return res.json({ count: result[0]?.count || 0 });
+    } catch (error) {
+      log(`Error fetching subscriber count: ${error}`);
+      return res.status(500).json({ error: "Failed to fetch count" });
+    }
+  });
+
+  // Landing notify (public)
+  app.post("/api/landing/notify", async (req, res) => {
+    try {
+      const forwardedFor = req.headers["x-forwarded-for"];
+      const ip = (Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor)
+        ?.split(",")[0]
+        ?.trim() || req.ip || "unknown";
+
+      if (isLandingRateLimited(ip)) {
+        return res.status(429).json({ error: "Rate limit exceeded" });
+      }
+
+      const rawEmail = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!rawEmail || !emailRegex.test(rawEmail)) {
+        return res.status(400).json({ error: "Valid email is required" });
+      }
+
+      const rawTags = Array.isArray(req.body?.interestTags) ? req.body.interestTags : [];
+      const normalizedTags = rawTags
+        .filter((tag: unknown) => typeof tag === "string")
+        .map((tag: string) => tag.trim())
+        .filter((tag: string) => tag.length > 0);
+
+      const invalidTags = normalizedTags.filter((tag) => !LANDING_ALLOWED_TAGS.includes(tag));
+      if (invalidTags.length > 0) {
+        return res.status(400).json({ error: "Invalid interest tags" });
+      }
+
+      const notesRaw = typeof req.body?.notes === "string" ? req.body.notes.trim() : "";
+      if (notesRaw.length > 500) {
+        return res.status(400).json({ error: "Notes must be 500 characters or less" });
+      }
+
+      let recommendationOptIn = false;
+      if (typeof req.body?.recommendationOptIn === "boolean") {
+        recommendationOptIn = req.body.recommendationOptIn;
+      } else if (typeof req.body?.recommendationOptIn === "string") {
+        recommendationOptIn = req.body.recommendationOptIn.toLowerCase() === "true";
+      }
+
+      const now = new Date();
+      const interestTags = normalizedTags.length > 0 ? normalizedTags : null;
+      const notes = notesRaw.length > 0 ? notesRaw : null;
+
+      const existing = await db
+        .select({ id: landingSubscribers.id, status: landingSubscribers.status })
+        .from(landingSubscribers)
+        .where(eq(landingSubscribers.email, rawEmail))
+        .limit(1);
+
+      if (existing.length === 0) {
+        await db.insert(landingSubscribers).values({
+          email: rawEmail,
+          status: "active",
+          source: "alpmera.com",
+          interestTags,
+          notes,
+          recommendationOptIn,
+          createdAt: now,
+          unsubscribedAt: null,
+          lastSubmittedAt: now,
+        });
+      } else {
+        const existingRecord = existing[0];
+        await db
+          .update(landingSubscribers)
+          .set({
+            status: "active",
+            unsubscribedAt: null,
+            interestTags,
+            notes,
+            recommendationOptIn,
+            lastSubmittedAt: now,
+          })
+          .where(eq(landingSubscribers.id, existingRecord.id));
+      }
+
+      return res.json({ ok: true });
+    } catch (error) {
+      console.error("Error handling landing notify:", error);
+      return res.status(500).json({ error: "Failed to process request" });
+    }
   });
 
   // ============================================

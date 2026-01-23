@@ -120,6 +120,23 @@ export const products = pgTable("products", {
 });
 
 // ============================================
+// LANDING SUBSCRIBERS (Public landing page)
+// ============================================
+
+export const landingSubscribers = pgTable("landing_subscribers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  email: text("email").notNull().unique(),
+  status: text("status").notNull().default("active"),
+  source: text("source").notNull().default("alpmera.com"),
+  interestTags: text("interest_tags").array(),
+  notes: text("notes"),
+  recommendationOptIn: boolean("recommendation_opt_in").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  unsubscribedAt: timestamp("unsubscribed_at", { withTimezone: true }),
+  lastSubmittedAt: timestamp("last_submitted_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ============================================
 // CAMPAIGN TABLES
 // ============================================
 
