@@ -1,6 +1,4 @@
-// Google Sheets Integration with Spam Protection
-
-const GOOGLE_SCRIPT_URL = import.meta.env.VITE_GOOGLE_SCRIPT_URL;
+// Google Sheets Integration with Spam Protection (via backend proxy)
 
 interface EarlyAccessData {
   email: string;
@@ -30,11 +28,6 @@ interface SubmissionResult {
 }
 
 export async function submitEarlyAccess(data: EarlyAccessData): Promise<SubmissionResult> {
-  if (!GOOGLE_SCRIPT_URL) {
-    console.error('VITE_GOOGLE_SCRIPT_URL not configured');
-    return { success: false, error: 'Form not configured' };
-  }
-
   try {
     const payload = {
       sheet: 'Early Access',
@@ -47,11 +40,11 @@ export async function submitEarlyAccess(data: EarlyAccessData): Promise<Submissi
       website: data.website,
     };
 
-    const response = await fetch(GOOGLE_SCRIPT_URL, {
+    const response = await fetch('/api/landing/submit-form', {
       method: 'POST',
-      mode: 'cors',
-      cache: 'no-cache',
-      redirect: 'follow',
+      headers: {
+        'Content-Type': 'application/json',
+      },
       body: JSON.stringify(payload),
     });
 
@@ -64,11 +57,6 @@ export async function submitEarlyAccess(data: EarlyAccessData): Promise<Submissi
 }
 
 export async function submitDemandSuggestion(data: DemandSuggestionData): Promise<SubmissionResult> {
-  if (!GOOGLE_SCRIPT_URL) {
-    console.error('VITE_GOOGLE_SCRIPT_URL not configured');
-    return { success: false, error: 'Form not configured' };
-  }
-
   try {
     const payload = {
       sheet: 'Demand Suggestions',
@@ -84,11 +72,11 @@ export async function submitDemandSuggestion(data: DemandSuggestionData): Promis
       website: data.website,
     };
 
-    const response = await fetch(GOOGLE_SCRIPT_URL, {
+    const response = await fetch('/api/landing/submit-form', {
       method: 'POST',
-      mode: 'cors',
-      cache: 'no-cache',
-      redirect: 'follow',
+      headers: {
+        'Content-Type': 'application/json',
+      },
       body: JSON.stringify(payload),
     });
 

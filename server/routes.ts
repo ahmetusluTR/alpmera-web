@@ -508,6 +508,33 @@ export async function registerRoutes(
     }
   });
 
+  // Landing form submission proxy (public)
+  app.post("/api/landing/submit-form", async (req, res) => {
+    try {
+      const GOOGLE_SCRIPT_URL = process.env.GOOGLE_SCRIPT_URL;
+
+      if (!GOOGLE_SCRIPT_URL) {
+        console.error('GOOGLE_SCRIPT_URL environment variable not configured');
+        return res.status(500).json({ success: false, error: 'Form not configured' });
+      }
+
+      // Forward the request to Google Apps Script
+      const response = await fetch(GOOGLE_SCRIPT_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(req.body),
+      });
+
+      const result = await response.json();
+      return res.json(result);
+    } catch (error) {
+      console.error("Error proxying to Google Apps Script:", error);
+      return res.status(500).json({ success: false, error: 'Network error. Please try again.' });
+    }
+  });
+
   // ============================================
   // ADMIN SECURITY BARRIER
   // ============================================
