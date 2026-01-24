@@ -2,11 +2,13 @@ import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), "");
+  // Load env from parent directory (root of alpmera-web)
+  const env = loadEnv(mode, "../", "");
   const apiTarget = env.VITE_API_URL || "http://localhost:5000";
 
   return {
     plugins: [react()],
+    envDir: "../", // Read .env from parent directory
     server: {
       proxy: {
         "/api": {

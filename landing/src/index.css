@@ -26,7 +26,7 @@
   h3,
   h4 {
     font-family: var(--brand-font-serif);
-    color: hsl(var(--brand-deep-sapphire));
+    color: hsl(var(--alpmera-primary));
     letter-spacing: -0.01em;
   }
 

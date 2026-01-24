@@ -36,21 +36,23 @@ export async function submitEarlyAccess(data: EarlyAccessData): Promise<Submissi
   }
 
   try {
+    const payload = {
+      sheet: 'Early Access',
+      email: data.email,
+      interests: data.interests?.join(', ') || '',
+      notes: data.notes || '',
+      notify: data.notify || false,
+      source: 'landing',
+      turnstileToken: data.turnstileToken,
+      website: data.website,
+    };
+
     const response = await fetch(GOOGLE_SCRIPT_URL, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        sheet: 'Early Access',
-        email: data.email,
-        interests: data.interests?.join(', ') || '',
-        notes: data.notes || '',
-        notify: data.notify || false,
-        source: 'landing',
-        turnstileToken: data.turnstileToken,
-        website: data.website,
-      }),
+      mode: 'cors',
+      cache: 'no-cache',
+      redirect: 'follow',
+      body: JSON.stringify(payload),
     });
 
     const result = await response.json();
@@ -68,24 +70,26 @@ export async function submitDemandSuggestion(data: DemandSuggestionData): Promis
   }
 
   try {
+    const payload = {
+      sheet: 'Demand Suggestions',
+      product_name: data.product_name,
+      sku: data.sku || '',
+      reference_url: data.reference_url || '',
+      reason: data.reason || '',
+      city: data.city || '',
+      state: data.state || '',
+      email: data.email || '',
+      notify: data.notify || false,
+      turnstileToken: data.turnstileToken,
+      website: data.website,
+    };
+
     const response = await fetch(GOOGLE_SCRIPT_URL, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        sheet: 'Demand Suggestions',
-        product_name: data.product_name,
-        sku: data.sku || '',
-        reference_url: data.reference_url || '',
-        reason: data.reason || '',
-        city: data.city || '',
-        state: data.state || '',
-        email: data.email || '',
-        notify: data.notify || false,
-        turnstileToken: data.turnstileToken,
-        website: data.website,
-      }),
+      mode: 'cors',
+      cache: 'no-cache',
+      redirect: 'follow',
+      body: JSON.stringify(payload),
     });
 
     const result = await response.json();

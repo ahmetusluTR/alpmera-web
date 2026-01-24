@@ -18,12 +18,12 @@ export default function SubscriberCount() {
         {[1, 2, 3].map(i => (
           <div
             key={i}
-            className="w-8 h-8 rounded-full bg-brand-sapphire border-2 border-background"
+            className="w-8 h-8 rounded-full bg-alpmera-primary border-2 border-background"
           />
         ))}
       </div>
-      <span className="text-brand-slate">
-        <strong className="text-brand-sapphire font-semibold">{count}</strong> people on the early list
+      <span className="text-alpmera-text-light">
+        <strong className="text-alpmera-primary font-semibold">{count}</strong> people on the early list
       </span>
     </div>
   );

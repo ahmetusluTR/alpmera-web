@@ -17,7 +17,7 @@ export default function Card({
 
   const variantClasses = {
     default: "border-card-border bg-card",
-    highlight: "border-brand-eucalyptus bg-card ring-1 ring-brand-eucalyptus/10",
+    highlight: "border-alpmera-success bg-card ring-1 ring-alpmera-success/10",
     subtle: "border-border bg-background"
   };
 

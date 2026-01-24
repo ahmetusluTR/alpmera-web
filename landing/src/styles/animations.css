@@ -4,7 +4,7 @@
   }
 
   .focus-ring {
-    @apply focus-visible:ring-2 focus-visible:ring-brand-copper focus-visible:ring-offset-2;
+    @apply focus-visible:ring-2 focus-visible:ring-alpmera-accent focus-visible:ring-offset-2;
   }
 
   .fade-in-up {

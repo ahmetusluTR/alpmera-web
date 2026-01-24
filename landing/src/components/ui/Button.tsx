@@ -14,11 +14,11 @@ export default function Button({
   className = "",
   ...props
 }: ButtonProps) {
-  const baseClasses = "inline-flex items-center justify-center rounded-lg px-6 py-3 text-sm font-semibold transition-all duration-[var(--motion-standard)] focus-visible:ring-2 focus-visible:ring-brand-copper focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed";
+  const baseClasses = "inline-flex items-center justify-center rounded-lg px-6 py-3 text-sm font-semibold transition-all duration-[var(--motion-standard)] focus-visible:ring-2 focus-visible:ring-alpmera-accent focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed";
 
   const variantClasses = {
-    primary: "bg-brand-copper text-brand-cloud shadow-calm hover:-translate-y-0.5 hover:shadow-brand active:translate-y-0 active:shadow-soft",
-    secondary: "text-brand-sapphire hover:text-brand-copper"
+    primary: "bg-alpmera-accent text-white shadow-calm hover:-translate-y-0.5 hover:shadow-calm active:translate-y-0 active:shadow-soft",
+    secondary: "text-alpmera-primary hover:text-alpmera-accent"
   };
 
   return (

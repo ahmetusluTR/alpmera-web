@@ -106,7 +106,7 @@ export default function Demand() {
           <div className="mt-4 border-t border-alpmera-border" />
 
           <form onSubmit={handleSubmit} className="mt-8 space-y-6">
-            <HoneypotField />
+            <HoneypotField value={honeypot} onChange={setHoneypot} />
 
             {/* Product name */}
             <div>

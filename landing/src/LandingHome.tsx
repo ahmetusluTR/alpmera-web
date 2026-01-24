@@ -2,6 +2,7 @@ import { useState } from "react";
 import { submitEarlyAccess } from "./lib/googleSheets";
 import { checkRateLimit, formatRemainingTime } from "./lib/rateLimit";
 import { HoneypotField } from "./components/forms/HoneypotField";
+import { AlpmeraBatchFlow } from "./components/brand/AlpmeraBatchFlow";
 
 const VIDEO_ID = "PLACEHOLDER"; // Replace with actual YouTube ID when ready
 
@@ -39,14 +40,6 @@ const ALPMERA_IS_NOT = [
   "A system built on urgency or hype",
 ];
 
-const HOW_IT_WORKS_STEPS = [
-  "A campaign opens with clear rules and participation requirements.",
-  "Participants join and commit funds to escrow.",
-  "Progress is visible as the campaign fills.",
-  "If the campaign completes, Alpmera coordinates procurement and fulfillment.",
-  "If it doesn't complete, participants receive a full refund from escrow.",
-];
-
 const SAFETY_CARDS = [
   {
     title: "Escrow protection",
@@ -64,24 +57,119 @@ const SAFETY_CARDS = [
 
 const FAQS = [
   {
-    q: "Who holds the funds?",
-    a: "Committed funds are held in escrow under each campaign's rules. Alpmera coordinates the escrow process but does not access funds until conditions are met.",
+    q: "What is Alpmera?",
+    a: "Alpmera is a trust-first collective buying platform for consumers. Instead of buying alone, people join campaigns, commit funds to escrow, and move forward together only when the campaign makes sense for everyone. Alpmera is not a store and does not sell products.",
   },
   {
-    q: "What happens if a campaign doesn't complete?",
-    a: "Participants receive a full refund from escrow. No penalties, no fees deducted.",
+    q: "How is Alpmera different from online stores or deal sites?",
+    a: "Traditional stores sell products immediately. Alpmera works differently: You join a campaign instead of buying instantly. Your funds stay protected in escrow. The campaign moves forward only if enough people participate. If it doesn't work out, you get a refund. There is no fake urgency, no flash sales, and no pressure to act fast.",
   },
   {
-    q: "Is there urgency or limited-time pressure?",
-    a: "No. Campaigns have explicit timelines, but Alpmera does not use countdown timers, artificial scarcity, or pressure tactics.",
+    q: "Who is Alpmera for?",
+    a: "Alpmera is for individual consumers, including: People willing to wait a bit for a better collective outcome, families, neighborhoods, parent groups, and hobbyist communities. Alpmera is not designed for businesses, wholesale buyers, or corporate procurement groups.",
   },
   {
-    q: "Is Alpmera a store?",
-    a: "No. Alpmera operates campaigns where participants pool demand. We coordinate fulfillment but do not hold inventory or function as a retailer.",
+    q: "What does it mean to \"join a campaign\"?",
+    a: "Joining a campaign means you're signaling real interest in a product by committing funds to escrow. You're not placing an order. You're not buying yet. You're saying: \"If enough people join, I'm in.\"",
   },
   {
-    q: "When will the web app open?",
-    a: "We're launching in phases. Early participants will be notified as campaigns become available in their area.",
+    q: "Is my money safe?",
+    a: "Yes. Your funds are held in escrow-style protection and are not released unless the campaign succeeds under its stated rules. If the campaign fails or is canceled, your funds are refunded according to the campaign terms.",
+  },
+  {
+    q: "When does Alpmera release funds?",
+    a: "Funds are released only after: The campaign reaches its target, the supplier accepts the campaign, and all conditions are clearly met. Until then, your funds remain protected.",
+  },
+  {
+    q: "What happens if a campaign doesn't succeed?",
+    a: "If a campaign fails: It is clearly closed, no fulfillment happens, and your committed funds are refunded. Failure is treated as a normal outcome, not a problem to hide.",
+  },
+  {
+    q: "Who handles delivery and fulfillment?",
+    a: "Alpmera does. During Phase 1 and Phase 2: Alpmera designs the campaign, coordinates with suppliers, manages fulfillment, and handles refunds if needed. You never have to negotiate with suppliers directly.",
+  },
+  {
+    q: "Why does Alpmera take longer than buying online?",
+    a: "Because Alpmera prioritizes fairness and protection over speed. Collective buying takes time: People need time to join, campaigns need to reach viability, and suppliers need clear, confirmed demand. If speed matters more than protection, traditional stores may be a better fit.",
+  },
+  {
+    q: "Are there any guarantees?",
+    a: "No implicit guarantees. Every campaign clearly states: What needs to happen for success, what happens if it fails, and expected timelines (with uncertainty explained). Alpmera avoids overpromising and always explains the worst-case scenario upfront.",
+  },
+  {
+    q: "Does Alpmera offer discounts?",
+    a: "Alpmera does not offer discounts. Better pricing comes from real collective demand, not promotions or coupons. Pricing is the outcome of people joining together — not a marketing trick.",
+  },
+  {
+    q: "Why should I trust Alpmera?",
+    a: "Because Alpmera is built around a simple rule: Trust is created by clear rules and honest outcomes — especially when things fail. No hidden steps, no silent changes, no pressure tactics. If something changes, you're informed. If something fails, you're protected.",
+  },
+  {
+    q: "Is Alpmera live yet?",
+    a: "Alpmera is currently launching in controlled phases. Early users help shape: Which campaigns run, how the experience improves, and what categories expand next. You're joining early — thoughtfully, not experimentally.",
+  },
+  {
+    q: "What happens after I join a campaign?",
+    a: "You'll be able to: Track campaign progress, see clear status updates, and know exactly what happens next. No guessing. No chasing updates.",
+  },
+  {
+    q: "Can I leave a campaign after joining?",
+    a: "Each campaign clearly explains: When exits are allowed, what refund options apply, and what happens if timelines change. You always see your options — nothing is hidden.",
+  },
+  {
+    q: "Is Alpmera right for me?",
+    a: "Alpmera is a good fit if you: Value transparency, are comfortable waiting, prefer protection over impulse buying, and like the idea of collective power. If you need something immediately, Alpmera may not be the right tool — and that's okay.",
+  },
+];
+
+const SKEPTIC_FAQS = [
+  {
+    q: "Is this just another group-buying site?",
+    a: "No. Most group-buying sites: Push urgency, advertise \"deals\", shift risk to users, and disappear when things fail. Alpmera does the opposite. There is no pressure, no fake scarcity, and no obligation to move forward unless the campaign works for everyone.",
+  },
+  {
+    q: "What's the catch?",
+    a: "There isn't one. Alpmera is deliberately slower and more structured than typical online shopping. That tradeoff exists to protect participants. If a campaign doesn't make sense, it simply doesn't move forward — and your funds don't either.",
+  },
+  {
+    q: "How do I know you won't run off with the money?",
+    a: "Because Alpmera is designed so that running off with money would be visible immediately. Funds are tracked, state changes are explicit, campaign outcomes are binary: success or failure, and refund paths are defined upfront. Silence, ambiguity, and hidden steps are treated as failures — not normal behavior.",
+  },
+  {
+    q: "What happens if something goes wrong?",
+    a: "Alpmera treats failure as a first-class outcome. If something goes wrong: The campaign is clearly marked as failed, you are informed, and refunds are issued according to the rules. There's no \"we're looking into it\" limbo and no reframing failure as a delay.",
+  },
+  {
+    q: "Why don't you just guarantee outcomes?",
+    a: "Because guarantees that depend on things outside Alpmera's control would be misleading. Instead, Alpmera guarantees: Clear rules, protected funds, honest communication, and defined exit paths. Promises are explicit, not implied.",
+  },
+  {
+    q: "Why should I trust a new platform?",
+    a: "You shouldn't trust blindly. That's why Alpmera doesn't ask you to. Instead, it shows you: What happens in success, what happens in failure, when funds move, and when they don't. Trust is earned through predictable behavior, not brand claims.",
+  },
+  {
+    q: "Why can't suppliers deal with users directly?",
+    a: "Because direct supplier–user relationships create confusion and risk. Alpmera stays in the middle so that: Rules stay consistent, accountability is clear, and users aren't pressured or negotiated with. You deal with Alpmera. Alpmera deals with suppliers.",
+  },
+  {
+    q: "How is this not just crowdfunding?",
+    a: "Crowdfunding typically: Promises future delivery, shifts risk to backers, treats delays as normal, and has weak refund protections. Alpmera: Uses real demand (not speculation), holds funds until conditions are met, treats failure as a valid outcome, and makes refunds part of the system. The goal is coordination, not hope.",
+  },
+  {
+    q: "What if I change my mind after joining?",
+    a: "Every campaign explains: When you can exit, what refund rules apply, and what happens if timelines change. There are no hidden penalties or surprise lock-ins.",
+  },
+  {
+    q: "Why not just buy from a store instead?",
+    a: "You should — if speed and convenience are your top priorities. Alpmera is for people who value: Transparency, protection, collective leverage, and fair outcomes. It's a different tool for a different mindset.",
+  },
+  {
+    q: "Is Alpmera trying to become a marketplace later?",
+    a: "Not in Phase 1 or Phase 2. Right now, Alpmera is intentionally operating as a controlled operator to: Protect users, learn from real campaigns, and build trust before scale. Any future evolution will be explicit and documented — not silently introduced.",
+  },
+  {
+    q: "What would make Alpmera fail as a platform?",
+    a: "Losing clarity. The moment Alpmera: Hides outcomes, uses pressure tactics, blurs responsibilities, or assumes user forgiveness… it would stop being Alpmera. That's why these rules exist in the first place.",
   },
 ];
 
@@ -153,22 +241,33 @@ export default function LandingHome() {
       {/* Navigation */}
       <header className="sticky top-0 z-20 border-b border-border bg-background/90 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <div className="text-lg font-semibold tracking-tight text-alpmera-primary font-display">
+          <a
+            href="#"
+            onClick={(e) => {
+              e.preventDefault();
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            className="text-lg font-semibold tracking-tight text-alpmera-primary font-display cursor-pointer hover:opacity-80 transition-opacity"
+          >
             ALPMERA
-          </div>
+          </a>
           <nav className="hidden items-center gap-6 text-sm md:flex">
             {NAV_LINKS.map((link) => (
               <a
                 key={link.href}
                 href={link.href}
-                className="text-alpmera-text-light hover:text-alpmera-primary transition-colors"
+                className={
+                  link.label === "Suggest a Product"
+                    ? "rounded-md bg-alpmera-accent px-4 py-2 text-white font-semibold hover:bg-opacity-90 transition-all"
+                    : "text-alpmera-text-light hover:text-alpmera-primary transition-colors"
+                }
               >
                 {link.label}
               </a>
             ))}
             <a
               href="#early-access"
-              className="rounded-md bg-alpmera-primary px-4 py-2 text-white hover:bg-opacity-90 transition-all"
+              className="rounded-md bg-alpmera-primary px-4 py-2 text-white font-semibold hover:bg-opacity-90 transition-all"
             >
               Join Early List
             </a>
@@ -178,18 +277,31 @@ export default function LandingHome() {
 
       <main id="main-content">
         {/* Hero Section */}
-        <section className="px-6 py-16 md:py-24">
+        <section className="px-6 py-12 md:py-16">
           <div className="mx-auto grid max-w-6xl gap-12 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
             <div className="space-y-6">
-              <p className="text-sm uppercase tracking-[0.25em] text-alpmera-text-light font-body">
-                ALPMERA
-              </p>
+              <div className="flex items-center gap-3 flex-wrap">
+                <p className="text-sm uppercase tracking-[0.25em] text-alpmera-text-light font-body">
+                  ALPMERA
+                </p>
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-alpmera-accent/30 bg-alpmera-secondary px-3 py-1 text-xs font-medium text-alpmera-text">
+                  <svg className="w-3 h-3 text-alpmera-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Platform launching soon
+                </span>
+              </div>
               <h1 className="text-4xl md:text-5xl font-normal leading-tight font-display text-alpmera-primary">
                 Collective buying, built for people—not pressure.
               </h1>
               <p className="text-lg text-alpmera-text-light font-body">
                 Join campaigns, commit funds to escrow, and move forward together only when it's fair for everyone.
               </p>
+              <div className="rounded-lg border border-alpmera-border bg-alpmera-secondary/50 p-4">
+                <p className="text-sm text-alpmera-text font-body">
+                  <strong className="text-alpmera-primary">Currently collecting early interest.</strong> The web app is being built with care. Join the early list to be notified when campaigns open.
+                </p>
+              </div>
               <div className="flex flex-col gap-3 sm:flex-row">
                 <a
                   href="#early-access"
@@ -206,10 +318,10 @@ export default function LandingHome() {
               </div>
             </div>
 
-            {/* Video + Trust Model */}
-            <div className="space-y-6">
-              {/* Video Placeholder */}
-              <div className="aspect-video bg-alpmera-secondary rounded-lg flex items-center justify-center border border-alpmera-border">
+            {/* Trust Model */}
+            <div>
+              {/* Video Placeholder - Hidden for now, will be added when video is ready */}
+              {/* <div className="aspect-video bg-alpmera-secondary rounded-lg flex items-center justify-center border border-alpmera-border mb-6">
                 {VIDEO_ID === "PLACEHOLDER" ? (
                   <div className="text-center px-6">
                     <svg
@@ -243,7 +355,7 @@ export default function LandingHome() {
                     title="Alpmera Introduction"
                   />
                 )}
-              </div>
+              </div> */}
 
               {/* Trust Model Card */}
               <div className="rounded-lg border border-alpmera-border bg-alpmera-secondary p-6">
@@ -282,7 +394,7 @@ export default function LandingHome() {
         </section>
 
         {/* What Alpmera Is/Not */}
-        <section className="px-6 py-20 bg-alpmera-background">
+        <section className="px-6 py-12 bg-alpmera-background">
           <div className="mx-auto max-w-6xl">
             <h2 className="text-3xl font-normal font-display text-alpmera-primary">
               What Alpmera is — and what it is not
@@ -319,32 +431,21 @@ export default function LandingHome() {
         </section>
 
         {/* How It Works */}
-        <section className="px-6 py-20" id="how-it-works">
-          <div className="mx-auto max-w-6xl">
-            <h2 className="text-3xl font-normal font-display text-alpmera-primary">
-              How it works
+        <section className="py-10 md:py-14" id="how-it-works">
+          <div className="text-center space-y-4 mb-12">
+            <h2 className="text-3xl md:text-4xl font-normal font-display text-alpmera-primary">
+              How It Works
             </h2>
-            <ol className="mt-8 grid gap-4 md:grid-cols-2">
-              {HOW_IT_WORKS_STEPS.map((step, index) => (
-                <li
-                  key={index}
-                  className="rounded-lg border border-alpmera-border bg-alpmera-secondary p-6 shadow-sm"
-                >
-                  <div className="text-xs uppercase tracking-[0.25em] text-alpmera-accent font-semibold mb-3 font-body">
-                    Step {index + 1}
-                  </div>
-                  <p className="text-sm text-alpmera-text font-body leading-relaxed">{step}</p>
-                </li>
-              ))}
-            </ol>
-            <p className="mt-6 text-sm text-alpmera-text-light font-body">
-              Timelines are conditional. If anything changes, it's communicated explicitly.
+            <p className="max-w-2xl mx-auto text-alpmera-text-light font-body">
+              See how a campaign moves forward — clearly, safely, and step by step.
             </p>
           </div>
+
+          <AlpmeraBatchFlow />
         </section>
 
         {/* Safety */}
-        <section className="px-6 py-20 bg-alpmera-background" id="safety">
+        <section className="px-6 py-12 bg-alpmera-background" id="safety">
           <div className="mx-auto max-w-6xl">
             <h2 className="text-3xl font-normal font-display text-alpmera-primary border-b-2 border-alpmera-success pb-2 inline-block">
               Safety is the product
@@ -374,7 +475,7 @@ export default function LandingHome() {
         </section>
 
         {/* Demand CTA */}
-        <section className="px-6 py-16 bg-alpmera-primary text-white">
+        <section className="px-6 py-10 bg-alpmera-primary text-white">
           <div className="mx-auto max-w-6xl text-center">
             <h2 className="text-2xl md:text-3xl font-normal font-display">
               What should we unlock next?
@@ -395,7 +496,7 @@ export default function LandingHome() {
         </section>
 
         {/* Early Access Form */}
-        <section className="px-6 py-20" id="early-access">
+        <section className="px-6 py-12" id="early-access">
           <div className="mx-auto max-w-6xl">
             <div className="rounded-lg border-2 border-alpmera-success/20 bg-alpmera-secondary p-8 md:p-12">
               <h2 className="text-3xl font-normal font-display text-alpmera-primary">
@@ -406,7 +507,7 @@ export default function LandingHome() {
               </p>
 
               <form onSubmit={handleSubmit} className="mt-8 space-y-6">
-                <HoneypotField />
+                <HoneypotField value={honeypot} onChange={setHoneypot} />
 
                 <div>
                   <label htmlFor="email" className="block text-sm font-semibold text-alpmera-text font-body">
@@ -534,10 +635,12 @@ export default function LandingHome() {
         </section>
 
         {/* FAQ */}
-        <section className="px-6 py-20 bg-alpmera-background" id="faq">
+        <section className="px-6 py-12 bg-alpmera-background" id="faq">
           <div className="mx-auto max-w-6xl">
-            <h2 className="text-3xl font-normal font-display text-alpmera-primary">FAQ</h2>
-            <div className="mt-8 space-y-4">
+            <h2 className="text-3xl font-normal font-display text-alpmera-primary mb-8">FAQ</h2>
+
+            {/* Main FAQ */}
+            <div className="space-y-4">
               {FAQS.map((faq) => (
                 <div
                   key={faq.q}
@@ -552,12 +655,38 @@ export default function LandingHome() {
                 </div>
               ))}
             </div>
+
+            {/* Skeptic FAQ */}
+            <div className="mt-16">
+              <h3 className="text-2xl font-normal font-display text-alpmera-primary mb-6">Skeptic FAQ</h3>
+              <div className="space-y-4">
+                {SKEPTIC_FAQS.map((faq) => (
+                  <div
+                    key={faq.q}
+                    className="rounded-lg border border-alpmera-border bg-white p-6 shadow-sm hover:shadow-md transition-shadow"
+                  >
+                    <h4 className="text-lg font-semibold font-display text-alpmera-primary">
+                      {faq.q}
+                    </h4>
+                    <p className="mt-3 text-sm text-alpmera-text-light font-body leading-relaxed">
+                      {faq.a}
+                    </p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Closing line */}
+              <p className="mt-8 text-center text-sm text-alpmera-text-light font-body italic">
+                If you're skeptical, that's a good sign.<br />
+                Alpmera was built for people who ask hard questions.
+              </p>
+            </div>
           </div>
         </section>
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-border bg-background px-6 py-10">
+      <footer className="border-t border-border bg-background px-6 py-8">
         <div className="mx-auto flex max-w-6xl flex-col gap-6 text-sm text-alpmera-text-light md:flex-row md:items-center md:justify-between font-body">
           <div className="space-y-2">
             <div className="text-lg font-semibold text-alpmera-primary font-display mb-3">

@@ -2,26 +2,53 @@ import Layout from "./components/Layout";
 
 const sections = [
   {
-    title: "Information We Collect",
+    title: "Pre-Launch Status",
     content: (
       <div className="space-y-3">
-        <p>
-          When you join the early list or participate in campaigns, we collect information necessary to operate campaigns safely and communicate with participants.
+        <p className="font-semibold">
+          Alpmera is currently in pre-launch. Campaigns are not yet active.
         </p>
-        <p className="font-semibold">Information you provide:</p>
+        <p>
+          This Privacy Policy describes how we handle information collected from the early list and how we plan to handle participant information once campaigns launch.
+        </p>
+        <p>
+          Right now, we are only collecting early list signups. Campaign operations described below represent planned practices that will take effect when campaigns become available.
+        </p>
+      </div>
+    ),
+  },
+  {
+    title: "Information We Currently Collect",
+    content: (
+      <div className="space-y-3">
+        <p className="font-semibold">Early list information:</p>
         <ul className="list-disc pl-5 space-y-1">
           <li>Email address</li>
-          <li>Campaign participation interests</li>
+          <li>Interest tags (optional product categories)</li>
           <li>Communication preferences</li>
           <li>Optional notes you choose to share</li>
         </ul>
-        <p className="font-semibold">Campaign participation records:</p>
+        <p>
+          This information is used solely to notify you when campaigns become available and to understand what categories to prioritize.
+        </p>
+      </div>
+    ),
+  },
+  {
+    title: "Information We Plan to Collect (When Campaigns Launch)",
+    content: (
+      <div className="space-y-3">
+        <p>
+          Once campaigns are active, we will collect information necessary to operate campaigns safely and communicate with participants.
+        </p>
+        <p className="font-semibold">Planned campaign participation records:</p>
         <ul className="list-disc pl-5 space-y-1">
-          <li>Campaign commitments and escrow transactions</li>
+          <li>Campaign commitments and escrow transaction confirmations</li>
           <li>Campaign completion and fulfillment status</li>
-          <li>Communication history related to campaigns</li>
+          <li>Communication history related to specific campaigns</li>
+          <li>Shipping and fulfillment information (only when needed)</li>
         </ul>
-        <p>We collect only what is necessary to operate campaigns with explicit rules and escrow protection.</p>
+        <p>We will collect only what is necessary to operate campaigns with explicit rules and escrow protection.</p>
       </div>
     ),
   },
@@ -29,15 +56,21 @@ const sections = [
     title: "How We Use Information",
     content: (
       <div className="space-y-3">
-        <p>Alpmera uses participant information exclusively to:</p>
+        <p className="font-semibold">Currently (pre-launch):</p>
+        <ul className="list-disc pl-5 space-y-1">
+          <li>Notify early list members when campaigns become available</li>
+          <li>Understand which product categories to prioritize</li>
+          <li>Send occasional updates about platform launch progress</li>
+        </ul>
+        <p className="font-semibold mt-4">Planned use (when campaigns launch):</p>
         <ul className="list-disc pl-5 space-y-1">
           <li>Operate and coordinate collective buying campaigns</li>
-          <li>Send campaign updates and notifications</li>
-          <li>Process escrow commitments and refunds</li>
-          <li>Communicate status changes explicitly</li>
+          <li>Send campaign updates and status notifications</li>
+          <li>Coordinate escrow commitments and refunds</li>
+          <li>Communicate state changes explicitly</li>
           <li>Fulfill campaign operator responsibilities</li>
         </ul>
-        <p className="font-semibold mt-4">We do not:</p>
+        <p className="font-semibold mt-4">We will not:</p>
         <ul className="list-disc pl-5 space-y-1">
           <li>Sell or rent participant information to third parties</li>
           <li>Use data for advertising or marketing beyond campaign updates</li>
@@ -48,11 +81,11 @@ const sections = [
     ),
   },
   {
-    title: "Campaign Participation Data",
+    title: "Planned Campaign Participation Data",
     content: (
       <div className="space-y-3">
         <p>
-          When you join a campaign, your participation records include commitment amounts, escrow status, and fulfillment outcomes. This information is used to:
+          Once campaigns launch, when you join a campaign, your participation records will include commitment amounts, escrow status, and fulfillment outcomes. This information will be used to:
         </p>
         <ul className="list-disc pl-5 space-y-1">
           <li>Track campaign progress toward completion targets</li>
@@ -61,22 +94,24 @@ const sections = [
           <li>Maintain transparent records of campaign operations</li>
         </ul>
         <p>
-          Campaign data is retained as long as necessary to fulfill operator responsibilities and handle any potential disputes or refund processes.
+          Campaign data will be retained as long as necessary to fulfill operator responsibilities and handle any potential disputes or refund processes.
         </p>
       </div>
     ),
   },
   {
-    title: "Escrow & Financial Information",
+    title: "Planned Escrow & Financial Information Handling",
     content: (
       <div className="space-y-3">
         <p>
-          Alpmera does not directly handle payment information. Financial transactions are processed through secure third-party payment processors and escrow services.
+          When campaigns launch, Alpmera will not directly handle payment information. Financial transactions will be processed through secure third-party payment processors and escrow services.
         </p>
         <p>
-          We receive confirmation of escrow commitments and completion status, but do not store credit card numbers or banking details.
+          We will receive confirmation of escrow commitments and completion status, but will not store credit card numbers or banking details.
         </p>
-        <p>Payment processors operate under their own privacy policies and security standards.</p>
+        <p>
+          Payment processors will operate under their own privacy policies and security standards. Specific providers will be disclosed before campaigns launch.
+        </p>
       </div>
     ),
   },
@@ -84,15 +119,20 @@ const sections = [
     title: "Communication Preferences",
     content: (
       <div className="space-y-3">
-        <p>You control what campaign updates you receive:</p>
+        <p className="font-semibold">Currently (early list):</p>
+        <p>
+          You can opt in to receive notifications when campaigns become available. You can unsubscribe from the early list at any time.
+        </p>
+        <p className="font-semibold mt-4">Planned (when campaigns launch):</p>
+        <p>You will control what campaign updates you receive:</p>
         <ul className="list-disc pl-5 space-y-1">
-          <li>Essential campaign communications (commitment confirmations, status changes, refunds) are sent to all participants</li>
+          <li>Essential campaign communications (commitment confirmations, status changes, refunds) will be sent to all participants</li>
           <li>Optional campaign recommendations can be enabled or disabled at any time</li>
           <li>Interest tag preferences help us notify you about relevant campaigns</li>
         </ul>
         <p>
-          To update communication preferences or unsubscribe from optional updates, contact us at{" "}
-          <a href="mailto:hello@alpmera.com" className="underline hover:text-brand-sapphire">
+          To update preferences or unsubscribe, contact{" "}
+          <a href="mailto:hello@alpmera.com" className="underline hover:text-alpmera-primary">
             hello@alpmera.com
           </a>
           .
@@ -105,17 +145,17 @@ const sections = [
     content: (
       <div className="space-y-3">
         <p>
-          Alpmera implements security measures to protect participant information from unauthorized access, alteration, or disclosure.
+          Alpmera implements security measures to protect information from unauthorized access, alteration, or disclosure.
         </p>
-        <p>Security practices include:</p>
+        <p>Current and planned security practices include:</p>
         <ul className="list-disc pl-5 space-y-1">
           <li>Encrypted data transmission and storage</li>
-          <li>Access controls limiting who can view participant information</li>
-          <li>Regular security assessments</li>
-          <li>Secure escrow partnerships with established financial services</li>
+          <li>Access controls limiting who can view information</li>
+          <li>Security assessments and monitoring</li>
+          <li>Planned secure escrow partnerships with established financial services</li>
         </ul>
         <p>
-          While we take security seriously, no system is completely secure. Participants should protect their own account credentials and report any suspicious activity.
+          While we take security seriously, no system is completely secure. We will continue to improve security practices as the platform evolves.
         </p>
       </div>
     ),
@@ -134,7 +174,7 @@ const sections = [
         </ul>
         <p>
           To exercise these rights, contact{" "}
-          <a href="mailto:hello@alpmera.com" className="underline hover:text-brand-sapphire">
+          <a href="mailto:hello@alpmera.com" className="underline hover:text-alpmera-primary">
             hello@alpmera.com
           </a>
           .
@@ -147,10 +187,10 @@ const sections = [
     content: (
       <div className="space-y-3">
         <p>
-          Alpmera may update this Privacy Policy as operational practices evolve. Changes will be posted on this page with an updated "Last updated" date.
+          Alpmera may update this Privacy Policy as we move from pre-launch to active operations and as practices evolve. Changes will be posted on this page with an updated "Last updated" date.
         </p>
         <p>
-          Material changes affecting how participant information is used will be communicated via email to all participants with active campaign commitments.
+          When campaigns launch, we will notify early list members of the updated privacy practices. Material changes affecting how information is used will be communicated clearly.
         </p>
       </div>
     ),
@@ -162,7 +202,7 @@ const sections = [
         <p>Questions about this Privacy Policy or how Alpmera handles participant information can be directed to:</p>
         <p className="font-semibold">
           Email:{" "}
-          <a href="mailto:hello@alpmera.com" className="underline hover:text-brand-sapphire">
+          <a href="mailto:hello@alpmera.com" className="underline hover:text-alpmera-primary">
             hello@alpmera.com
           </a>
         </p>
@@ -178,16 +218,21 @@ export default function Privacy() {
       <div className="px-6 py-20">
         <div className="mx-auto max-w-4xl">
           <h1 className="text-5xl font-bold mb-4">Privacy Policy</h1>
-          <p className="text-brand-slate mb-2 text-sm">Last updated: January 21, 2026</p>
-          <p className="text-lg text-brand-slate mb-12">
+          <p className="text-alpmera-text-light mb-2 text-sm">Last updated: January 23, 2026</p>
+          <p className="text-lg text-alpmera-text-light mb-4">
             How Alpmera handles participant information
           </p>
+          <div className="mb-12 rounded-lg border-2 border-alpmera-accent/30 bg-alpmera-secondary/50 p-4">
+            <p className="text-sm text-alpmera-text font-semibold">
+              ⓘ Pre-Launch Notice: Campaigns are not yet active. This policy describes current early list practices and planned campaign operations.
+            </p>
+          </div>
 
           <div className="space-y-6">
             {sections.map((section) => (
               <div key={section.title} className="rounded-lg border border-card-border bg-card p-8 shadow-soft card-texture">
                 <h2 className="text-2xl font-bold mb-4">{section.title}</h2>
-                <div className="text-brand-slate prose prose-sm max-w-none">
+                <div className="text-alpmera-text-light prose prose-sm max-w-none">
                   {section.content}
                 </div>
               </div>
