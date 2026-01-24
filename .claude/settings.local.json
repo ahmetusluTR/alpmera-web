@@ -22,7 +22,8 @@
       "Bash(ls:*)",
       "Bash(ssh root@alpmera-api-staging:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ]
   }
 }
