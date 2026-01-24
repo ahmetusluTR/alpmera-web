@@ -16,7 +16,13 @@
       "Bash(python:*)",
       "Bash(unzip:*)",
       "Bash(tree:*)",
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "Bash(ssh root@alpmera-api-staging \"grep -r ''AKfycbwSaQoBmMrBlEqY00u5v6QHGwg'' /var/www/alpmera-landing/assets/\")",
+      "Bash(grep:*)",
+      "Bash(ls:*)",
+      "Bash(ssh root@alpmera-api-staging:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ]
   }
 }
