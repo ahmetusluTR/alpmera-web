@@ -23,7 +23,10 @@
       "Bash(ssh root@alpmera-api-staging:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(dir:*)",
+      "Bash(npx tsc:*)",
+      "Bash(git restore:*)"
     ]
   }
 }

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { submitEarlyAccess } from "./lib/googleSheets";
+import { subscribeToEarlyList } from "./lib/api";
 import { checkRateLimit, formatRemainingTime } from "./lib/rateLimit";
 import { HoneypotField } from "./components/forms/HoneypotField";
 import { AlpmeraBatchFlow } from "./components/brand/AlpmeraBatchFlow";
@@ -8,14 +8,11 @@ const VIDEO_ID = "PLACEHOLDER"; // Replace with actual YouTube ID when ready
 
 const INTEREST_TAGS = [
   "Electronics",
-  "Home",
-  "Kitchen",
-  "Outdoors",
-  "Fitness",
-  "Kids",
+  "Kitchen Appliances",
+  "Home Appliances",
   "Office",
   "Tools",
-  "Pets",
+  "Outdoor",
   "Other",
 ];
 
@@ -23,7 +20,6 @@ const NAV_LINKS = [
   { label: "How it works", href: "#how-it-works" },
   { label: "Safety", href: "#safety" },
   { label: "FAQ", href: "#faq" },
-  { label: "Suggest a Product", href: "/demand" },
 ];
 
 const ALPMERA_IS = [
@@ -208,11 +204,11 @@ export default function LandingHome() {
     setError("");
 
     try {
-      const result = await submitEarlyAccess({
+      const result = await subscribeToEarlyList({
         email,
-        interests,
+        interestTags: interests,
         notes,
-        notify,
+        recommendationOptIn: notify,
         website: honeypot,
       });
 
@@ -256,11 +252,7 @@ export default function LandingHome() {
               <a
                 key={link.href}
                 href={link.href}
-                className={
-                  link.label === "Suggest a Product"
-                    ? "rounded-md bg-alpmera-accent px-4 py-2 text-white font-semibold hover:bg-opacity-90 transition-all"
-                    : "text-alpmera-text-light hover:text-alpmera-primary transition-colors"
-                }
+                className="text-alpmera-text-light hover:text-alpmera-primary transition-colors"
               >
                 {link.label}
               </a>
@@ -270,6 +262,18 @@ export default function LandingHome() {
               className="rounded-md bg-alpmera-primary px-4 py-2 text-white font-semibold hover:bg-opacity-90 transition-all"
             >
               Join Early List
+            </a>
+            <a
+              href="/demand"
+              className="rounded-md bg-alpmera-accent px-4 py-2 text-white font-semibold hover:bg-opacity-90 transition-all"
+            >
+              Suggest a Product
+            </a>
+            <a
+              href="/product-requests"
+              className="rounded-md border-2 border-alpmera-primary bg-transparent px-4 py-2 text-alpmera-primary font-semibold hover:bg-alpmera-primary hover:text-white transition-all"
+            >
+              Product Requests
             </a>
           </nav>
         </div>

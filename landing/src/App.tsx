@@ -1,6 +1,7 @@
 import { Route, Router } from "wouter";
 import LandingHome from "./LandingHome";
 import Demand from "./Demand";
+import ProductRequests from "./ProductRequests";
 import Privacy from "./Privacy";
 import Terms from "./Terms";
 import StructuredData from "./components/SEO/StructuredData";
@@ -36,6 +37,7 @@ export default function App() {
       <Router>
         <Route path="/" component={LandingHome} />
         <Route path="/demand" component={Demand} />
+        <Route path="/product-requests" component={ProductRequests} />
         <Route path="/privacy" component={Privacy} />
         <Route path="/terms" component={Terms} />
       </Router>

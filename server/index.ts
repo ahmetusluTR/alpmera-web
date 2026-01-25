@@ -2,12 +2,14 @@ import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import cookieParser from "cookie-parser";
+import cors from "cors";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import pg from "pg";
 import { pool } from "./db";
 import { log } from "./log";
+import { startSkuVerifier } from "./workers/sku-verifier";
 
 const app = express();
 const httpServer = createServer(app);
@@ -40,6 +42,34 @@ app.use(express.urlencoded({ extended: false }));
 // Cookie parser - MUST be before routes for req.cookies access
 app.use(cookieParser());
 
+// CORS - Allow landing page to make API calls
+// CRITICAL: Without this, browser blocks all cross-origin requests
+app.use(cors({
+  origin: function(origin, callback) {
+    // Allow requests with no origin (mobile apps, curl, etc.)
+    if (!origin) return callback(null, true);
+
+    const allowedOrigins = [
+      "https://alpmera.com",
+      "https://www.alpmera.com",
+      // Development
+      "http://localhost:5173",
+      "http://localhost:5174",
+      "http://127.0.0.1:5173",
+      "http://127.0.0.1:5174",
+    ];
+
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.warn(`[CORS] Blocked request from origin: ${origin}`);
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  credentials: true, // Required for cookies/sessions to work cross-origin
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "x-admin-auth"],
+}));
 
 app.use(
   session({
@@ -130,6 +160,12 @@ app.use((req, res, next) => {
     },
     () => {
       log(`PID ${process.pid} listening on port ${port} (ENV: ${process.env.NODE_ENV || 'development'}, APP_ENV: ${process.env.APP_ENV || 'dev'})`);
+
+      // Start background workers
+      if (process.env.NODE_ENV !== "test") {
+        startSkuVerifier();
+        log("SKU verification worker started");
+      }
     },
   );
 })();

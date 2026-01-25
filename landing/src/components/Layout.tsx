@@ -4,7 +4,6 @@ const navLinks = [
   { label: "How it works", href: "/#how-it-works" },
   { label: "Safety", href: "/#safety" },
   { label: "FAQ", href: "/#faq" },
-  { label: "Join Early List", href: "/#early-access" },
 ];
 
 interface LayoutProps {
@@ -34,16 +33,38 @@ export default function Layout({ children }: LayoutProps) {
                 window.scrollTo({ top: 0, behavior: 'smooth' });
               }
             }}
-            className="text-lg font-semibold tracking-tight text-alpmera-primary hover:opacity-80 transition-opacity"
+            className="text-lg font-semibold tracking-tight text-alpmera-primary font-display cursor-pointer hover:opacity-80 transition-opacity"
           >
-            Alpmera
+            ALPMERA
           </a>
-          <nav className="hidden items-center gap-6 text-sm text-alpmera-text-light md:flex">
+          <nav className="hidden items-center gap-6 text-sm md:flex">
             {navLinks.map((link) => (
-              <a key={link.href} href={link.href} className="hover:text-alpmera-primary">
+              <a
+                key={link.href}
+                href={link.href}
+                className="text-alpmera-text-light hover:text-alpmera-primary transition-colors"
+              >
                 {link.label}
               </a>
             ))}
+            <a
+              href="/#early-access"
+              className="rounded-md bg-alpmera-primary px-4 py-2 text-white font-semibold hover:bg-opacity-90 transition-all"
+            >
+              Join Early List
+            </a>
+            <a
+              href="/demand"
+              className="rounded-md bg-alpmera-accent px-4 py-2 text-white font-semibold hover:bg-opacity-90 transition-all"
+            >
+              Suggest a Product
+            </a>
+            <a
+              href="/product-requests"
+              className="rounded-md border-2 border-alpmera-primary bg-transparent px-4 py-2 text-alpmera-primary font-semibold hover:bg-alpmera-primary hover:text-white transition-all"
+            >
+              Product Requests
+            </a>
           </nav>
           <button
             className="md:hidden text-sm text-alpmera-text-light flex flex-col gap-1 p-2"
@@ -83,6 +104,27 @@ export default function Layout({ children }: LayoutProps) {
                 {link.label}
               </a>
             ))}
+            <a
+              href="/#early-access"
+              className="rounded-md bg-alpmera-primary px-4 py-2 text-white font-semibold text-center hover:bg-opacity-90 transition-all"
+              onClick={() => setMobileMenuOpen(false)}
+            >
+              Join Early List
+            </a>
+            <a
+              href="/demand"
+              className="rounded-md bg-alpmera-accent px-4 py-2 text-white font-semibold text-center hover:bg-opacity-90 transition-all"
+              onClick={() => setMobileMenuOpen(false)}
+            >
+              Suggest a Product
+            </a>
+            <a
+              href="/product-requests"
+              className="rounded-md border-2 border-alpmera-primary px-4 py-2 text-alpmera-primary font-semibold text-center hover:bg-alpmera-primary hover:text-white transition-all"
+              onClick={() => setMobileMenuOpen(false)}
+            >
+              Product Requests
+            </a>
           </nav>
         </div>
       )}

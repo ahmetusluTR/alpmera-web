@@ -26,6 +26,7 @@ import {
   Package,
   MapPin,
   ExternalLink,
+  Lightbulb,
 } from "lucide-react";
 
 const navSections = [
@@ -72,6 +73,7 @@ const navSections = [
     label: "Inventory",
     items: [
       { path: "/admin/products", label: "Products", icon: Package },
+      { path: "/admin/product-requests", label: "Product Requests", icon: Lightbulb },
       { path: "/admin/suppliers", label: "Suppliers", icon: Users },
     ],
   },

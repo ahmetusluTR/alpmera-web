@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { submitDemandSuggestion } from "./lib/googleSheets";
+import { submitProductRequest } from "./lib/api";
 import { checkRateLimit, formatRemainingTime } from "./lib/rateLimit";
 import { HoneypotField } from "./components/forms/HoneypotField";
 import { US_STATES } from "./data/usStates";
@@ -38,10 +38,10 @@ export default function Demand() {
     setError("");
 
     try {
-      const result = await submitDemandSuggestion({
-        product_name: productName,
+      const result = await submitProductRequest({
+        productName,
         sku,
-        reference_url: referenceUrl,
+        referenceUrl,
         reason,
         city,
         state,
@@ -102,6 +102,11 @@ export default function Demand() {
           <p className="mt-4 text-alpmera-text-light">
             Help us decide what campaigns to run. Your suggestions directly shape our roadmap.
           </p>
+          <div className="mt-4 rounded-lg bg-alpmera-secondary/50 border border-alpmera-border p-4">
+            <p className="text-sm text-alpmera-text-light">
+              This is not a campaign. No commitments, no payments, no guarantees.
+            </p>
+          </div>
 
           <div className="mt-4 border-t border-alpmera-border" />
 
@@ -163,7 +168,7 @@ export default function Demand() {
             {/* Reference URL */}
             <div>
               <label htmlFor="reference-url" className="block text-sm font-semibold text-alpmera-text">
-                Reference URL (optional)
+                Reference URL <span className="text-alpmera-danger">*</span>
               </label>
               <input
                 type="url"
@@ -172,6 +177,7 @@ export default function Demand() {
                 onChange={(e) => setReferenceUrl(e.target.value)}
                 placeholder="Amazon, Walmart, manufacturer website, etc."
                 className="mt-2 w-full rounded-md border border-alpmera-border bg-white px-4 py-3 text-sm focus:border-alpmera-primary focus:outline-none focus:ring-1 focus:ring-alpmera-primary"
+                required
               />
             </div>
 
@@ -265,7 +271,7 @@ export default function Demand() {
             {/* Submit button */}
             <button
               type="submit"
-              disabled={submitting || !productName}
+              disabled={submitting || !productName || !referenceUrl}
               className="w-full rounded-lg bg-alpmera-primary px-6 py-3 text-sm font-semibold text-white shadow-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-opacity-90 transition-all focus:outline-none focus:ring-2 focus:ring-alpmera-primary focus:ring-offset-2"
             >
               {submitting ? (

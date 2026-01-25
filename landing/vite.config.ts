@@ -11,9 +11,6 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     envDir, // Use current dir for production, parent for dev
-    define: {
-      'import.meta.env.VITE_GOOGLE_SCRIPT_URL': JSON.stringify(env.VITE_GOOGLE_SCRIPT_URL || ''),
-    },
     server: {
       proxy: {
         "/api": {

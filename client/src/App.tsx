@@ -38,6 +38,7 @@ import AdminDeliveries from "@/pages/admin/deliveries";
 import AdminSuppliers from "@/pages/admin/suppliers";
 import AdminSupplierDetail from "@/pages/admin/supplier-detail";
 import AdminSupplierBulk from "@/pages/admin/supplier-bulk";
+import AdminProductRequests from "@/pages/admin/product-requests";
 import AdminConsolidationPoints from "@/pages/admin/consolidation-points";
 import AdminConsolidationDetail from "@/pages/admin/consolidation-detail";
 import AdminCredits from "@/pages/admin/credits";
@@ -300,6 +301,13 @@ function Router() {
             <AdminSupplierDetail />
           </AdminGuard>
         )}
+      </Route>
+
+      {/* Admin Product Requests */}
+      <Route path="/admin/product-requests">
+        <AdminGuard>
+          <AdminProductRequests />
+        </AdminGuard>
       </Route>
 
       {/* Admin Consolidation Points */}

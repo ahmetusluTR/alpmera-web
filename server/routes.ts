@@ -10,9 +10,12 @@ import { registerObjectStorageRoutes } from "./replit_integrations/object_storag
 import {
   type CampaignState,
   type CommitmentStatus,
+  type ProductRequestStatus,
   VALID_TRANSITIONS,
   insertCommitmentSchema,
   updateUserProfileSchema,
+  insertProductRequestSchema,
+  updateProductRequestStatusSchema,
   escrowLedger,
   commitments,
   campaigns,
@@ -24,6 +27,10 @@ import {
   insertConsolidationPointSchema,
   updateConsolidationPointSchema,
   landingSubscribers,
+  productRequests,
+  productRequestVotes,
+  productRequestEvents,
+  skuVerificationJobs,
   users,
   userProfiles
 } from "@shared/schema";
@@ -70,6 +77,46 @@ function isLandingRateLimited(ip: string): boolean {
   }
   entry.count += 1;
   return false;
+}
+
+// Product request rate limiting
+const PRODUCT_REQUEST_RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+const PRODUCT_REQUEST_RATE_LIMIT_MAX = 5; // 5 per hour
+const PRODUCT_VOTE_RATE_LIMIT_MAX = 20; // 20 votes per hour
+const productRequestRateLimit = new Map<string, { count: number; resetAt: number }>();
+const productVoteRateLimit = new Map<string, { count: number; resetAt: number }>();
+
+function isProductRequestRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const entry = productRequestRateLimit.get(ip);
+  if (!entry || now > entry.resetAt) {
+    productRequestRateLimit.set(ip, { count: 1, resetAt: now + PRODUCT_REQUEST_RATE_LIMIT_WINDOW_MS });
+    return false;
+  }
+  if (entry.count >= PRODUCT_REQUEST_RATE_LIMIT_MAX) {
+    return true;
+  }
+  entry.count += 1;
+  return false;
+}
+
+function isProductVoteRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const entry = productVoteRateLimit.get(ip);
+  if (!entry || now > entry.resetAt) {
+    productVoteRateLimit.set(ip, { count: 1, resetAt: now + PRODUCT_REQUEST_RATE_LIMIT_WINDOW_MS });
+    return false;
+  }
+  if (entry.count >= PRODUCT_VOTE_RATE_LIMIT_MAX) {
+    return true;
+  }
+  entry.count += 1;
+  return false;
+}
+
+// Hash IP for privacy
+function hashIp(ip: string): string {
+  return createHash("sha256").update(ip + (process.env.SESSION_SECRET || "salt")).digest("hex").substring(0, 32);
 }
 
 // Generate a random 6-digit code
@@ -508,30 +555,301 @@ export async function registerRoutes(
     }
   });
 
-  // Landing form submission proxy (public)
-  app.post("/api/landing/submit-form", async (req, res) => {
-    try {
-      const GOOGLE_SCRIPT_URL = process.env.GOOGLE_SCRIPT_URL;
+  // ============================================
+  // PRODUCT REQUESTS (Public)
+  // ============================================
 
-      if (!GOOGLE_SCRIPT_URL) {
-        console.error('GOOGLE_SCRIPT_URL environment variable not configured');
-        return res.status(500).json({ success: false, error: 'Form not configured' });
+  // Create product request (public)
+  app.post("/api/product-requests", async (req, res) => {
+    try {
+      const forwardedFor = req.headers["x-forwarded-for"];
+      const ip = (Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor)
+        ?.split(",")[0]
+        ?.trim() || req.ip || "unknown";
+
+      // Honeypot check
+      if (req.body?.website && typeof req.body.website === "string" && req.body.website.trim().length > 0) {
+        // Bot detected - silently succeed
+        return res.json({ success: true, id: randomUUID() });
       }
 
-      // Forward the request to Google Apps Script
-      const response = await fetch(GOOGLE_SCRIPT_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(req.body),
+      if (isProductRequestRateLimited(ip)) {
+        return res.status(429).json({ error: "Rate limit exceeded. Please try again later." });
+      }
+
+      // Validate input
+      const productName = typeof req.body?.productName === "string" ? req.body.productName.trim() : "";
+      const referenceUrl = typeof req.body?.referenceUrl === "string" ? req.body.referenceUrl.trim() : "";
+      const inputSku = typeof req.body?.sku === "string" ? req.body.sku.trim() : null;
+      const reason = typeof req.body?.reason === "string" ? req.body.reason.trim().substring(0, 1000) : null;
+      const category = typeof req.body?.category === "string" ? req.body.category.trim() : null;
+      const submitterEmail = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : null;
+      const submitterCity = typeof req.body?.city === "string" ? req.body.city.trim() : null;
+      const submitterState = typeof req.body?.state === "string" ? req.body.state.trim() : null;
+      const notifyOnCampaign = req.body?.notify === true || req.body?.notify === "true";
+
+      if (!productName || productName.length < 2) {
+        return res.status(400).json({ error: "Product name is required (min 2 characters)" });
+      }
+
+      if (!referenceUrl) {
+        return res.status(400).json({ error: "Reference URL is required" });
+      }
+
+      // Basic URL validation
+      try {
+        new URL(referenceUrl);
+      } catch {
+        return res.status(400).json({ error: "Invalid reference URL" });
+      }
+
+      // Email validation if provided
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (submitterEmail && !emailRegex.test(submitterEmail)) {
+        return res.status(400).json({ error: "Invalid email format" });
+      }
+
+      const ipHash = hashIp(ip);
+      const anonId = req.cookies?.alpmera_anon_id || null;
+
+      const now = new Date();
+
+      // Create product request
+      const [newRequest] = await db.insert(productRequests).values({
+        productName,
+        category,
+        inputSku,
+        referenceUrl,
+        reason,
+        submitterEmail,
+        submitterCity,
+        submitterState,
+        notifyOnCampaign,
+        submitterIp: ipHash,
+        submitterAnonId: anonId,
+        createdAt: now,
+        updatedAt: now,
+      }).returning({ id: productRequests.id });
+
+      // Create SKU verification job
+      await db.insert(skuVerificationJobs).values({
+        productRequestId: newRequest.id,
+        status: "pending",
+        nextAttemptAt: now,
+        createdAt: now,
       });
 
-      const result = await response.json();
-      return res.json(result);
+      // Create audit event
+      await db.insert(productRequestEvents).values({
+        productRequestId: newRequest.id,
+        eventType: "CREATED",
+        actor: "anonymous",
+        newValue: JSON.stringify({ productName, referenceUrl }),
+        createdAt: now,
+      });
+
+      return res.json({ success: true, id: newRequest.id });
     } catch (error) {
-      console.error("Error proxying to Google Apps Script:", error);
-      return res.status(500).json({ success: false, error: 'Network error. Please try again.' });
+      console.error("Error creating product request:", error);
+      return res.status(500).json({ error: "Failed to submit request" });
+    }
+  });
+
+  // Get product requests list (public)
+  app.get("/api/product-requests", async (req, res) => {
+    try {
+      const status = typeof req.query.status === "string" ? req.query.status : null;
+      const sort = typeof req.query.sort === "string" ? req.query.sort : "votes";
+      const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 20, 1), 100);
+      const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+
+      // Build where clause - hide rejected by default
+      const conditions = [];
+      if (status) {
+        conditions.push(eq(productRequests.status, status as ProductRequestStatus));
+      } else {
+        // Exclude rejected from public view
+        conditions.push(
+          or(
+            eq(productRequests.status, "not_reviewed"),
+            eq(productRequests.status, "in_review"),
+            eq(productRequests.status, "accepted"),
+            eq(productRequests.status, "failed_in_campaign"),
+            eq(productRequests.status, "successful_in_campaign")
+          )!
+        );
+      }
+
+      // Order by
+      const orderBy = sort === "newest"
+        ? [desc(productRequests.createdAt)]
+        : [desc(productRequests.voteCount), desc(productRequests.createdAt)];
+
+      const results = await db
+        .select({
+          id: productRequests.id,
+          productName: productRequests.productName,
+          category: productRequests.category,
+          inputSku: productRequests.inputSku,
+          derivedSku: productRequests.derivedSku,
+          referenceUrl: productRequests.referenceUrl,
+          voteCount: productRequests.voteCount,
+          status: productRequests.status,
+          verificationStatus: productRequests.verificationStatus,
+          createdAt: productRequests.createdAt,
+        })
+        .from(productRequests)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(...orderBy)
+        .limit(limit)
+        .offset(offset);
+
+      // Get total count
+      const [{ total }] = await db
+        .select({ total: count() })
+        .from(productRequests)
+        .where(conditions.length > 0 ? and(...conditions) : undefined);
+
+      return res.json({
+        items: results,
+        total,
+        limit,
+        offset,
+      });
+    } catch (error) {
+      console.error("Error fetching product requests:", error);
+      return res.status(500).json({ error: "Failed to fetch requests" });
+    }
+  });
+
+  // Get single product request (public)
+  app.get("/api/product-requests/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const [request] = await db
+        .select({
+          id: productRequests.id,
+          productName: productRequests.productName,
+          category: productRequests.category,
+          inputSku: productRequests.inputSku,
+          derivedSku: productRequests.derivedSku,
+          canonicalProductId: productRequests.canonicalProductId,
+          referenceUrl: productRequests.referenceUrl,
+          reason: productRequests.reason,
+          voteCount: productRequests.voteCount,
+          status: productRequests.status,
+          verificationStatus: productRequests.verificationStatus,
+          verificationReason: productRequests.verificationReason,
+          createdAt: productRequests.createdAt,
+        })
+        .from(productRequests)
+        .where(eq(productRequests.id, id))
+        .limit(1);
+
+      if (!request) {
+        return res.status(404).json({ error: "Product request not found" });
+      }
+
+      // Don't expose rejected items to public
+      if (request.status === "rejected") {
+        return res.status(404).json({ error: "Product request not found" });
+      }
+
+      return res.json(request);
+    } catch (error) {
+      console.error("Error fetching product request:", error);
+      return res.status(500).json({ error: "Failed to fetch request" });
+    }
+  });
+
+  // Vote on product request (public)
+  app.post("/api/product-requests/:id/vote", async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const forwardedFor = req.headers["x-forwarded-for"];
+      const ip = (Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor)
+        ?.split(",")[0]
+        ?.trim() || req.ip || "unknown";
+
+      if (isProductVoteRateLimited(ip)) {
+        return res.status(429).json({ error: "Rate limit exceeded" });
+      }
+
+      // Get the product request
+      const [request] = await db
+        .select({
+          id: productRequests.id,
+          status: productRequests.status,
+          voteCount: productRequests.voteCount,
+        })
+        .from(productRequests)
+        .where(eq(productRequests.id, id))
+        .limit(1);
+
+      if (!request) {
+        return res.status(404).json({ error: "Product request not found" });
+      }
+
+      // Only allow voting on not_reviewed items
+      if (request.status !== "not_reviewed") {
+        return res.status(400).json({ error: "Voting is only allowed on requests under review" });
+      }
+
+      const ipHash = hashIp(ip);
+      const anonId = req.cookies?.alpmera_anon_id || null;
+      // Check for logged-in user (from session)
+      const userId = (req.session as Record<string, unknown>)?.userId as string | undefined || null;
+
+      // Check for existing vote
+      const existingConditions = [eq(productRequestVotes.productRequestId, id)];
+
+      if (userId) {
+        existingConditions.push(eq(productRequestVotes.userId, userId));
+      } else if (anonId) {
+        existingConditions.push(eq(productRequestVotes.anonId, anonId));
+      } else {
+        existingConditions.push(eq(productRequestVotes.ipHash, ipHash));
+      }
+
+      const [existingVote] = await db
+        .select({ id: productRequestVotes.id })
+        .from(productRequestVotes)
+        .where(and(...existingConditions))
+        .limit(1);
+
+      if (existingVote) {
+        return res.status(400).json({ error: "You have already voted on this request" });
+      }
+
+      // Insert vote and update count in transaction
+      await db.transaction(async (tx) => {
+        await tx.insert(productRequestVotes).values({
+          productRequestId: id,
+          anonId: !userId ? anonId : null,
+          ipHash: !userId && !anonId ? ipHash : null,
+          userId,
+          createdAt: new Date(),
+        });
+
+        await tx
+          .update(productRequests)
+          .set({ voteCount: sql`${productRequests.voteCount} + 1`, updatedAt: new Date() })
+          .where(eq(productRequests.id, id));
+      });
+
+      // Get updated count
+      const [updated] = await db
+        .select({ voteCount: productRequests.voteCount })
+        .from(productRequests)
+        .where(eq(productRequests.id, id))
+        .limit(1);
+
+      return res.json({ success: true, voteCount: updated?.voteCount || 0 });
+    } catch (error) {
+      console.error("Error voting on product request:", error);
+      return res.status(500).json({ error: "Failed to record vote" });
     }
   });
 
@@ -2938,6 +3256,193 @@ export async function registerRoutes(
     } catch (error) {
       console.error("[ADMIN] Error in bulk upload:", error);
       res.status(500).json({ error: "Failed to process bulk upload" });
+    }
+  });
+
+  // ============================================
+  // ADMIN PRODUCT REQUEST ENDPOINTS
+  // ============================================
+
+  // Admin: Get all product requests (including rejected)
+  app.get("/api/admin/product-requests", requireAdminAuth, async (req, res) => {
+    try {
+      const status = typeof req.query.status === "string" ? req.query.status : null;
+      const sort = typeof req.query.sort === "string" ? req.query.sort : "newest";
+      const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 50, 1), 200);
+      const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+
+      const conditions = [];
+      if (status) {
+        conditions.push(eq(productRequests.status, status as ProductRequestStatus));
+      }
+
+      const orderBy = sort === "votes"
+        ? [desc(productRequests.voteCount), desc(productRequests.createdAt)]
+        : [desc(productRequests.createdAt)];
+
+      const results = await db
+        .select({
+          id: productRequests.id,
+          productName: productRequests.productName,
+          category: productRequests.category,
+          inputSku: productRequests.inputSku,
+          derivedSku: productRequests.derivedSku,
+          canonicalProductId: productRequests.canonicalProductId,
+          referenceUrl: productRequests.referenceUrl,
+          reason: productRequests.reason,
+          submitterEmail: productRequests.submitterEmail,
+          submitterCity: productRequests.submitterCity,
+          submitterState: productRequests.submitterState,
+          notifyOnCampaign: productRequests.notifyOnCampaign,
+          voteCount: productRequests.voteCount,
+          status: productRequests.status,
+          statusChangedAt: productRequests.statusChangedAt,
+          statusChangedBy: productRequests.statusChangedBy,
+          statusChangeReason: productRequests.statusChangeReason,
+          verificationStatus: productRequests.verificationStatus,
+          verificationReason: productRequests.verificationReason,
+          createdAt: productRequests.createdAt,
+          updatedAt: productRequests.updatedAt,
+        })
+        .from(productRequests)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(...orderBy)
+        .limit(limit)
+        .offset(offset);
+
+      const [{ total }] = await db
+        .select({ total: count() })
+        .from(productRequests)
+        .where(conditions.length > 0 ? and(...conditions) : undefined);
+
+      return res.json({
+        items: results,
+        total,
+        limit,
+        offset,
+      });
+    } catch (error) {
+      console.error("[ADMIN] Error fetching product requests:", error);
+      return res.status(500).json({ error: "Failed to fetch requests" });
+    }
+  });
+
+  // Admin: Get single product request with full details
+  app.get("/api/admin/product-requests/:id", requireAdminAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const [request] = await db
+        .select()
+        .from(productRequests)
+        .where(eq(productRequests.id, id))
+        .limit(1);
+
+      if (!request) {
+        return res.status(404).json({ error: "Product request not found" });
+      }
+
+      return res.json(request);
+    } catch (error) {
+      console.error("[ADMIN] Error fetching product request:", error);
+      return res.status(500).json({ error: "Failed to fetch request" });
+    }
+  });
+
+  // Admin: Update product request status
+  app.patch("/api/admin/product-requests/:id/status", requireAdminAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const adminUsername = (req.session as Record<string, unknown>)?.adminUsername as string || "unknown";
+
+      const parseResult = updateProductRequestStatusSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: parseResult.error.flatten()
+        });
+      }
+
+      const { status, reason } = parseResult.data;
+
+      // Get current request
+      const [current] = await db
+        .select({ id: productRequests.id, status: productRequests.status })
+        .from(productRequests)
+        .where(eq(productRequests.id, id))
+        .limit(1);
+
+      if (!current) {
+        return res.status(404).json({ error: "Product request not found" });
+      }
+
+      const now = new Date();
+
+      // Update status
+      await db
+        .update(productRequests)
+        .set({
+          status,
+          statusChangedAt: now,
+          statusChangedBy: adminUsername,
+          statusChangeReason: reason || null,
+          updatedAt: now,
+        })
+        .where(eq(productRequests.id, id));
+
+      // Create audit event
+      await db.insert(productRequestEvents).values({
+        productRequestId: id,
+        eventType: "STATUS_CHANGED",
+        actor: adminUsername,
+        previousValue: current.status,
+        newValue: status,
+        metadata: reason ? JSON.stringify({ reason }) : null,
+        createdAt: now,
+      });
+
+      console.log(`[ADMIN] Product request ${id} status changed: ${current.status} -> ${status} by ${adminUsername}`);
+
+      // Get updated request
+      const [updated] = await db
+        .select()
+        .from(productRequests)
+        .where(eq(productRequests.id, id))
+        .limit(1);
+
+      return res.json(updated);
+    } catch (error) {
+      console.error("[ADMIN] Error updating product request status:", error);
+      return res.status(500).json({ error: "Failed to update status" });
+    }
+  });
+
+  // Admin: Get product request events (audit log)
+  app.get("/api/admin/product-requests/:id/events", requireAdminAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      // Verify request exists
+      const [request] = await db
+        .select({ id: productRequests.id })
+        .from(productRequests)
+        .where(eq(productRequests.id, id))
+        .limit(1);
+
+      if (!request) {
+        return res.status(404).json({ error: "Product request not found" });
+      }
+
+      const events = await db
+        .select()
+        .from(productRequestEvents)
+        .where(eq(productRequestEvents.productRequestId, id))
+        .orderBy(desc(productRequestEvents.createdAt));
+
+      return res.json(events);
+    } catch (error) {
+      console.error("[ADMIN] Error fetching product request events:", error);
+      return res.status(500).json({ error: "Failed to fetch events" });
     }
   });
 
