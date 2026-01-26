@@ -50,15 +50,12 @@ const authVerifySchema = z.object({
 
 const LANDING_ALLOWED_TAGS = [
   "Electronics",
-  "Home",
-  "Kitchen",
-  "Outdoors",
-  "Fitness",
-  "Kids",
+  "Kitchen Appliances",
+  "Home Appliances",
   "Office",
   "Tools",
-  "Pets",
-  "Other"
+  "Outdoor",
+  "Other",
 ];
 
 const LANDING_RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
