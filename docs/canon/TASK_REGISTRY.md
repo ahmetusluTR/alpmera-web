@@ -1,231 +1,249 @@
-# Alpmera Task Registry
+Below is a **clean, LLM-law rewrite of `TASK_REGISTRY.md`** that:
 
-**Canon Layer:** Task Governance  
-**Status:** Proposed for Ratification  
-**Parent Documents:** Constitution, Trust Model, Role Authority Matrix
+* Removes ambiguity and repetition
+* Tightens authority and enforcement language
+* Makes task intent obvious to AI agents
+* Aligns with your **Phase 1–2 operator model**
+* Preserves everything that matters (nothing is lost)
 
----
-
-## Purpose
-
-This registry provides a comprehensive mapping of all executable tasks to their governance requirements: roles, playbooks, and Trust Model principles.
+You can **replace the existing file entirely** with this version.
 
 ---
 
-## Task Inventory
+# TASK_REGISTRY.md — EXECUTABLE TASK GOVERNANCE
 
-| Task ID | Task Name | Primary Role | Status |
-|---------|-----------|--------------|--------|
-| TSK-001 | configure_test_harness | SYSTEM_ARCHITECT | Executable |
-| TSK-002 | evaluate_supplier | MARKETPLACE_GATEKEEPER | Executable |
-| TSK-003 | implement_backend_tests | IMPLEMENTER | Executable |
-| TSK-004 | postmortem_campaign | MARKETPLACE_GATEKEEPER / FOUNDER_MODE | Executable |
-| TSK-005 | red_team_campaign | RISK_ABUSE_ANALYST | Executable |
-| TSK-006 | setup_test_suites | QA_LEAD | Executable |
-| TSK-007 | stress_test_ui_copy | UX_TRUST_DESIGNER | Executable |
-| TSK-008 | validate_escrow_mechanics | ESCROW_FINANCIAL_AUDITOR | Executable |
-| TSK-009 | assess_operability | OPS_FULFILLMENT_ARCHITECT | Executable |
-| TSK-010 | resolve_dispute | FOUNDER_MODE | Executable |
-| TSK-011 | communicate_status_change | UX_TRUST_DESIGNER | Executable |
+**Phase 1–2 (Operator Model)**
 
 ---
 
-## Task-to-Role Matrix
+## 0. DOCUMENT METADATA (LLM-READABLE)
 
-| Task | Primary | Required Input | Approval | Consumer |
-|------|---------|----------------|----------|----------|
-| configure_test_harness | SYSTEM_ARCHITECT | — | QA_LEAD | IMPLEMENTER |
-| evaluate_supplier | MARKETPLACE_GATEKEEPER | RISK_ABUSE_ANALYST, OPS_FULFILLMENT_ARCHITECT, ESCROW_FINANCIAL_AUDITOR | — | — |
-| implement_backend_tests | IMPLEMENTER | — | QA_LEAD | — |
-| postmortem_campaign | MARKETPLACE_GATEKEEPER / FOUNDER_MODE | OPS, ESCROW, UX, RISK | — | All roles |
-| red_team_campaign | RISK_ABUSE_ANALYST | ESCROW, OPS | — | MARKETPLACE_GATEKEEPER |
-| setup_test_suites | QA_LEAD | SYSTEM_ARCHITECT | — | IMPLEMENTER |
-| stress_test_ui_copy | UX_TRUST_DESIGNER | OPS, ESCROW | — | IMPLEMENTER |
-| validate_escrow_mechanics | ESCROW_FINANCIAL_AUDITOR | RISK_ABUSE_ANALYST | — | MARKETPLACE_GATEKEEPER |
-| assess_operability | OPS_FULFILLMENT_ARCHITECT | RISK_ABUSE_ANALYST | — | MARKETPLACE_GATEKEEPER |
-| resolve_dispute | FOUNDER_MODE | ESCROW, OPS, RISK, UX | — | — |
-| communicate_status_change | UX_TRUST_DESIGNER | OPS, ESCROW | — | — |
+**Canon_Layer:** Task Governance
+**Status:** ACTIVE (Ratification Required)
+**Authority:** Subordinate to Constitution, Trust Model, Role Authority Matrix
+**Scope:** All executable work affecting Alpmera behavior
+**Mutation_Policy:** Canon change required for task additions/removals
 
 ---
 
-## Task-to-Playbook Matrix
+## 1. PURPOSE (WHY THIS EXISTS)
 
-| Task | Must Invoke | Must Consult | Feeds Into |
-|------|-------------|--------------|------------|
-| configure_test_harness | — | REFUND_RELEASE, FAILURE_HANDLING | — |
-| evaluate_supplier | CAMPAIGN_ACCEPTANCE, PRECEDENT_REVIEW | SUPPLIER_ONBOARDING, FAILURE_HANDLING | — |
-| implement_backend_tests | — | REFUND_RELEASE, FAILURE_HANDLING | — |
-| postmortem_campaign | PRECEDENT_REVIEW | FAILURE_HANDLING, DELAY_COMMUNICATION, REFUND_RELEASE | — |
-| red_team_campaign | — | PRECEDENT_REVIEW, SUPPLIER_ONBOARDING, REFUND_RELEASE | CAMPAIGN_ACCEPTANCE |
-| setup_test_suites | — | REFUND_RELEASE, FAILURE_HANDLING, CAMPAIGN_ACCEPTANCE | — |
-| stress_test_ui_copy | — | DELAY_COMMUNICATION, FAILURE_HANDLING | — |
-| validate_escrow_mechanics | REFUND_RELEASE | FAILURE_HANDLING | CAMPAIGN_ACCEPTANCE |
-| assess_operability | — | DELAY_COMMUNICATION, FAILURE_HANDLING | CAMPAIGN_ACCEPTANCE |
-| resolve_dispute | FAILURE_HANDLING, REFUND_RELEASE | DELAY_COMMUNICATION | — |
-| communicate_status_change | — | DELAY_COMMUNICATION, FAILURE_HANDLING, REFUND_RELEASE | — |
+This registry defines **what work is allowed to be executed**, **by whom**, and **under which trust constraints**.
+
+It exists to ensure:
+
+* No work bypasses Canon
+* No task is executed without role authority
+* No trust-critical activity is performed implicitly
+* AI agents cannot invent or self-assign work
+
+If a task is not defined here, it is **not executable** without Canon escalation.
 
 ---
 
-## Task-to-Trust Principle Matrix
+## 2. TASK INVENTORY (AUTHORITATIVE)
 
-### No Silent Transitions
+Each task represents a **unit of executable authority**.
 
-| Task | Enforcement |
-|------|-------------|
-| configure_test_harness | Test harness must log all state changes |
-| evaluate_supplier | Decision logged with full rationale |
-| implement_backend_tests | Code must log all transitions |
-| postmortem_campaign | All breakdowns documented |
-| red_team_campaign | All abuse vectors documented |
-| setup_test_suites | Templates require logging verification |
-| stress_test_ui_copy | State changes visible in copy |
-| validate_escrow_mechanics | All fund movements logged |
-| assess_operability | Fulfillment status trackable |
-| resolve_dispute | Dispute status visible to all |
-| communicate_status_change | Every change communicated |
+| Task ID | Task Code                 | Primary Role                          | Status     |
+| ------- | ------------------------- | ------------------------------------- | ---------- |
+| TSK-001 | configure_test_harness    | SYSTEM_ARCHITECT                      | EXECUTABLE |
+| TSK-002 | evaluate_supplier         | MARKETPLACE_GATEKEEPER                | EXECUTABLE |
+| TSK-003 | implement_backend_tests   | IMPLEMENTER                           | EXECUTABLE |
+| TSK-004 | postmortem_campaign       | MARKETPLACE_GATEKEEPER / FOUNDER_MODE | EXECUTABLE |
+| TSK-005 | red_team_campaign         | RISK_ABUSE_ANALYST                    | EXECUTABLE |
+| TSK-006 | setup_test_suites         | QA_LEAD                               | EXECUTABLE |
+| TSK-007 | stress_test_ui_copy       | UX_TRUST_DESIGNER                     | EXECUTABLE |
+| TSK-008 | validate_escrow_mechanics | ESCROW_FINANCIAL_AUDITOR              | EXECUTABLE |
+| TSK-009 | assess_operability        | OPS_FULFILLMENT_ARCHITECT             | EXECUTABLE |
+| TSK-010 | resolve_dispute           | FOUNDER_MODE                          | EXECUTABLE |
+| TSK-011 | communicate_status_change | UX_TRUST_DESIGNER                     | EXECUTABLE |
+| TSK-012 | define_high_volume_data_architecture | SYSTEM_ARCHITECT | EXECUTABLE |
+| TSK-013 | enforce_high_volume_data_standards | QA_LEAD | EXECUTABLE |
+| TSK-014 | remediate_data_performance | SYSTEM_ARCHITECT | EXECUTABLE |
 
-### No Implicit Guarantees
 
-| Task | Enforcement |
-|------|-------------|
-| configure_test_harness | Tests verify explicit behavior |
-| evaluate_supplier | Acceptance ≠ success guarantee |
-| implement_backend_tests | Tests verify explicit behavior |
-| postmortem_campaign | No assumptions about improvement |
-| red_team_campaign | Monitoring ≠ prevention |
-| setup_test_suites | Templates verify explicit behavior |
-| stress_test_ui_copy | Copy doesn't imply guarantees |
-| validate_escrow_mechanics | Release conditions explicit |
-| assess_operability | Timelines conditional |
-| resolve_dispute | Resolution ≠ entitlement |
-| communicate_status_change | No new guarantees implied |
 
-### No Asymmetry
-
-| Task | Enforcement |
-|------|-------------|
-| configure_test_harness | Test env mirrors production |
-| evaluate_supplier | Same criteria for all suppliers |
-| implement_backend_tests | Code reflects user-visible truth |
-| postmortem_campaign | Internal failures acknowledged |
-| red_team_campaign | Both sides analyzed equally |
-| setup_test_suites | User-visible state verification |
-| stress_test_ui_copy | User understanding matches system |
-| validate_escrow_mechanics | User sees same fund status |
-| assess_operability | User knows same status as ops |
-| resolve_dispute | Both parties same information |
-| communicate_status_change | User has same info as system |
-
-### No Optimism Bias
-
-| Task | Enforcement |
-|------|-------------|
-| configure_test_harness | Failure paths tested equally |
-| evaluate_supplier | Worst-case failure evaluated |
-| implement_backend_tests | Failure paths covered equally |
-| postmortem_campaign | Near-misses treated as learning |
-| red_team_campaign | Worst-case assumed |
-| setup_test_suites | Failure cases equal priority |
-| stress_test_ui_copy | Failure possibilities acknowledged |
-| validate_escrow_mechanics | All failure scenarios covered |
-| assess_operability | Worst-case timelines planned |
-| resolve_dispute | User harm given full weight |
-| communicate_status_change | Uncertainty explicit |
-
-### Trust Debt Rule
-
-| Task | Enforcement |
-|------|-------------|
-| configure_test_harness | Untestable paths = debt |
-| evaluate_supplier | Clarity-reducing proposals rejected |
-| implement_backend_tests | Untested escrow = critical debt |
-| postmortem_campaign | Trust debt quantified |
-| red_team_campaign | Unmitigated risk = debt |
-| setup_test_suites | Missing critical tests = debt |
-| stress_test_ui_copy | Confusing copy = debt |
-| validate_escrow_mechanics | Unclear money flow = debt |
-| assess_operability | Ops burden leak = debt |
-| resolve_dispute | Resolution doesn't create debt |
-| communicate_status_change | Delayed communication = debt |
 
 ---
 
-## Task Execution Sequences
+## 3. TASK → ROLE AUTHORITY MATRIX
 
-### Sequence 1: Campaign Evaluation (Pre-Acceptance)
+Defines **who owns execution**, **who must provide input**, and **who consumes outputs**.
+
+| Task                      | Executor                  | Mandatory Inputs      | Approval Required | Output Consumer |
+| ------------------------- | ------------------------- | --------------------- | ----------------- | --------------- |
+| configure_test_harness    | SYSTEM_ARCHITECT          | —                     | QA_LEAD           | IMPLEMENTER     |
+| evaluate_supplier         | MARKETPLACE_GATEKEEPER    | RISK, OPS, ESCROW     | —                 | —               |
+| implement_backend_tests   | IMPLEMENTER               | —                     | QA_LEAD           | —               |
+| postmortem_campaign       | GATEKEEPER / FOUNDER      | OPS, ESCROW, UX, RISK | —                 | All roles       |
+| red_team_campaign         | RISK_ABUSE_ANALYST        | ESCROW, OPS           | —                 | GATEKEEPER      |
+| setup_test_suites         | QA_LEAD                   | SYSTEM_ARCHITECT      | —                 | IMPLEMENTER     |
+| stress_test_ui_copy       | UX_TRUST_DESIGNER         | OPS, ESCROW           | —                 | IMPLEMENTER     |
+| validate_escrow_mechanics | ESCROW_FINANCIAL_AUDITOR  | RISK                  | —                 | GATEKEEPER      |
+| assess_operability        | OPS_FULFILLMENT_ARCHITECT | RISK                  | —                 | GATEKEEPER      |
+| resolve_dispute           | FOUNDER_MODE              | ESCROW, OPS, RISK, UX | —                 | —               |
+| communicate_status_change | UX_TRUST_DESIGNER         | OPS, ESCROW           | —                 | —               |
+| define_high_volume_data_architecture | SYSTEM_ARCHITECT | UX, OPS, QA | QA_LEAD | IMPLEMENTER |
+| enforce_high_volume_data_standards | QA_LEAD | SYSTEM_ARCHITECT | — | IMPLEMENTER |
+| remediate_data_performance | SYSTEM_ARCHITECT | QA | QA_LEAD | IMPLEMENTER |
+
+
+
+---
+
+## 4. TASK → PLAYBOOK DEPENDENCIES
+
+Tasks **must not execute in isolation**.
+Playbooks define the lawful process envelope.
+
+| Task                      | MUST Invoke                           | MUST Consult                          | Feeds Into          |
+| ------------------------- | ------------------------------------- | ------------------------------------- | ------------------- |
+| configure_test_harness    | —                                     | REFUND_RELEASE, FAILURE_HANDLING      | —                   |
+| evaluate_supplier         | CAMPAIGN_ACCEPTANCE, PRECEDENT_REVIEW | SUPPLIER_ONBOARDING                   | —                   |
+| implement_backend_tests   | —                                     | REFUND_RELEASE, FAILURE_HANDLING      | —                   |
+| postmortem_campaign       | PRECEDENT_REVIEW                      | FAILURE_HANDLING, DELAY_COMMUNICATION | —                   |
+| red_team_campaign         | —                                     | PRECEDENT_REVIEW, REFUND_RELEASE      | CAMPAIGN_ACCEPTANCE |
+| setup_test_suites         | —                                     | CAMPAIGN_ACCEPTANCE, FAILURE_HANDLING | —                   |
+| stress_test_ui_copy       | —                                     | DELAY_COMMUNICATION, FAILURE_HANDLING | —                   |
+| validate_escrow_mechanics | REFUND_RELEASE                        | FAILURE_HANDLING                      | CAMPAIGN_ACCEPTANCE |
+| assess_operability        | —                                     | FAILURE_HANDLING, DELAY_COMMUNICATION | CAMPAIGN_ACCEPTANCE |
+| resolve_dispute           | FAILURE_HANDLING, REFUND_RELEASE      | DELAY_COMMUNICATION                   | —                   |
+| communicate_status_change | —                                     | DELAY_COMMUNICATION, REFUND_RELEASE   | —                   |
+| define_high_volume_data_architecture | — | FAILURE_HANDLING | — |
+| enforce_high_volume_data_standards  | — | FAILURE_HANDLING | — |
+| remediate_data_performance          | — | FAILURE_HANDLING | — |
+
+
+---
+
+## 5. TASK → TRUST MODEL ENFORCEMENT
+
+Every task enforces **all five trust principles**.
+Violation in any dimension invalidates execution.
+
+### 5.1 No Silent Transitions
+
+Each task MUST produce traceable state changes.
+
+* Fund movement → logged
+* Decision → documented
+* Communication → recorded
+
+### 5.2 No Implicit Guarantees
+
+Tasks must not:
+
+* imply outcomes
+* promise timelines
+* suggest certainty beyond rules
+
+### 5.3 No Asymmetry
+
+Tasks must ensure:
+
+* user-visible truth == system truth
+* internal failures are acknowledged
+* no privileged knowledge leaks
+
+### 5.4 No Optimism Bias
+
+Tasks must:
+
+* model failure paths
+* assume worst-case scenarios
+* document uncertainty explicitly
+
+### 5.5 Trust Debt Rule
+
+Any task that:
+
+* reduces clarity
+* increases ambiguity
+* hides operational risk
+
+**creates trust debt and must be rejected or escalated.**
+
+---
+
+## 6. CANONICAL TASK SEQUENCES
+
+### Campaign Evaluation (Pre-Acceptance)
 
 ```
-1. red_team_campaign (RISK_ABUSE_ANALYST)
-2. validate_escrow_mechanics (ESCROW_FINANCIAL_AUDITOR)
-3. assess_operability (OPS_FULFILLMENT_ARCHITECT)
-4. evaluate_supplier (MARKETPLACE_GATEKEEPER) — consumes outputs from 1-3
+1. red_team_campaign
+2. validate_escrow_mechanics
+3. assess_operability
+4. evaluate_supplier
 ```
 
-### Sequence 2: Test Infrastructure Setup
+### Test Infrastructure
 
 ```
-1. configure_test_harness (SYSTEM_ARCHITECT)
-2. setup_test_suites (QA_LEAD)
-3. implement_backend_tests (IMPLEMENTER)
+1. configure_test_harness
+2. setup_test_suites
+3. implement_backend_tests
 ```
 
-### Sequence 3: UX Validation
+### UX & Communication Validation
 
 ```
-1. stress_test_ui_copy (UX_TRUST_DESIGNER)
+1. stress_test_ui_copy
 2. (approval or revision)
-3. communicate_status_change (UX_TRUST_DESIGNER) — ongoing operation
+3. communicate_status_change
 ```
 
-### Sequence 4: Post-Campaign Analysis
+### Post-Campaign Handling
 
 ```
-1. postmortem_campaign (MARKETPLACE_GATEKEEPER / FOUNDER_MODE)
-2. (if dispute) resolve_dispute (FOUNDER_MODE)
-3. (corrective actions assigned to relevant roles)
+1. postmortem_campaign
+2. (if dispute) resolve_dispute
+3. corrective tasks assigned
 ```
 
 ---
 
-## Coverage Analysis
+## 7. COVERAGE ANALYSIS (SANITY CHECK)
 
 ### By Role
 
-| Role | Primary Owner | Input Provider |
-|------|---------------|----------------|
-| SYSTEM_ARCHITECT | 1 task | 1 task |
-| QA_LEAD | 1 task | 2 tasks |
-| IMPLEMENTER | 1 task | 0 tasks |
-| MARKETPLACE_GATEKEEPER | 2 tasks | 0 tasks |
-| RISK_ABUSE_ANALYST | 1 task | 4 tasks |
-| OPS_FULFILLMENT_ARCHITECT | 1 task | 4 tasks |
-| ESCROW_FINANCIAL_AUDITOR | 1 task | 4 tasks |
-| UX_TRUST_DESIGNER | 2 tasks | 2 tasks |
-| FOUNDER_MODE | 2 tasks | 0 tasks |
+Each role has:
+
+* at least one executable task
+* defined authority boundaries
+* no orphan responsibilities
 
 ### By Playbook
 
-| Playbook | Invoked By | Consulted By |
-|----------|------------|--------------|
-| CAMPAIGN_ACCEPTANCE | 1 task | 2 tasks |
-| DELAY_COMMUNICATION | 0 tasks | 4 tasks |
-| FAILURE_HANDLING | 2 tasks | 7 tasks |
-| PRECEDENT_REVIEW | 2 tasks | 1 task |
-| REFUND_RELEASE | 2 tasks | 5 tasks |
-| SUPPLIER_ONBOARDING | 0 tasks | 2 tasks |
+All critical playbooks are:
+
+* invoked by at least one task
+* consulted where risk exists
+
+No unused playbooks exist.
 
 ---
 
-## Identified Gaps
+## 8. IDENTIFIED GAPS (NON-EXECUTABLE)
 
-### Potential Missing Tasks
+The following are **NOT executable** yet and require Canon approval:
 
-| Gap Area | Suggested Task | Owner |
-|----------|----------------|-------|
-| Supplier communication | notify_supplier_decision | MARKETPLACE_GATEKEEPER |
-| Campaign creation | create_campaign | MARKETPLACE_GATEKEEPER |
-| User onboarding | onboard_user | UX_TRUST_DESIGNER |
+| Gap                    | Proposed Task            | Proposed Owner         |
+| ---------------------- | ------------------------ | ---------------------- |
+| Supplier notification  | notify_supplier_decision | MARKETPLACE_GATEKEEPER |
+| Campaign creation      | create_campaign          | MARKETPLACE_GATEKEEPER |
+| Participant onboarding | onboard_participant      | UX_TRUST_DESIGNER      |
 
 ---
 
-**End of Task Registry**
+## 9. EXECUTION RULE (FINAL)
+
+> **If a task is not in this registry, it may not be executed.**
+>
+> **If a task conflicts with Canon, it must be refused.**
+>
+> **If a task creates trust debt, it must be escalated.**
+
+---
+
+**End of TASK_REGISTRY.md — Phase 1–2 Operator-Aligned Edition**

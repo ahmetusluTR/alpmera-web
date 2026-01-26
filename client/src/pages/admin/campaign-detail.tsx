@@ -255,11 +255,21 @@ export default function CampaignDetailPage() {
   });
 
   const { data: products } = useQuery<any[]>({
-    queryKey: ["/api/admin/products"],
+    queryKey: ["/api/admin/products", "legacy"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/products?mode=legacy", { credentials: "include" });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
   });
 
   const { data: suppliers } = useQuery<any[]>({
-    queryKey: ["/api/admin/suppliers"],
+    queryKey: ["/api/admin/suppliers", "legacy"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/suppliers?mode=legacy", { credentials: "include" });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
   });
 
   const { data: consolidationPoints } = useQuery<any[]>({

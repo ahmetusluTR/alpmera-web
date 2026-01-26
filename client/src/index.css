@@ -1,3 +1,5 @@
+@import "./styles/tokens.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -9,52 +11,52 @@
   --opaque-button-border-intensity: -8;
   --elevate-1: rgba(0,0,0, .03);
   --elevate-2: rgba(0,0,0, .08);
-  --background: 0 0% 100%;
-  --foreground: 0 0% 9%;
-  --border: 0 0% 91%;
-  --card: 0 0% 98%;
-  --card-foreground: 0 0% 9%;
-  --card-border: 0 0% 95%;
-  --sidebar: 0 0% 96%;
-  --sidebar-foreground: 0 0% 9%;
-  --sidebar-border: 0 0% 93%;
-  --sidebar-primary: 210 85% 28%;
-  --sidebar-primary-foreground: 210 85% 98%;
-  --sidebar-accent: 0 0% 92%;
-  --sidebar-accent-foreground: 0 0% 9%;
-  --sidebar-ring: 210 85% 28%;
-  --popover: 0 0% 94%;
-  --popover-foreground: 0 0% 9%;
-  --popover-border: 0 0% 91%;
-  --primary: 210 85% 28%;
-  --primary-foreground: 210 85% 98%;
-  --secondary: 0 0% 90%;
-  --secondary-foreground: 0 0% 9%;
-  --muted: 0 2% 89%;
-  --muted-foreground: 0 0% 40%;
-  --accent: 210 8% 88%;
-  --accent-foreground: 210 8% 9%;
-  --destructive: 0 72% 32%;
-  --destructive-foreground: 0 72% 98%;
-  --input: 0 0% 72%;
-  --ring: 210 85% 28%;
-  --chart-1: 210 85% 28%;
-  --chart-2: 190 75% 30%;
-  --chart-3: 230 70% 32%;
-  --chart-4: 170 65% 28%;
-  --chart-5: 250 60% 35%;
-  --font-sans: Inter, sans-serif;
-  --font-serif: Georgia, serif;
-  --font-mono: IBM Plex Mono, monospace;
-  --radius: .5rem;
-  --shadow-2xs: 0px 2px 0px 0px hsl(0 0% 0% / 0.00);
-  --shadow-xs: 0px 2px 0px 0px hsl(0 0% 0% / 0.00);
-  --shadow-sm: 0px 2px 0px 0px hsl(0 0% 0% / 0.00), 0px 1px 2px -1px hsl(0 0% 0% / 0.00);
-  --shadow: 0px 2px 0px 0px hsl(0 0% 0% / 0.00), 0px 1px 2px -1px hsl(0 0% 0% / 0.00);
-  --shadow-md: 0px 2px 0px 0px hsl(0 0% 0% / 0.00), 0px 2px 4px -1px hsl(0 0% 0% / 0.00);
-  --shadow-lg: 0px 2px 0px 0px hsl(0 0% 0% / 0.00), 0px 4px 6px -1px hsl(0 0% 0% / 0.00);
-  --shadow-xl: 0px 2px 0px 0px hsl(0 0% 0% / 0.00), 0px 8px 10px -1px hsl(0 0% 0% / 0.00);
-  --shadow-2xl: 0px 2px 0px 0px hsl(0 0% 0% / 0.00);
+  --background: var(--brand-cloud-dancer);
+  --foreground: var(--brand-deep-sapphire);
+  --border: 44 18% 84%;
+  --card: 44 24% 95%;
+  --card-foreground: var(--brand-deep-sapphire);
+  --card-border: 44 18% 88%;
+  --sidebar: 44 22% 90%;
+  --sidebar-foreground: var(--brand-deep-sapphire);
+  --sidebar-border: 44 16% 84%;
+  --sidebar-primary: var(--brand-deep-sapphire);
+  --sidebar-primary-foreground: var(--brand-cloud-dancer);
+  --sidebar-accent: 44 20% 86%;
+  --sidebar-accent-foreground: var(--brand-deep-sapphire);
+  --sidebar-ring: var(--brand-matte-copper);
+  --popover: 44 22% 93%;
+  --popover-foreground: var(--brand-deep-sapphire);
+  --popover-border: 44 18% 84%;
+  --primary: var(--brand-matte-copper);
+  --primary-foreground: 44 27% 92%;
+  --secondary: 44 20% 88%;
+  --secondary-foreground: var(--brand-deep-sapphire);
+  --muted: 44 20% 88%;
+  --muted-foreground: var(--brand-slate);
+  --accent: 44 20% 86%;
+  --accent-foreground: var(--brand-deep-sapphire);
+  --destructive: 10 35% 35%;
+  --destructive-foreground: 44 27% 92%;
+  --input: 44 16% 82%;
+  --ring: var(--brand-matte-copper);
+  --chart-1: var(--brand-deep-sapphire);
+  --chart-2: 29 57% 46%;
+  --chart-3: 133 11% 33%;
+  --chart-4: 220 30% 30%;
+  --chart-5: 44 20% 70%;
+  --font-sans: var(--brand-font-sans);
+  --font-serif: var(--brand-font-serif);
+  --font-mono: var(--brand-font-mono);
+  --radius: 0.5rem;
+  --shadow-2xs: var(--brand-shadow-2xs);
+  --shadow-xs: var(--brand-shadow-xs);
+  --shadow-sm: var(--brand-shadow-sm);
+  --shadow: var(--brand-shadow);
+  --shadow-md: var(--brand-shadow-md);
+  --shadow-lg: var(--brand-shadow-lg);
+  --shadow-xl: var(--brand-shadow-xl);
+  --shadow-2xl: var(--brand-shadow-2xl);
   --tracking-normal: 0em;
   --spacing: 0.25rem;
 
@@ -93,48 +95,48 @@
   --opaque-button-border-intensity: 9;
   --elevate-1: rgba(255,255,255, .04);
   --elevate-2: rgba(255,255,255, .09);
-  --background: 0 0% 8%;
-  --foreground: 0 0% 98%;
-  --border: 0 0% 16%;
-  --card: 0 0% 10%;
-  --card-foreground: 0 0% 98%;
-  --card-border: 0 0% 13%;
-  --sidebar: 0 0% 12%;
-  --sidebar-foreground: 0 0% 98%;
-  --sidebar-border: 0 0% 15%;
-  --sidebar-primary: 210 85% 28%;
-  --sidebar-primary-foreground: 210 85% 98%;
-  --sidebar-accent: 0 0% 16%;
-  --sidebar-accent-foreground: 0 0% 98%;
-  --sidebar-ring: 210 85% 28%;
-  --popover: 0 0% 14%;
-  --popover-foreground: 0 0% 98%;
-  --popover-border: 0 0% 17%;
-  --primary: 210 85% 28%;
-  --primary-foreground: 210 85% 98%;
-  --secondary: 0 0% 18%;
-  --secondary-foreground: 0 0% 98%;
-  --muted: 0 2% 19%;
-  --muted-foreground: 0 0% 65%;
-  --accent: 210 8% 20%;
-  --accent-foreground: 210 8% 98%;
-  --destructive: 0 72% 32%;
-  --destructive-foreground: 0 72% 98%;
-  --input: 0 0% 35%;
-  --ring: 210 85% 28%;
-  --chart-1: 210 85% 65%;
-  --chart-2: 190 75% 68%;
-  --chart-3: 230 70% 70%;
-  --chart-4: 170 65% 62%;
-  --chart-5: 250 60% 72%;
-  --shadow-2xs: 0px 2px 0px 0px hsl(0 0% 0% / 0.00);
-  --shadow-xs: 0px 2px 0px 0px hsl(0 0% 0% / 0.00);
-  --shadow-sm: 0px 2px 0px 0px hsl(0 0% 0% / 0.00), 0px 1px 2px -1px hsl(0 0% 0% / 0.00);
-  --shadow: 0px 2px 0px 0px hsl(0 0% 0% / 0.00), 0px 1px 2px -1px hsl(0 0% 0% / 0.00);
-  --shadow-md: 0px 2px 0px 0px hsl(0 0% 0% / 0.00), 0px 2px 4px -1px hsl(0 0% 0% / 0.00);
-  --shadow-lg: 0px 2px 0px 0px hsl(0 0% 0% / 0.00), 0px 4px 6px -1px hsl(0 0% 0% / 0.00);
-  --shadow-xl: 0px 2px 0px 0px hsl(0 0% 0% / 0.00), 0px 8px 10px -1px hsl(0 0% 0% / 0.00);
-  --shadow-2xl: 0px 2px 0px 0px hsl(0 0% 0% / 0.00);
+  --background: 220 42% 10%;
+  --foreground: var(--brand-ink);
+  --border: 220 20% 20%;
+  --card: 220 35% 12%;
+  --card-foreground: var(--brand-ink);
+  --card-border: 220 18% 22%;
+  --sidebar: 220 32% 12%;
+  --sidebar-foreground: var(--brand-ink);
+  --sidebar-border: 220 18% 20%;
+  --sidebar-primary: var(--brand-matte-copper);
+  --sidebar-primary-foreground: 220 42% 10%;
+  --sidebar-accent: 220 20% 18%;
+  --sidebar-accent-foreground: var(--brand-ink);
+  --sidebar-ring: var(--brand-matte-copper);
+  --popover: 220 30% 14%;
+  --popover-foreground: var(--brand-ink);
+  --popover-border: 220 20% 22%;
+  --primary: var(--brand-matte-copper);
+  --primary-foreground: 220 42% 10%;
+  --secondary: 220 18% 18%;
+  --secondary-foreground: var(--brand-ink);
+  --muted: 220 18% 18%;
+  --muted-foreground: var(--brand-slate);
+  --accent: 220 18% 20%;
+  --accent-foreground: var(--brand-ink);
+  --destructive: 10 35% 40%;
+  --destructive-foreground: 220 42% 10%;
+  --input: 220 18% 28%;
+  --ring: var(--brand-matte-copper);
+  --chart-1: 44 27% 92%;
+  --chart-2: 29 57% 52%;
+  --chart-3: 133 11% 45%;
+  --chart-4: 220 30% 55%;
+  --chart-5: 44 20% 70%;
+  --shadow-2xs: var(--brand-shadow-2xs);
+  --shadow-xs: var(--brand-shadow-xs);
+  --shadow-sm: var(--brand-shadow-sm);
+  --shadow: var(--brand-shadow);
+  --shadow-md: var(--brand-shadow-md);
+  --shadow-lg: var(--brand-shadow-lg);
+  --shadow-xl: var(--brand-shadow-xl);
+  --shadow-2xl: var(--brand-shadow-2xl);
 
 /* Fallback for older browsers */
   --sidebar-primary-border: hsl(var(--sidebar-primary));
@@ -172,6 +174,16 @@
 
   body {
     @apply font-sans antialiased bg-background text-foreground;
+    font-size: var(--font-size-base);
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    color: hsl(var(--brand-deep-sapphire));
   }
 }
 

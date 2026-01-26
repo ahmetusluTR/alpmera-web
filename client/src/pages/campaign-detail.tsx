@@ -75,6 +75,8 @@ interface PublicCampaignDetail {
   rules: string;
   state: string;
   imageUrl?: string | null;
+  primaryImageUrl?: string | null;
+  galleryImageUrls?: string | string[] | null;
   progressPercent?: number;
   aggregationDeadline: string;
   createdAt: string;
@@ -99,6 +101,27 @@ function ProgressBarWithMilestones({ value }: { value: number }) {
       </div>
     </div>
   );
+}
+
+function parseGalleryUrls(value: string | string[] | null | undefined): string[] {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value.map((url) => url?.trim()).filter(Boolean);
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed.map((url) => (typeof url === "string" ? url.trim() : "")).filter(Boolean);
+      }
+    } catch {
+      // Fall back to delimited strings.
+    }
+    return trimmed.split(/[|,]/).map((url) => url.trim()).filter(Boolean);
+  }
+  return [];
 }
 
 export default function CampaignDetail() {
@@ -188,6 +211,9 @@ export default function CampaignDetail() {
   
   // Join conditions
   const canJoin = campaign.state === "AGGREGATION" && isAuthenticated && !isCampaignClosed;
+
+  const galleryUrls = parseGalleryUrls(campaign.galleryImageUrls);
+  const primaryImageUrl = campaign.primaryImageUrl?.trim() || galleryUrls[0] || "";
 
   const formatCurrency = (amount: number) => 
     amount.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
@@ -299,10 +325,10 @@ export default function CampaignDetail() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {/* Product Image */}
                     <div className="space-y-3">
-                      {campaign.imageUrl ? (
+                      {primaryImageUrl ? (
                         <div className="aspect-video rounded-md overflow-hidden bg-muted">
                           <img 
-                            src={campaign.imageUrl} 
+                            src={primaryImageUrl} 
                             alt={campaign.productName || campaign.title}
                             className="w-full h-full object-cover"
                             data-testid="img-campaign"

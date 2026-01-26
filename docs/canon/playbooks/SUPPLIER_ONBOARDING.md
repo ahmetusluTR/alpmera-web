@@ -1,137 +1,204 @@
-# Supplier Onboarding Playbook
+### **Supplier Qualification & Alignment Playbook**
 
-**Canon Layer:** Playbook  
-**Trust Model Compliance:** Mandatory  
+**Canon Layer:** Playbook
+**Trust Model Compliance:** Mandatory
 **Parent Documents:** Constitution, Trust Model, Core Doctrine
+**Operational Context:** Phase 1–2 Operator Model
 
 ---
 
 ## Purpose
 
-This playbook defines how suppliers enter the Alpmera system.
+This playbook defines how suppliers are **qualified, aligned, and approved** to work with Alpmera during Phase 1–2.
+
+It governs the process by which Alpmera selects suppliers as operational partners for campaigns that Alpmera fully owns and executes.
 
 ---
 
 ## Scope
 
-Applies to all suppliers without exception.
+Applies to all suppliers working with Alpmera in Phase 1–2.
+
+**This is not platform onboarding.**
+It is **operational partner qualification.**
 
 ---
 
-## Trust Model Integration
+# PHASE 1–2 REALITY FRAME
 
-This playbook enforces the following Trust Model commitments:
+For Phase 1–2:
 
-| Trust Model Principle | Application in This Playbook |
-|-----------------------|------------------------------|
-| No Silent Transitions | Onboarding status must be explicit and tracked |
-| No Implicit Guarantees | Onboarding does not guarantee campaign acceptance |
-| No Asymmetry | Suppliers operate under the same truth as users |
-| No Optimism Bias | Supplier expectations must reflect actual constraints |
-| Trust Debt Rule | Onboarding that creates misaligned expectations is trust debt |
+* Alpmera is an **end-to-end campaign operator**
+* Alpmera designs and owns campaigns
+* Alpmera collects funds
+* Alpmera purchases from suppliers
+* Alpmera manages fulfillment
+* Alpmera issues refunds if campaigns fail
 
-Supplier onboarding is where asymmetry risk is highest. Suppliers who believe they have privileged access, special treatment, or implicit guarantees create trust debt that compounds through every campaign.
+Therefore:
 
----
+> Suppliers are contractors to Alpmera, not platform users.
 
-## Supplier Eligibility Rules
-
-Suppliers must explicitly accept:
-
-| Requirement | Trust Model Basis |
-|-------------|-------------------|
-| Escrow mechanics | Core Doctrine: Escrow Centrality |
-| Delayed fulfillment expectations | No Implicit Guarantees — timing is conditional |
-| Transparency requirements | No Asymmetry — suppliers share user reality |
-
-Suppliers unwilling to operate under these conditions are ineligible.
-
-### Eligibility Is Not Negotiable
-
-Per the Trust Model's **No Asymmetry** rule, there are no tiers of supplier privilege. A supplier who expects:
-- Faster fund release than policy allows
-- Reduced transparency requirements
-- Implicit acceptance guarantees
-
-Is ineligible, regardless of volume, brand, or relationship.
+All onboarding must reflect this truth.
 
 ---
 
-## Onboarding Disclosure Rules
+# Trust Model Integration
 
-Suppliers must be informed of:
+This playbook enforces:
 
-| Disclosure | Trust Model Basis |
-|------------|-------------------|
-| Campaign acceptance mechanics | No Implicit Guarantees — acceptance is not automatic |
-| Failure and cancellation outcomes | No Optimism Bias — worst case must be acknowledged |
-| Refund responsibilities | No Silent Transitions — supplier knows when refunds occur |
-
-### No Privileged Expectations
-
-Per the **No Asymmetry** rule, suppliers must not be given information, assurances, or expectations that differ from what users understand.
-
-Prohibited onboarding language:
-- "We'll make sure your campaigns get accepted"
-- "Don't worry about the escrow timeline"
-- "We can be flexible on the rules"
-
-This language creates implicit guarantees and asymmetry. It is trust debt.
+| Trust Principle        | Application                                        |
+| ---------------------- | -------------------------------------------------- |
+| No Silent Transitions  | Supplier status changes must be explicit           |
+| No Implicit Guarantees | Qualification never guarantees future business     |
+| No Asymmetry           | Suppliers must operate under the same public rules |
+| No Optimism Bias       | Operational limits must be clearly acknowledged    |
+| Trust Debt Rule        | Misaligned supplier expectations are prohibited    |
 
 ---
 
-## Trust Alignment Rule
+# Supplier Eligibility Requirements
 
-**Suppliers must operate under the same truth as users.**
+To work with Alpmera, suppliers must explicitly accept:
 
-This is a direct application of the Trust Model's **No Asymmetry** principle:
-- There is no privileged internal truth
-- Users and suppliers share the same campaign reality
-
-Operationally, this means:
-- Suppliers see the same campaign rules users see
-- Suppliers receive the same failure explanations users receive
-- Suppliers have no private channel to override user-facing policies
-
----
-
-## First-Time Supplier Rule
-
-First-time suppliers represent elevated trust risk. They require:
-
-| Requirement | Trust Model Basis |
-|-------------|-------------------|
-| Higher scrutiny | No Optimism Bias — do not assume good behavior |
-| Lower initial exposure | Trust Debt Rule — limit blast radius of potential failure |
-| Clear exit paths | No Silent Transitions — removal process is explicit |
-
-### Rationale
-
-Per the Trust Model's **No Optimism Bias** principle:
-- Do not assume a new supplier will perform well
-- Do not assume problems will be minor
-- Do not assume relationship will overcome issues
-
-First-time suppliers must prove alignment before receiving expanded access.
+| Requirement                            | Rationale                        |
+| -------------------------------------- | -------------------------------- |
+| Alpmera owns the campaigns             | Operator model compliance        |
+| Alpmera controls customer funds        | Financial responsibility clarity |
+| Alpmera manages customer communication | No Asymmetry                     |
+| Fulfillment timelines are conditional  | No Implicit Guarantees           |
+| Refunds are Alpmera’s responsibility   | Clear role separation            |
+| Delivery SLAs are binding              | Operational reliability          |
 
 ---
 
-## Trust Model Enforcement Checklist
+## Non-Negotiable Conditions
 
-Before completing supplier onboarding, confirm:
+Suppliers who expect any of the following are **ineligible**:
 
-- [ ] Onboarding status is tracked and visible (No Silent Transitions)
-- [ ] Supplier understands that onboarding ≠ acceptance guarantee (No Implicit Guarantees)
-- [ ] Supplier has no privileged expectations vs. users (No Asymmetry)
-- [ ] Supplier has been informed of failure/cancellation outcomes (No Optimism Bias)
-- [ ] Onboarding did not create misaligned expectations (Trust Debt Rule)
+* direct access to customer funds
+* privileged exceptions to Alpmera rules
+* guaranteed campaign volume
+* visibility into Alpmera economics
+* influence over user-facing policies
+
+These expectations create asymmetry and are prohibited.
 
 ---
 
-## Enforcement
+# Onboarding Disclosure Rules
 
-Suppliers violating onboarding conditions must be removed from eligibility.
+Suppliers must be clearly informed of:
 
-Per the Trust Model, asymmetry between supplier expectations and user reality is a critical defect. Suppliers who cannot accept alignment must not enter the system.
+| Disclosure                                | Purpose                   |
+| ----------------------------------------- | ------------------------- |
+| Campaigns are designed by Alpmera         | Role clarity              |
+| Participation levels determine purchasing | No Implicit Guarantees    |
+| Alpmera may cancel campaigns              | Worst-case acknowledgment |
+| Payment occurs only after success         | Financial discipline      |
+| Performance history is recorded           | Accountability            |
 
-Onboarding violations trigger immediate review and potential removal.
+---
+
+## Prohibited Onboarding Language
+
+The following are forbidden:
+
+* “Your campaigns will definitely run”
+* “We can bend the rules for you”
+* “Don’t worry about the timelines”
+* “We’ll make exceptions”
+
+Any such language creates trust debt.
+
+---
+
+# First-Time Supplier Rule
+
+New suppliers represent elevated risk.
+
+Therefore:
+
+| Requirement                  | Reason                  |
+| ---------------------------- | ----------------------- |
+| Limited initial exposure     | Contain blast radius    |
+| Smaller first campaign sizes | Reduce operational risk |
+| Enhanced verification        | Avoid optimism bias     |
+| Clear termination path       | No Silent Transitions   |
+
+No supplier receives expanded cooperation until proven.
+
+---
+
+# Competitive Safety Rule
+
+During onboarding Alpmera must **never disclose**:
+
+* internal margins
+* cost structures
+* pricing tier logic
+* total campaign economics
+* other supplier terms
+
+Transparency is limited to:
+
+* process
+* responsibilities
+* operational expectations
+
+Economics remain intentionally opaque.
+
+---
+
+# Operational Alignment Checklist
+
+Before approving any supplier:
+
+* [ ] Supplier understands Alpmera is campaign owner
+* [ ] Supplier accepts conditional timelines
+* [ ] Supplier agrees to fulfillment SLAs
+* [ ] Supplier understands payment conditions
+* [ ] No privileged expectations created
+* [ ] No economic information requested
+* [ ] Status recorded in audit log
+
+---
+
+# Approval Process
+
+Supplier qualification is:
+
+* explicit
+* revocable
+* campaign-specific
+* performance-dependent
+
+**Qualification ≠ guarantee of campaigns.**
+
+---
+
+# Enforcement
+
+Suppliers who violate:
+
+* agreed timelines
+* communication rules
+* quality expectations
+* confidentiality boundaries
+
+must be suspended or removed.
+
+Protection of user trust overrides supplier relationships.
+
+---
+
+# Core Principle
+
+> Suppliers must adapt to Alpmera’s operating model.
+> Alpmera never adapts its trust model to suppliers.
+
+---
+
+**End of Supplier Qualification & Alignment Playbook (Phase 1–2 Edition)**
+
+

@@ -6,11 +6,17 @@ export default {
   theme: {
     extend: {
       borderRadius: {
-        lg: ".5625rem", /* 9px */
-        md: ".375rem", /* 6px */
-        sm: ".1875rem", /* 3px */
+        lg: "var(--brand-radius-lg)",
+        md: "var(--brand-radius-md)",
+        sm: "var(--brand-radius-sm)",
       },
       colors: {
+        brand: {
+          sapphire: "hsl(var(--brand-deep-sapphire) / <alpha-value>)",
+          cloud: "hsl(var(--brand-cloud-dancer) / <alpha-value>)",
+          copper: "hsl(var(--brand-matte-copper) / <alpha-value>)",
+          eucalyptus: "hsl(var(--brand-eucalyptus) / <alpha-value>)",
+        },
         // Flat / base colors (regular buttons)
         background: "hsl(var(--background) / <alpha-value>)",
         foreground: "hsl(var(--foreground) / <alpha-value>)",
@@ -83,9 +89,28 @@ export default {
         },
       },
       fontFamily: {
-        sans: ["Inter", "var(--font-sans)", "sans-serif"],
-        serif: ["var(--font-serif)"],
-        mono: ["IBM Plex Mono", "var(--font-mono)", "monospace"],
+        sans: ["var(--font-sans)", "Inter", "sans-serif"],
+        serif: ["var(--font-serif)", "Georgia", "serif"],
+        mono: ["var(--font-mono)", "IBM Plex Mono", "monospace"],
+      },
+      boxShadow: {
+        "brand-2xs": "var(--shadow-2xs)",
+        "brand-xs": "var(--shadow-xs)",
+        "brand-sm": "var(--shadow-sm)",
+        brand: "var(--shadow)",
+        "brand-md": "var(--shadow-md)",
+        "brand-lg": "var(--shadow-lg)",
+        "brand-xl": "var(--shadow-xl)",
+        "brand-2xl": "var(--shadow-2xl)",
+      },
+      transitionDuration: {
+        fast: "var(--motion-fast)",
+        standard: "var(--motion-standard)",
+        slow: "var(--motion-slow)",
+      },
+      transitionTimingFunction: {
+        standard: "var(--motion-ease)",
+        emphasized: "var(--motion-ease-emphasized)",
       },
       keyframes: {
         "accordion-down": {

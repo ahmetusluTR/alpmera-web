@@ -13,7 +13,10 @@
     "db:push": "drizzle-kit push",
     "db:test:push": "cross-env NODE_ENV=test drizzle-kit push --config=drizzle-test.config.ts",
     "test": "cross-env NODE_ENV=test vitest run",
-    "db:test:reset": "cross-env NODE_ENV=test node -r dotenv/config --import tsx server/tests/reset-db.ts"
+    "db:test:reset": "cross-env NODE_ENV=test node -r dotenv/config --import tsx server/tests/reset-db.ts",
+    "seed:admin-demo": "node -r dotenv/config --import tsx scripts/seed-admin-demo.ts",
+    "seed:admin-demo:cleanup": "node -r dotenv/config --import tsx scripts/cleanup-admin-demo.ts",
+    "smoke:admin": "node -r dotenv/config --import tsx scripts/smoke-admin.ts"
   },
   "dependencies": {
     "@google-cloud/storage": "^7.18.0",
@@ -57,6 +60,7 @@
     "cmdk": "^1.1.1",
     "connect-pg-simple": "^10.0.0",
     "cookie-parser": "^1.4.7",
+    "cors": "^2.8.6",
     "date-fns": "^3.6.0",
     "dotenv": "^17.2.3",
     "drizzle-orm": "^0.39.3",
@@ -96,6 +100,7 @@
     "@tailwindcss/typography": "^0.5.15",
     "@tailwindcss/vite": "^4.1.18",
     "@types/connect-pg-simple": "^7.0.3",
+    "@types/cors": "^2.8.19",
     "@types/express": "4.17.21",
     "@types/express-session": "^1.18.0",
     "@types/node": "20.19.27",

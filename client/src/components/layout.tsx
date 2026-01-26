@@ -50,32 +50,36 @@ export function Layout({ children }: LayoutProps) {
               </Link>
             )}
 
-            <div className="h-4 w-px bg-border" />
+            {!location.startsWith("/admin") && (
+              <>
+                <div className="h-4 w-px bg-border" />
 
-            {isLoading ? (
-              <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-            ) : isAuthenticated ? (
-              <div className="flex items-center gap-2">
-                <Link href="/account">
-                  <Button variant="ghost" size="sm" data-testid="button-account">
-                    Account
-                  </Button>
-                </Link>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleSignOut}
-                  data-testid="button-signout"
-                >
-                  <LogOut className="w-4 h-4" />
-                </Button>
-              </div>
-            ) : (
-              <Link href="/signin">
-                <Button variant="outline" size="sm" data-testid="button-signin">
-                  Sign in
-                </Button>
-              </Link>
+                {isLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                ) : isAuthenticated ? (
+                  <div className="flex items-center gap-2">
+                    <Link href="/account">
+                      <Button variant="ghost" size="sm" data-testid="button-account">
+                        Account
+                      </Button>
+                    </Link>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={handleSignOut}
+                      data-testid="button-signout"
+                    >
+                      <LogOut className="w-4 h-4" />
+                    </Button>
+                  </div>
+                ) : (
+                  <Link href="/signin">
+                    <Button variant="outline" size="sm" data-testid="button-signin">
+                      Sign in
+                    </Button>
+                  </Link>
+                )}
+              </>
             )}
           </nav>
         </div>

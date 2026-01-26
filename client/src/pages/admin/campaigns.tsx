@@ -1,12 +1,11 @@
 import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { useLocation, Link } from "wouter";
 import { AdminLayout } from "./layout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import {
   Select,
@@ -31,10 +30,14 @@ import {
   TableHeader,
   TableRow
 } from "@/components/ui/table";
-import { Search, RefreshCw, ArrowUp, ArrowDown, Plus, Loader2, AlertTriangle } from "lucide-react";
+import { Plus, Loader2, AlertTriangle } from "lucide-react";
 import { format, addDays } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { useAdminListEngine } from "@/lib/admin-list-engine";
+import { ListToolbar } from "@/components/admin/list-toolbar";
+import { ListPagination } from "@/components/admin/list-pagination";
+import { ListEmptyState, ListMismatchBanner, ListSkeleton } from "@/components/admin/list-state";
 
 interface CampaignListItem {
   id: string;
@@ -121,17 +124,14 @@ const initialFormState: CreateCampaignForm = {
 export default function CampaignsListPage() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const [search, setSearch] = useState("");
-  const [stateFilter, setStateFilter] = useState("all");
-  const [publishFilter, setPublishFilter] = useState("all");
-  const [prerequisiteFilter, setPrerequisiteFilter] = useState("all");
-  const [sortBy, setSortBy] = useState("name");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [form, setForm] = useState<CreateCampaignForm>(initialFormState);
 
-  const { data: campaigns, isLoading, error, refetch } = useQuery<CampaignListItem[]>({
-    queryKey: ["/api/admin/campaigns"],
+  const { rows, total, page, pageSize, isLoading, error, controls } = useAdminListEngine<CampaignListItem>({
+    endpoint: "/api/admin/campaigns",
+    initialPageSize: 25,
+    initialStatus: "all",
+    initialSort: "created_desc",
   });
 
   const createMutation = useMutation({
@@ -173,47 +173,6 @@ export default function CampaignsListPage() {
     },
   });
 
-  const filteredCampaigns = campaigns
-    ?.filter((c) => {
-      if (stateFilter !== "all" && c.state !== stateFilter) return false;
-      if (publishFilter !== "all" && (c.adminPublishStatus || "DRAFT") !== publishFilter) return false;
-      if (search) {
-        const searchLower = search.toLowerCase();
-        const matchesTitle = c.title.toLowerCase().includes(searchLower);
-        const matchesId = c.id.toLowerCase().includes(searchLower);
-        if (!matchesTitle && !matchesId) return false;
-      }
-
-      if (prerequisiteFilter === "incomplete") {
-        if (c.productId && c.supplierId && c.consolidationPointId) return false;
-      } else if (prerequisiteFilter === "ready") {
-        if (!c.productId || !c.supplierId || !c.consolidationPointId) return false;
-      }
-
-      return true;
-    })
-    .sort((a, b) => {
-      let cmp = 0;
-      if (sortBy === "name") {
-        cmp = a.title.localeCompare(b.title);
-      } else if (sortBy === "deadline") {
-        cmp = new Date(a.aggregationDeadline).getTime() - new Date(b.aggregationDeadline).getTime();
-      } else if (sortBy === "commitments") {
-        cmp = a.participantCount - b.participantCount;
-      } else if (sortBy === "escrow") {
-        cmp = a.totalCommitted - b.totalCommitted;
-      } else if (sortBy === "createdAt") {
-        cmp = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-      } else if (sortBy === "state") {
-        cmp = a.state.localeCompare(b.state);
-      }
-      return sortDir === "desc" ? -cmp : cmp;
-    }) || [];
-
-  const toggleSortDir = () => {
-    setSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
-  };
-
   const handleRowClick = (campaignId: string) => {
     setLocation(`/admin/campaigns/${campaignId}`);
   };
@@ -252,92 +211,108 @@ export default function CampaignsListPage() {
           </Link>
         </div>
 
-        <div className="flex flex-col sm:flex-row gap-4 flex-wrap">
-          <div className="relative flex-1 min-w-[200px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              placeholder="Search by name or ID..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9"
-              data-testid="input-search-campaigns"
+        <Card>
+          <CardContent>
+            <ListToolbar
+              searchValue={controls.searchInput}
+              onSearchChange={controls.setSearchInput}
+              searchPlaceholder="Search by name or ID"
+              statusValue={controls.status}
+              onStatusChange={controls.setStatus}
+              statusOptions={[
+                { value: "all", label: "All States" },
+                { value: "AGGREGATION", label: "Active" },
+                { value: "SUCCESS", label: "Funded" },
+                { value: "FULFILLMENT", label: "Fulfillment" },
+                { value: "RELEASED", label: "Released" },
+                { value: "FAILED", label: "Failed" },
+              ]}
+              createdFrom={controls.createdFrom}
+              createdTo={controls.createdTo}
+              onCreatedFromChange={controls.setCreatedFrom}
+              onCreatedToChange={controls.setCreatedTo}
+              pageSize={controls.pageSize}
+              onPageSizeChange={(value) => controls.setPageSize(value)}
+              onClearFilters={controls.resetFilters}
+              extraFilters={
+                <>
+                  <Select
+                    value={controls.extraFilters.publishStatus || "all"}
+                    onValueChange={(value) =>
+                      controls.setExtraFilters({ ...controls.extraFilters, publishStatus: value })
+                    }
+                  >
+                    <SelectTrigger className="w-[150px]" data-testid="select-publish-filter">
+                      <SelectValue placeholder="Publish Status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Statuses</SelectItem>
+                      <SelectItem value="DRAFT">Draft</SelectItem>
+                      <SelectItem value="PUBLISHED">Published</SelectItem>
+                      <SelectItem value="HIDDEN">Hidden</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select
+                    value={controls.extraFilters.prerequisite || "all"}
+                    onValueChange={(value) =>
+                      controls.setExtraFilters({ ...controls.extraFilters, prerequisite: value })
+                    }
+                  >
+                    <SelectTrigger className="w-[170px]" data-testid="select-prerequisite-filter">
+                      <SelectValue placeholder="Prerequisites" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Check: All</SelectItem>
+                      <SelectItem value="incomplete">Check: Incomplete</SelectItem>
+                      <SelectItem value="ready">Check: Ready</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select
+                    value={controls.sort}
+                    onValueChange={controls.setSort}
+                  >
+                    <SelectTrigger className="w-[170px]" data-testid="select-sort">
+                      <SelectValue placeholder="Sort by" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="name_asc">Name (A-Z)</SelectItem>
+                      <SelectItem value="name_desc">Name (Z-A)</SelectItem>
+                      <SelectItem value="deadline_asc">Deadline (Soonest)</SelectItem>
+                      <SelectItem value="deadline_desc">Deadline (Latest)</SelectItem>
+                      <SelectItem value="commitments_desc">Commitments (High)</SelectItem>
+                      <SelectItem value="commitments_asc">Commitments (Low)</SelectItem>
+                      <SelectItem value="escrow_desc">Escrow (High)</SelectItem>
+                      <SelectItem value="escrow_asc">Escrow (Low)</SelectItem>
+                      <SelectItem value="created_desc">Created (Newest)</SelectItem>
+                      <SelectItem value="created_asc">Created (Oldest)</SelectItem>
+                      <SelectItem value="state_asc">Lifecycle (A-Z)</SelectItem>
+                      <SelectItem value="state_desc">Lifecycle (Z-A)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </>
+              }
             />
-          </div>
-          <Select value={stateFilter} onValueChange={setStateFilter}>
-            <SelectTrigger className="w-[150px]" data-testid="select-state-filter">
-              <SelectValue placeholder="Lifecycle" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All States</SelectItem>
-              <SelectItem value="AGGREGATION">Active</SelectItem>
-              <SelectItem value="SUCCESS">Funded</SelectItem>
-              <SelectItem value="FULFILLMENT">Fulfillment</SelectItem>
-              <SelectItem value="RELEASED">Released</SelectItem>
-              <SelectItem value="FAILED">Failed</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={publishFilter} onValueChange={setPublishFilter}>
-            <SelectTrigger className="w-[150px]" data-testid="select-publish-filter">
-              <SelectValue placeholder="Publish Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Statuses</SelectItem>
-              <SelectItem value="DRAFT">Draft</SelectItem>
-              <SelectItem value="PUBLISHED">Published</SelectItem>
-              <SelectItem value="HIDDEN">Hidden</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={prerequisiteFilter} onValueChange={setPrerequisiteFilter}>
-            <SelectTrigger className="w-[170px]" data-testid="select-prerequisite-filter">
-              <SelectValue placeholder="Prerequisites" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Check: All</SelectItem>
-              <SelectItem value="incomplete">Check: Incomplete</SelectItem>
-              <SelectItem value="ready">Check: Ready</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={sortBy} onValueChange={setSortBy}>
-            <SelectTrigger className="w-[160px]" data-testid="select-sort">
-              <SelectValue placeholder="Sort by" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="name">Name</SelectItem>
-              <SelectItem value="deadline">Deadline</SelectItem>
-              <SelectItem value="commitments">Commitments</SelectItem>
-              <SelectItem value="escrow">Escrow Amount</SelectItem>
-              <SelectItem value="createdAt">Created At</SelectItem>
-              <SelectItem value="state">Lifecycle State</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={toggleSortDir}
-            data-testid="button-sort-dir"
-          >
-            {sortDir === "asc" ? <ArrowUp className="w-4 h-4" /> : <ArrowDown className="w-4 h-4" />}
-          </Button>
-        </div>
+          </CardContent>
+        </Card>
 
         <Card>
           <CardContent className="p-0">
             {isLoading ? (
-              <div className="p-4 space-y-3">
-                {[1, 2, 3, 4, 5].map((i) => (
-                  <Skeleton key={i} className="h-12 w-full" />
-                ))}
+              <div className="p-4">
+                <ListSkeleton rows={6} columns={7} />
               </div>
             ) : error ? (
               <div className="text-center py-8">
                 <p className="text-muted-foreground mb-4">Unable to load campaigns.</p>
-                <Button variant="outline" onClick={() => refetch()} data-testid="button-retry">
-                  <RefreshCw className="w-4 h-4 mr-2" />
-                  Retry
-                </Button>
+                <p className="text-muted-foreground text-sm">
+                  {error instanceof Error ? error.message : "Failed to load campaigns"}
+                </p>
               </div>
-            ) : filteredCampaigns.length === 0 ? (
-              <p className="text-muted-foreground text-center py-8">No campaigns found.</p>
+            ) : rows.length === 0 ? (
+              <div className="p-4">
+                <ListMismatchBanner total={total} />
+                <ListEmptyState title="No campaigns found" />
+              </div>
             ) : (
               <div className="overflow-x-auto">
                 <Table>
@@ -353,7 +328,7 @@ export default function CampaignsListPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredCampaigns.map((campaign) => {
+                    {rows.map((campaign) => {
                       const publishStatus = campaign.adminPublishStatus || "DRAFT";
                       const publishBadge = PUBLISH_STATUS_BADGES[publishStatus] || { label: publishStatus, variant: "outline" as const };
                       return (
@@ -423,6 +398,16 @@ export default function CampaignsListPage() {
                     })}
                   </TableBody>
                 </Table>
+              </div>
+            )}
+            {!isLoading && rows.length > 0 && (
+              <div className="p-4">
+                <ListPagination
+                  page={page}
+                  pageSize={pageSize}
+                  total={total}
+                  onPageChange={controls.setPage}
+                />
               </div>
             )}
           </CardContent>

@@ -1,7 +1,32 @@
 {
   "permissions": {
     "allow": [
-      "Bash(powershell -Command \"Stop-Process -Id 25352 -Force\")"
+      "Bash(powershell -Command \"Stop-Process -Id 25352 -Force\")",
+      "Bash(npm run db:push:*)",
+      "Bash(npm run db:studio:*)",
+      "Bash(psql:*)",
+      "Bash(npm run dev:*)",
+      "Bash(npm run seed:admin-demo:*)",
+      "Bash(npm run seed:admin-demo:cleanup:*)",
+      "Bash(npm install:*)",
+      "Bash(timeout /t 3)",
+      "Bash(node:*)",
+      "Bash(ls -la landing/public*)",
+      "Bash(npm run check:*)",
+      "Bash(python:*)",
+      "Bash(unzip:*)",
+      "Bash(tree:*)",
+      "Bash(npm run build:*)",
+      "Bash(ssh root@alpmera-api-staging \"grep -r ''AKfycbwSaQoBmMrBlEqY00u5v6QHGwg'' /var/www/alpmera-landing/assets/\")",
+      "Bash(grep:*)",
+      "Bash(ls:*)",
+      "Bash(ssh root@alpmera-api-staging:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(dir:*)",
+      "Bash(npx tsc:*)",
+      "Bash(git restore:*)"
     ]
   }
 }

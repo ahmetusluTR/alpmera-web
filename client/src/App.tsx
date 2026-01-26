@@ -37,11 +37,20 @@ import AdminRefundPlanDetail from "@/pages/admin/refund-plan-detail";
 import AdminDeliveries from "@/pages/admin/deliveries";
 import AdminSuppliers from "@/pages/admin/suppliers";
 import AdminSupplierDetail from "@/pages/admin/supplier-detail";
+import AdminSupplierBulk from "@/pages/admin/supplier-bulk";
+import AdminProductRequests from "@/pages/admin/product-requests";
 import AdminConsolidationPoints from "@/pages/admin/consolidation-points";
 import AdminConsolidationDetail from "@/pages/admin/consolidation-detail";
+import AdminCredits from "@/pages/admin/credits";
+import AdminCreditDetail from "@/pages/admin/credit-detail";
+import AdminParticipantCredits from "@/pages/admin/participant-credits";
+import AdminParticipants from "@/pages/admin/participants";
+import AdminParticipantDetail from "@/pages/admin/participant-detail";
+import AdminCommitments from "@/pages/admin/commitments";
+import AdminCommitmentDetail from "@/pages/admin/commitment-detail";
+import AdminAudit from "@/pages/admin/audit";
+import AdminExceptions from "@/pages/admin/exceptions";
 import {
-  ExceptionsPage,
-  AuditPage,
   AdminUsersPage,
   AdminUserDetailPage,
   AdminConsolidationPointsPage,
@@ -249,10 +258,41 @@ function Router() {
         )}
       </Route>
 
+      {/* Admin Participants */}
+      <Route path="/admin/participants">
+        <AdminGuard>
+          <AdminParticipants />
+        </AdminGuard>
+      </Route>
+      <Route path="/admin/participants/:id">
+        {(params) => (
+          <AdminGuard>
+            <AdminParticipantDetail />
+          </AdminGuard>
+        )}
+      </Route>
+      <Route path="/admin/commitments">
+        <AdminGuard>
+          <AdminCommitments />
+        </AdminGuard>
+      </Route>
+      <Route path="/admin/commitments/:id">
+        {(params) => (
+          <AdminGuard>
+            <AdminCommitmentDetail />
+          </AdminGuard>
+        )}
+      </Route>
+
       {/* Admin Suppliers */}
       <Route path="/admin/suppliers">
         <AdminGuard>
           <AdminSuppliers />
+        </AdminGuard>
+      </Route>
+      <Route path="/admin/suppliers/bulk">
+        <AdminGuard>
+          <AdminSupplierBulk />
         </AdminGuard>
       </Route>
       <Route path="/admin/suppliers/:id">
@@ -261,6 +301,13 @@ function Router() {
             <AdminSupplierDetail />
           </AdminGuard>
         )}
+      </Route>
+
+      {/* Admin Product Requests */}
+      <Route path="/admin/product-requests">
+        <AdminGuard>
+          <AdminProductRequests />
+        </AdminGuard>
       </Route>
 
       {/* Admin Consolidation Points */}
@@ -302,6 +349,25 @@ function Router() {
         <AdminGuard>
           <AdminLedger />
         </AdminGuard>
+      </Route>
+      <Route path="/admin/credits">
+        <AdminGuard>
+          <AdminCredits />
+        </AdminGuard>
+      </Route>
+      <Route path="/admin/credits/:id">
+        {(params) => (
+          <AdminGuard>
+            <AdminCreditDetail />
+          </AdminGuard>
+        )}
+      </Route>
+      <Route path="/admin/participants/:id/credits">
+        {(params) => (
+          <AdminGuard>
+            <AdminParticipantCredits />
+          </AdminGuard>
+        )}
       </Route>
       <Route path="/admin/refunds">
         <AdminGuard>
@@ -387,12 +453,12 @@ function Router() {
       {/* Legacy admin routes */}
       <Route path="/admin/exceptions">
         <AdminGuard>
-          <ExceptionsPage />
+          <AdminExceptions />
         </AdminGuard>
       </Route>
       <Route path="/admin/audit">
         <AdminGuard>
-          <AuditPage />
+          <AdminAudit />
         </AdminGuard>
       </Route>
 

@@ -101,21 +101,22 @@ export default function AdminConsolidationPoints() {
                 </CardHeader>
                 <CardContent>
                     <div className="rounded-md border">
-                        <Table>
+                        <Table className="table-fixed w-full">
                             <TableHeader>
                                 <TableRow>
-                                    <TableHead>Location Name</TableHead>
-                                    <TableHead>Address</TableHead>
-                                    <TableHead>City/State</TableHead>
-                                    <TableHead>Status</TableHead>
-                                    <TableHead>Last Updated</TableHead>
-                                    <TableHead className="text-right">Actions</TableHead>
+                                    <TableHead className="w-[18%]">Location Name</TableHead>
+                                    <TableHead className="w-[18%]">Contact</TableHead>
+                                    <TableHead className="w-[20%]">Address</TableHead>
+                                    <TableHead className="w-[14%]">City/State</TableHead>
+                                    <TableHead className="w-[8%]">Status</TableHead>
+                                    <TableHead className="w-[12%]">Last Updated</TableHead>
+                                    <TableHead className="w-[10%] text-right">Actions</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
                                 {isLoading ? (
                                     <TableRow>
-                                        <TableCell colSpan={6} className="h-24 text-center">
+                                        <TableCell colSpan={7} className="h-24 text-center">
                                             <div className="flex justify-center items-center">
                                                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                                                 <span className="ml-2 text-muted-foreground">Loading locations...</span>
@@ -124,7 +125,7 @@ export default function AdminConsolidationPoints() {
                                     </TableRow>
                                 ) : filteredPoints?.length === 0 ? (
                                     <TableRow>
-                                        <TableCell colSpan={6} className="h-24 text-center">
+                                        <TableCell colSpan={7} className="h-24 text-center">
                                             <div className="flex flex-col items-center justify-center text-muted-foreground">
                                                 <MapPin className="h-8 w-8 mb-2 opacity-20" />
                                                 <p>No consolidation points found</p>
@@ -134,19 +135,32 @@ export default function AdminConsolidationPoints() {
                                     </TableRow>
                                 ) : (
                                     filteredPoints?.map((point) => (
-                                        <TableRow key={point.id}>
+                                        <TableRow
+                                            key={point.id}
+                                            className="cursor-pointer hover:bg-muted/50"
+                                            onClick={() => setLocation(`/admin/consolidation/${point.id}`)}
+                                        >
                                             <TableCell className="font-medium">
-                                                {point.name}
+                                                <div className="truncate">{point.name}</div>
                                             </TableCell>
                                             <TableCell>
-                                                {point.addressLine1 ? (
+                                                {point.contactName || point.contactEmail || point.contactPhone ? (
                                                     <div className="text-sm">
-                                                        <div>{point.addressLine1}</div>
-                                                        {point.addressLine2 && <div className="text-xs text-muted-foreground">{point.addressLine2}</div>}
+                                                        {point.contactName && <div className="truncate font-medium">{point.contactName}</div>}
+                                                        {point.contactEmail && <div className="truncate text-muted-foreground">{point.contactEmail}</div>}
+                                                        {point.contactPhone && <div className="text-xs text-muted-foreground truncate">{point.contactPhone}</div>}
                                                     </div>
                                                 ) : "-"}
                                             </TableCell>
                                             <TableCell>
+                                                {point.addressLine1 ? (
+                                                    <div className="text-sm">
+                                                        <div className="truncate">{point.addressLine1}</div>
+                                                        {point.addressLine2 && <div className="text-xs text-muted-foreground truncate">{point.addressLine2}</div>}
+                                                    </div>
+                                                ) : "-"}
+                                            </TableCell>
+                                            <TableCell className="truncate">
                                                 {point.city ? `${point.city}, ${point.state || ""}` : "-"}
                                             </TableCell>
                                             <TableCell>
@@ -158,12 +172,10 @@ export default function AdminConsolidationPoints() {
                                                 {format(new Date(point.updatedAt), "MMM d, yyyy")}
                                             </TableCell>
                                             <TableCell className="text-right">
-                                                <Link href={`/admin/consolidation/${point.id}`}>
-                                                    <Button variant="ghost" size="sm">
-                                                        <Edit className="h-4 w-4 mr-1" />
-                                                        Edit
-                                                    </Button>
-                                                </Link>
+                                                <Button variant="ghost" size="sm">
+                                                    <Edit className="h-4 w-4 mr-1" />
+                                                    Edit
+                                                </Button>
                                             </TableCell>
                                         </TableRow>
                                     ))

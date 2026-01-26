@@ -1,30 +1,22 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
 import { useLocation } from "wouter";
 import { AdminLayout } from "./layout";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
-  TableRow 
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
 } from "@/components/ui/table";
-import { Search, RefreshCw, ArrowUp, ArrowDown } from "lucide-react";
+import { useAdminListEngine } from "@/lib/admin-list-engine";
+import { ListToolbar } from "@/components/admin/list-toolbar";
+import { ListPagination } from "@/components/admin/list-pagination";
+import { StatusBadge } from "@/components/admin/status-badge";
+import { ListEmptyState, ListMismatchBanner, ListSkeleton } from "@/components/admin/list-state";
 import { format } from "date-fns";
 
 interface DeliveryItem {
@@ -37,59 +29,42 @@ interface DeliveryItem {
   isOverdue: boolean;
 }
 
+const STATUS_OPTIONS = [
+  { value: "ALL", label: "All statuses" },
+  { value: "IN_PROGRESS", label: "In Progress" },
+  { value: "COMPLETED", label: "Completed" },
+];
+
 const STATUS_BADGES: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = {
-  PENDING: { label: "Pending", variant: "secondary" },
   IN_PROGRESS: { label: "In Progress", variant: "default" },
   COMPLETED: { label: "Completed", variant: "outline" },
-  DELAYED: { label: "Delayed", variant: "destructive" },
 };
+
+const SORT_OPTIONS = [
+  { value: "campaign_asc", label: "Campaign (A-Z)" },
+  { value: "campaign_desc", label: "Campaign (Z-A)" },
+  { value: "status_asc", label: "Status (A-Z)" },
+  { value: "status_desc", label: "Status (Z-A)" },
+  { value: "last_update_desc", label: "Last Update (Newest)" },
+  { value: "last_update_asc", label: "Last Update (Oldest)" },
+];
 
 export default function DeliveriesPage() {
   const [, setLocation] = useLocation();
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [showOverdueOnly, setShowOverdueOnly] = useState(false);
-  const [sortBy, setSortBy] = useState("campaign");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
-
-  const { data: deliveries, isLoading, error, refetch } = useQuery<DeliveryItem[]>({
-    queryKey: ["/api/admin/deliveries"],
+  const { rows, total, page, pageSize, isLoading, error, controls } = useAdminListEngine<DeliveryItem>({
+    endpoint: "/api/admin/deliveries",
+    initialPageSize: 25,
+    initialStatus: "ALL",
+    initialSort: "campaign_asc",
   });
-
-  const filteredDeliveries = deliveries
-    ?.filter((d) => {
-      if (statusFilter !== "all" && d.status !== statusFilter) return false;
-      if (showOverdueOnly && !d.isOverdue) return false;
-      if (search && !d.campaignName.toLowerCase().includes(search.toLowerCase())) return false;
-      return true;
-    })
-    .sort((a, b) => {
-      let cmp = 0;
-      if (sortBy === "campaign") {
-        cmp = a.campaignName.localeCompare(b.campaignName);
-      } else if (sortBy === "strategy") {
-        cmp = a.deliveryStrategy.localeCompare(b.deliveryStrategy);
-      } else if (sortBy === "status") {
-        cmp = a.status.localeCompare(b.status);
-      } else if (sortBy === "lastUpdate") {
-        const aTime = a.lastUpdateAt ? new Date(a.lastUpdateAt).getTime() : 0;
-        const bTime = b.lastUpdateAt ? new Date(b.lastUpdateAt).getTime() : 0;
-        cmp = aTime - bTime;
-      } else if (sortBy === "nextDue") {
-        const aTime = a.nextUpdateDueAt ? new Date(a.nextUpdateDueAt).getTime() : Infinity;
-        const bTime = b.nextUpdateDueAt ? new Date(b.nextUpdateDueAt).getTime() : Infinity;
-        cmp = aTime - bTime;
-      }
-      return sortDir === "desc" ? -cmp : cmp;
-    }) || [];
 
   const handleRowClick = (campaignId: string) => {
     setLocation(`/admin/campaigns/${campaignId}/fulfillment`);
   };
 
-  const toggleSortDir = () => {
-    setSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
-  };
+  const overdueOnly = controls.extraFilters.overdueOnly === "true";
+
+  const statusBadges = useMemo(() => STATUS_BADGES, []);
 
   return (
     <AdminLayout>
@@ -101,74 +76,84 @@ export default function DeliveriesPage() {
           </p>
         </div>
 
-        <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center flex-wrap">
-          <div className="relative flex-1 min-w-[200px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              placeholder="Search campaigns..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9"
-              data-testid="input-search-deliveries"
+        <Card>
+          <CardHeader>
+            <CardTitle>Filters</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ListToolbar
+              searchValue={controls.searchInput}
+              onSearchChange={controls.setSearchInput}
+              searchPlaceholder="Search campaigns"
+              statusValue={controls.status}
+              onStatusChange={controls.setStatus}
+              statusOptions={STATUS_OPTIONS}
+              createdFrom={controls.createdFrom}
+              createdTo={controls.createdTo}
+              onCreatedFromChange={controls.setCreatedFrom}
+              onCreatedToChange={controls.setCreatedTo}
+              pageSize={controls.pageSize}
+              onPageSizeChange={(value) => controls.setPageSize(value)}
+              onClearFilters={controls.resetFilters}
+              extraFilters={
+                <>
+                  <select
+                    className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                    value={controls.sort}
+                    onChange={(e) => controls.setSort(e.target.value)}
+                  >
+                    {SORT_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="overdue-only"
+                      checked={overdueOnly}
+                      onCheckedChange={(checked) =>
+                        controls.setExtraFilters({
+                          ...controls.extraFilters,
+                          overdueOnly: checked === true ? "true" : "",
+                        })
+                      }
+                    />
+                    <Label htmlFor="overdue-only" className="text-sm">
+                      Overdue only
+                    </Label>
+                  </div>
+                </>
+              }
             />
-          </div>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[150px]" data-testid="select-status-filter">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All</SelectItem>
-              <SelectItem value="PENDING">Pending</SelectItem>
-              <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
-              <SelectItem value="COMPLETED">Completed</SelectItem>
-              <SelectItem value="DELAYED">Delayed</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={sortBy} onValueChange={setSortBy}>
-            <SelectTrigger className="w-[130px]" data-testid="select-sort">
-              <SelectValue placeholder="Sort by" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="campaign">Campaign</SelectItem>
-              <SelectItem value="strategy">Strategy</SelectItem>
-              <SelectItem value="status">Status</SelectItem>
-              <SelectItem value="lastUpdate">Last Update</SelectItem>
-              <SelectItem value="nextDue">Next Due</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button variant="outline" size="icon" onClick={toggleSortDir} data-testid="button-sort-dir">
-            {sortDir === "asc" ? <ArrowUp className="w-4 h-4" /> : <ArrowDown className="w-4 h-4" />}
-          </Button>
-          <div className="flex items-center gap-2">
-            <Checkbox
-              id="overdue"
-              checked={showOverdueOnly}
-              onCheckedChange={(checked) => setShowOverdueOnly(checked === true)}
-              data-testid="checkbox-overdue"
-            />
-            <Label htmlFor="overdue" className="text-sm">Overdue only</Label>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
 
         <Card>
           <CardContent className="p-0">
-            {isLoading ? (
-              <div className="p-4 space-y-3">
-                {[1, 2, 3, 4, 5].map((i) => (
-                  <Skeleton key={i} className="h-12 w-full" />
-                ))}
+            {isLoading && (
+              <div className="p-4">
+                <ListSkeleton rows={6} columns={6} />
               </div>
-            ) : error ? (
+            )}
+
+            {error && (
               <div className="text-center py-8">
-                <p className="text-muted-foreground mb-4">Unable to load deliveries.</p>
-                <Button variant="outline" onClick={() => refetch()} data-testid="button-retry">
-                  <RefreshCw className="w-4 h-4 mr-2" />
-                  Retry
-                </Button>
+                <p className="text-muted-foreground mb-2">Unable to load deliveries.</p>
+                <p className="text-muted-foreground text-sm">
+                  {error instanceof Error ? error.message : "Failed to load deliveries"}
+                </p>
               </div>
-            ) : filteredDeliveries.length === 0 ? (
-              <p className="text-muted-foreground text-center py-8">No deliveries found.</p>
-            ) : (
+            )}
+
+            {!isLoading && !error && rows.length === 0 && (
+              <div className="p-4">
+                <ListMismatchBanner total={total} />
+                <ListEmptyState title="No deliveries found" />
+              </div>
+            )}
+
+            {!isLoading && rows.length > 0 && (
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
@@ -181,8 +166,7 @@ export default function DeliveriesPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredDeliveries.map((delivery) => {
-                      const statusBadge = STATUS_BADGES[delivery.status] || { label: delivery.status, variant: "outline" as const };
+                    {rows.map((delivery) => {
                       return (
                         <TableRow
                           key={delivery.campaignId}
@@ -192,15 +176,15 @@ export default function DeliveriesPage() {
                         >
                           <TableCell className="font-medium max-w-[200px] truncate">
                             {delivery.isOverdue && (
-                              <Badge variant="destructive" className="mr-2">Overdue</Badge>
+                              <StatusBadge status="OVERDUE" mapping={{ OVERDUE: { label: "Overdue", variant: "secondary" } }} />
                             )}
                             {delivery.campaignName}
                           </TableCell>
                           <TableCell>
-                            <Badge variant="outline">{delivery.deliveryStrategy}</Badge>
+                            <StatusBadge status={delivery.deliveryStrategy} />
                           </TableCell>
                           <TableCell>
-                            <Badge variant={statusBadge.variant}>{statusBadge.label}</Badge>
+                            <StatusBadge status={delivery.status} mapping={statusBadges} />
                           </TableCell>
                           <TableCell className="text-sm text-muted-foreground">
                             {delivery.lastUpdateAt
@@ -217,6 +201,17 @@ export default function DeliveriesPage() {
                     })}
                   </TableBody>
                 </Table>
+              </div>
+            )}
+
+            {!isLoading && rows.length > 0 && (
+              <div className="p-4">
+                <ListPagination
+                  page={page}
+                  pageSize={pageSize}
+                  total={total}
+                  onPageChange={controls.setPage}
+                />
               </div>
             )}
           </CardContent>

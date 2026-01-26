@@ -5,13 +5,17 @@ import { join } from "path";
 import { execSync } from "child_process";
 import { storage } from "./storage";
 import { db } from "./db";
+import { parseListQuery } from "./list-query-builder";
 import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
 import {
   type CampaignState,
   type CommitmentStatus,
+  type ProductRequestStatus,
   VALID_TRANSITIONS,
   insertCommitmentSchema,
   updateUserProfileSchema,
+  insertProductRequestSchema,
+  updateProductRequestStatusSchema,
   escrowLedger,
   commitments,
   campaigns,
@@ -21,10 +25,17 @@ import {
   insertSupplierSchema,
   updateSupplierSchema,
   insertConsolidationPointSchema,
-  updateConsolidationPointSchema
+  updateConsolidationPointSchema,
+  landingSubscribers,
+  productRequests,
+  productRequestVotes,
+  productRequestEvents,
+  skuVerificationJobs,
+  users,
+  userProfiles
 } from "@shared/schema";
 import { z } from "zod";
-import { eq, desc } from "drizzle-orm";
+import { and, asc, count, countDistinct, desc, eq, gte, ilike, isNotNull, isNull, lte, or, sql, sum } from "drizzle-orm";
 import { createHash, randomBytes, randomInt, randomUUID } from "crypto";
 
 // Auth request schemas
@@ -36,6 +47,74 @@ const authVerifySchema = z.object({
   email: z.string().email("Valid email is required"),
   code: z.string().length(6, "Code must be 6 digits"),
 });
+
+const LANDING_ALLOWED_TAGS = [
+  "Electronics",
+  "Kitchen Appliances",
+  "Home Appliances",
+  "Office",
+  "Tools",
+  "Outdoor",
+  "Other",
+];
+
+const LANDING_RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
+const LANDING_RATE_LIMIT_MAX = 10;
+const landingRateLimit = new Map<string, { count: number; resetAt: number }>();
+
+function isLandingRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const entry = landingRateLimit.get(ip);
+  if (!entry || now > entry.resetAt) {
+    landingRateLimit.set(ip, { count: 1, resetAt: now + LANDING_RATE_LIMIT_WINDOW_MS });
+    return false;
+  }
+  if (entry.count >= LANDING_RATE_LIMIT_MAX) {
+    return true;
+  }
+  entry.count += 1;
+  return false;
+}
+
+// Product request rate limiting
+const PRODUCT_REQUEST_RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+const PRODUCT_REQUEST_RATE_LIMIT_MAX = 5; // 5 per hour
+const PRODUCT_VOTE_RATE_LIMIT_MAX = 20; // 20 votes per hour
+const productRequestRateLimit = new Map<string, { count: number; resetAt: number }>();
+const productVoteRateLimit = new Map<string, { count: number; resetAt: number }>();
+
+function isProductRequestRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const entry = productRequestRateLimit.get(ip);
+  if (!entry || now > entry.resetAt) {
+    productRequestRateLimit.set(ip, { count: 1, resetAt: now + PRODUCT_REQUEST_RATE_LIMIT_WINDOW_MS });
+    return false;
+  }
+  if (entry.count >= PRODUCT_REQUEST_RATE_LIMIT_MAX) {
+    return true;
+  }
+  entry.count += 1;
+  return false;
+}
+
+function isProductVoteRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const entry = productVoteRateLimit.get(ip);
+  if (!entry || now > entry.resetAt) {
+    productVoteRateLimit.set(ip, { count: 1, resetAt: now + PRODUCT_REQUEST_RATE_LIMIT_WINDOW_MS });
+    return false;
+  }
+  if (entry.count >= PRODUCT_VOTE_RATE_LIMIT_MAX) {
+    return true;
+  }
+  entry.count += 1;
+  return false;
+}
+
+// Hash IP for privacy
+function hashIp(ip: string): string {
+  return createHash("sha256").update(ip + (process.env.SESSION_SECRET || "salt")).digest("hex").substring(0, 32);
+}
 
 // Generate a random 6-digit code
 function generateAuthCode(): string {
@@ -170,6 +249,30 @@ function sortObject(obj: any): any {
     return sorted;
   }
   return obj;
+}
+
+function getFirstGalleryImageUrl(value: unknown): string | null {
+  if (!value) return null;
+  if (Array.isArray(value)) {
+    const first = value.find((url) => typeof url === "string" && url.trim().length > 0);
+    return typeof first === "string" ? first.trim() : null;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        const first = parsed.find((url) => typeof url === "string" && url.trim().length > 0);
+        return typeof first === "string" ? first.trim() : null;
+      }
+    } catch {
+      // Fall back to delimited values.
+    }
+    const first = trimmed.split(/[|,]/).map((url) => url.trim()).find(Boolean);
+    return first || null;
+  }
+  return null;
 }
 
 // Get changed fields between old and new campaign data
@@ -349,6 +452,404 @@ export async function registerRoutes(
     });
   });
 
+  // Landing subscriber count (public)
+  app.get("/api/landing/subscriber-count", async (req, res) => {
+    try {
+      const result = await db
+        .select({ count: count() })
+        .from(landingSubscribers)
+        .where(eq(landingSubscribers.status, "active"));
+
+      return res.json({ count: result[0]?.count || 0 });
+    } catch (error) {
+      log(`Error fetching subscriber count: ${error}`);
+      return res.status(500).json({ error: "Failed to fetch count" });
+    }
+  });
+
+  // Landing notify (public)
+  app.post("/api/landing/notify", async (req, res) => {
+    try {
+      const forwardedFor = req.headers["x-forwarded-for"];
+      const ip = (Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor)
+        ?.split(",")[0]
+        ?.trim() || req.ip || "unknown";
+
+      if (isLandingRateLimited(ip)) {
+        return res.status(429).json({ error: "Rate limit exceeded" });
+      }
+
+      const rawEmail = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!rawEmail || !emailRegex.test(rawEmail)) {
+        return res.status(400).json({ error: "Valid email is required" });
+      }
+
+      const rawTags = Array.isArray(req.body?.interestTags) ? req.body.interestTags : [];
+      const normalizedTags = rawTags
+        .filter((tag: unknown) => typeof tag === "string")
+        .map((tag: string) => tag.trim())
+        .filter((tag: string) => tag.length > 0);
+
+      const invalidTags = normalizedTags.filter((tag) => !LANDING_ALLOWED_TAGS.includes(tag));
+      if (invalidTags.length > 0) {
+        return res.status(400).json({ error: "Invalid interest tags" });
+      }
+
+      const notesRaw = typeof req.body?.notes === "string" ? req.body.notes.trim() : "";
+      if (notesRaw.length > 500) {
+        return res.status(400).json({ error: "Notes must be 500 characters or less" });
+      }
+
+      let recommendationOptIn = false;
+      if (typeof req.body?.recommendationOptIn === "boolean") {
+        recommendationOptIn = req.body.recommendationOptIn;
+      } else if (typeof req.body?.recommendationOptIn === "string") {
+        recommendationOptIn = req.body.recommendationOptIn.toLowerCase() === "true";
+      }
+
+      const now = new Date();
+      const interestTags = normalizedTags.length > 0 ? normalizedTags : null;
+      const notes = notesRaw.length > 0 ? notesRaw : null;
+
+      const existing = await db
+        .select({ id: landingSubscribers.id, status: landingSubscribers.status })
+        .from(landingSubscribers)
+        .where(eq(landingSubscribers.email, rawEmail))
+        .limit(1);
+
+      if (existing.length === 0) {
+        await db.insert(landingSubscribers).values({
+          email: rawEmail,
+          status: "active",
+          source: "alpmera.com",
+          interestTags,
+          notes,
+          recommendationOptIn,
+          createdAt: now,
+          unsubscribedAt: null,
+          lastSubmittedAt: now,
+        });
+      } else {
+        const existingRecord = existing[0];
+        await db
+          .update(landingSubscribers)
+          .set({
+            status: "active",
+            unsubscribedAt: null,
+            interestTags,
+            notes,
+            recommendationOptIn,
+            lastSubmittedAt: now,
+          })
+          .where(eq(landingSubscribers.id, existingRecord.id));
+      }
+
+      return res.json({ ok: true });
+    } catch (error) {
+      console.error("Error handling landing notify:", error);
+      return res.status(500).json({ error: "Failed to process request" });
+    }
+  });
+
+  // ============================================
+  // PRODUCT REQUESTS (Public)
+  // ============================================
+
+  // Create product request (public)
+  app.post("/api/product-requests", async (req, res) => {
+    try {
+      const forwardedFor = req.headers["x-forwarded-for"];
+      const ip = (Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor)
+        ?.split(",")[0]
+        ?.trim() || req.ip || "unknown";
+
+      // Honeypot check
+      if (req.body?.website && typeof req.body.website === "string" && req.body.website.trim().length > 0) {
+        // Bot detected - silently succeed
+        return res.json({ success: true, id: randomUUID() });
+      }
+
+      if (isProductRequestRateLimited(ip)) {
+        return res.status(429).json({ error: "Rate limit exceeded. Please try again later." });
+      }
+
+      // Validate input
+      const productName = typeof req.body?.productName === "string" ? req.body.productName.trim() : "";
+      const referenceUrl = typeof req.body?.referenceUrl === "string" ? req.body.referenceUrl.trim() : "";
+      const inputSku = typeof req.body?.sku === "string" ? req.body.sku.trim() : null;
+      const reason = typeof req.body?.reason === "string" ? req.body.reason.trim().substring(0, 1000) : null;
+      const category = typeof req.body?.category === "string" ? req.body.category.trim() : null;
+      const submitterEmail = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : null;
+      const submitterCity = typeof req.body?.city === "string" ? req.body.city.trim() : null;
+      const submitterState = typeof req.body?.state === "string" ? req.body.state.trim() : null;
+      const notifyOnCampaign = req.body?.notify === true || req.body?.notify === "true";
+
+      if (!productName || productName.length < 2) {
+        return res.status(400).json({ error: "Product name is required (min 2 characters)" });
+      }
+
+      if (!referenceUrl) {
+        return res.status(400).json({ error: "Reference URL is required" });
+      }
+
+      // Basic URL validation
+      try {
+        new URL(referenceUrl);
+      } catch {
+        return res.status(400).json({ error: "Invalid reference URL" });
+      }
+
+      // Email validation if provided
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (submitterEmail && !emailRegex.test(submitterEmail)) {
+        return res.status(400).json({ error: "Invalid email format" });
+      }
+
+      const ipHash = hashIp(ip);
+      const anonId = req.cookies?.alpmera_anon_id || null;
+
+      const now = new Date();
+
+      // Create product request
+      const [newRequest] = await db.insert(productRequests).values({
+        productName,
+        category,
+        inputSku,
+        referenceUrl,
+        reason,
+        submitterEmail,
+        submitterCity,
+        submitterState,
+        notifyOnCampaign,
+        submitterIp: ipHash,
+        submitterAnonId: anonId,
+        createdAt: now,
+        updatedAt: now,
+      }).returning({ id: productRequests.id });
+
+      // Create SKU verification job
+      await db.insert(skuVerificationJobs).values({
+        productRequestId: newRequest.id,
+        status: "pending",
+        nextAttemptAt: now,
+        createdAt: now,
+      });
+
+      // Create audit event
+      await db.insert(productRequestEvents).values({
+        productRequestId: newRequest.id,
+        eventType: "CREATED",
+        actor: "anonymous",
+        newValue: JSON.stringify({ productName, referenceUrl }),
+        createdAt: now,
+      });
+
+      return res.json({ success: true, id: newRequest.id });
+    } catch (error) {
+      console.error("Error creating product request:", error);
+      return res.status(500).json({ error: "Failed to submit request" });
+    }
+  });
+
+  // Get product requests list (public)
+  app.get("/api/product-requests", async (req, res) => {
+    try {
+      const status = typeof req.query.status === "string" ? req.query.status : null;
+      const sort = typeof req.query.sort === "string" ? req.query.sort : "votes";
+      const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 20, 1), 100);
+      const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+
+      // Build where clause - hide rejected by default
+      const conditions = [];
+      if (status) {
+        conditions.push(eq(productRequests.status, status as ProductRequestStatus));
+      } else {
+        // Exclude rejected from public view
+        conditions.push(
+          or(
+            eq(productRequests.status, "not_reviewed"),
+            eq(productRequests.status, "in_review"),
+            eq(productRequests.status, "accepted"),
+            eq(productRequests.status, "failed_in_campaign"),
+            eq(productRequests.status, "successful_in_campaign")
+          )!
+        );
+      }
+
+      // Order by
+      const orderBy = sort === "newest"
+        ? [desc(productRequests.createdAt)]
+        : [desc(productRequests.voteCount), desc(productRequests.createdAt)];
+
+      const results = await db
+        .select({
+          id: productRequests.id,
+          productName: productRequests.productName,
+          category: productRequests.category,
+          inputSku: productRequests.inputSku,
+          derivedSku: productRequests.derivedSku,
+          referenceUrl: productRequests.referenceUrl,
+          voteCount: productRequests.voteCount,
+          status: productRequests.status,
+          verificationStatus: productRequests.verificationStatus,
+          createdAt: productRequests.createdAt,
+        })
+        .from(productRequests)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(...orderBy)
+        .limit(limit)
+        .offset(offset);
+
+      // Get total count
+      const [{ total }] = await db
+        .select({ total: count() })
+        .from(productRequests)
+        .where(conditions.length > 0 ? and(...conditions) : undefined);
+
+      return res.json({
+        items: results,
+        total,
+        limit,
+        offset,
+      });
+    } catch (error) {
+      console.error("Error fetching product requests:", error);
+      return res.status(500).json({ error: "Failed to fetch requests" });
+    }
+  });
+
+  // Get single product request (public)
+  app.get("/api/product-requests/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const [request] = await db
+        .select({
+          id: productRequests.id,
+          productName: productRequests.productName,
+          category: productRequests.category,
+          inputSku: productRequests.inputSku,
+          derivedSku: productRequests.derivedSku,
+          canonicalProductId: productRequests.canonicalProductId,
+          referenceUrl: productRequests.referenceUrl,
+          reason: productRequests.reason,
+          voteCount: productRequests.voteCount,
+          status: productRequests.status,
+          verificationStatus: productRequests.verificationStatus,
+          verificationReason: productRequests.verificationReason,
+          createdAt: productRequests.createdAt,
+        })
+        .from(productRequests)
+        .where(eq(productRequests.id, id))
+        .limit(1);
+
+      if (!request) {
+        return res.status(404).json({ error: "Product request not found" });
+      }
+
+      // Don't expose rejected items to public
+      if (request.status === "rejected") {
+        return res.status(404).json({ error: "Product request not found" });
+      }
+
+      return res.json(request);
+    } catch (error) {
+      console.error("Error fetching product request:", error);
+      return res.status(500).json({ error: "Failed to fetch request" });
+    }
+  });
+
+  // Vote on product request (public)
+  app.post("/api/product-requests/:id/vote", async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const forwardedFor = req.headers["x-forwarded-for"];
+      const ip = (Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor)
+        ?.split(",")[0]
+        ?.trim() || req.ip || "unknown";
+
+      if (isProductVoteRateLimited(ip)) {
+        return res.status(429).json({ error: "Rate limit exceeded" });
+      }
+
+      // Get the product request
+      const [request] = await db
+        .select({
+          id: productRequests.id,
+          status: productRequests.status,
+          voteCount: productRequests.voteCount,
+        })
+        .from(productRequests)
+        .where(eq(productRequests.id, id))
+        .limit(1);
+
+      if (!request) {
+        return res.status(404).json({ error: "Product request not found" });
+      }
+
+      // Only allow voting on not_reviewed items
+      if (request.status !== "not_reviewed") {
+        return res.status(400).json({ error: "Voting is only allowed on requests under review" });
+      }
+
+      const ipHash = hashIp(ip);
+      const anonId = req.cookies?.alpmera_anon_id || null;
+      // Check for logged-in user (from session)
+      const userId = (req.session as Record<string, unknown>)?.userId as string | undefined || null;
+
+      // Check for existing vote
+      const existingConditions = [eq(productRequestVotes.productRequestId, id)];
+
+      if (userId) {
+        existingConditions.push(eq(productRequestVotes.userId, userId));
+      } else if (anonId) {
+        existingConditions.push(eq(productRequestVotes.anonId, anonId));
+      } else {
+        existingConditions.push(eq(productRequestVotes.ipHash, ipHash));
+      }
+
+      const [existingVote] = await db
+        .select({ id: productRequestVotes.id })
+        .from(productRequestVotes)
+        .where(and(...existingConditions))
+        .limit(1);
+
+      if (existingVote) {
+        return res.status(400).json({ error: "You have already voted on this request" });
+      }
+
+      // Insert vote and update count in transaction
+      await db.transaction(async (tx) => {
+        await tx.insert(productRequestVotes).values({
+          productRequestId: id,
+          anonId: !userId ? anonId : null,
+          ipHash: !userId && !anonId ? ipHash : null,
+          userId,
+          createdAt: new Date(),
+        });
+
+        await tx
+          .update(productRequests)
+          .set({ voteCount: sql`${productRequests.voteCount} + 1`, updatedAt: new Date() })
+          .where(eq(productRequests.id, id));
+      });
+
+      // Get updated count
+      const [updated] = await db
+        .select({ voteCount: productRequests.voteCount })
+        .from(productRequests)
+        .where(eq(productRequests.id, id))
+        .limit(1);
+
+      return res.json({ success: true, voteCount: updated?.voteCount || 0 });
+    } catch (error) {
+      console.error("Error voting on product request:", error);
+      return res.status(500).json({ error: "Failed to record vote" });
+    }
+  });
+
   // ============================================
   // ADMIN SECURITY BARRIER
   // ============================================
@@ -424,98 +925,555 @@ export async function registerRoutes(
   });
 
   // ============================================
-  // ADMIN PRODUCT MANAGEMENT (Protected)
+  // ADMIN CREDIT LEDGER (Protected, Read-Only)
   // ============================================
 
-  // LIST PRODUCTS
-  app.get("/api/admin/products", async (req, res) => {
+  // LIST CREDIT LEDGER ENTRIES
+  app.get("/api/admin/credits", requireAdminAuth, async (req, res) => {
     try {
-      const products = await storage.getProducts();
-      res.json(products);
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
+
+      const listQuery = parseListQuery(req.query as Record<string, string | string[] | undefined>, {
+        defaultPageSize: 25,
+        allowedPageSizes: [25, 50, 100],
+        allowedSorts: {
+          created_desc: "created_desc",
+        },
+        defaultSort: "created_desc",
+      });
+
+      const participantId = typeof req.query.participantId === "string" ? req.query.participantId.trim() : undefined;
+      const campaignId = typeof req.query.campaignId === "string" ? req.query.campaignId.trim() : undefined;
+      const eventTypeRaw = typeof req.query.eventType === "string" ? req.query.eventType.trim() : listQuery.params.status;
+      const eventType = eventTypeRaw && eventTypeRaw !== "all" ? eventTypeRaw : undefined;
+
+      const conditions: any[] = [];
+      if (participantId) {
+        conditions.push(eq(creditLedgerEntries.participantId, participantId));
+      }
+      if (campaignId) {
+        conditions.push(eq(creditLedgerEntries.campaignId, campaignId));
+      }
+      if (eventType) {
+        conditions.push(eq(creditLedgerEntries.eventType, eventType as any));
+      }
+      if (listQuery.params.search) {
+        const searchValue = `%${listQuery.params.search}%`;
+        conditions.push(
+          or(
+            ilike(creditLedgerEntries.participantId, searchValue),
+            ilike(users.email, searchValue)
+          )
+        );
+      }
+      if (listQuery.params.createdFrom) {
+        const fromDate = new Date(listQuery.params.createdFrom);
+        fromDate.setHours(0, 0, 0, 0);
+        conditions.push(gte(creditLedgerEntries.createdAt, fromDate));
+      }
+      if (listQuery.params.createdTo) {
+        const toDate = new Date(listQuery.params.createdTo);
+        toDate.setHours(23, 59, 59, 999);
+        conditions.push(lte(creditLedgerEntries.createdAt, toDate));
+      }
+
+      const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+      const [countResult] = await db
+        .select({ count: count() })
+        .from(creditLedgerEntries)
+        .leftJoin(users, eq(creditLedgerEntries.participantId, users.id))
+        .where(whereClause);
+
+      const rows = await db
+        .select({
+          id: creditLedgerEntries.id,
+          participantId: creditLedgerEntries.participantId,
+          participantEmail: users.email,
+          eventType: creditLedgerEntries.eventType,
+          amount: creditLedgerEntries.amount,
+          currency: creditLedgerEntries.currency,
+          campaignId: creditLedgerEntries.campaignId,
+          campaignName: campaigns.title,
+          reason: creditLedgerEntries.reason,
+          createdAt: creditLedgerEntries.createdAt,
+        })
+        .from(creditLedgerEntries)
+        .leftJoin(users, eq(creditLedgerEntries.participantId, users.id))
+        .leftJoin(campaigns, eq(creditLedgerEntries.campaignId, campaigns.id))
+        .where(whereClause)
+        .orderBy(desc(creditLedgerEntries.createdAt), desc(creditLedgerEntries.id))
+        .limit(listQuery.limit)
+        .offset(listQuery.offset);
+
+      res.json({
+        rows,
+        total: countResult?.count || 0,
+        page: listQuery.params.page,
+        pageSize: listQuery.params.pageSize,
+        sortApplied: listQuery.sortApplied,
+        filtersApplied: {
+          ...listQuery.filtersApplied,
+          participantId: participantId || null,
+          campaignId: campaignId || null,
+          eventType: eventType || null,
+        },
+      });
     } catch (error) {
-      console.error("[ADMIN] Error listing products:", error);
-      res.status(500).json({ error: "Failed to list products" });
+      console.error("[ADMIN] Error listing credit ledger entries:", error);
+      res.status(500).json({ error: "Failed to list credit ledger entries" });
     }
   });
 
-  // CREATE PRODUCT
-  app.post("/api/admin/products", async (req, res) => {
+  // GET CREDIT LEDGER ENTRY DETAIL
+  app.get("/api/admin/credits/:id", requireAdminAuth, async (req, res) => {
     try {
-      const parsed = insertProductSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({
-          error: "Invalid product data",
-          details: parsed.error.flatten()
-        });
+      const entry = await storage.getCreditLedgerEntry(req.params.id);
+      if (!entry) {
+        return res.status(404).json({ error: "Credit ledger entry not found" });
       }
-
-      // Check unique SKU
-      const existing = await storage.getProductBySku(parsed.data.sku);
-      if (existing) {
-        return res.status(409).json({
-          error: "SKU conflict",
-          message: `Product with SKU '${parsed.data.sku}' already exists.`
-        });
-      }
-
-      const product = await storage.createProduct(parsed.data);
-      console.log(`[ADMIN] Created product: ${product.sku} (${product.name})`);
-      res.status(201).json(product);
+      res.json(entry);
     } catch (error) {
-      console.error("[ADMIN] Error creating product:", error);
-      res.status(500).json({ error: "Failed to create product" });
+      console.error("[ADMIN] Error getting credit ledger entry:", error);
+      res.status(500).json({ error: "Failed to get credit ledger entry" });
     }
   });
 
-  // GET PRODUCT BY ID
-  app.get("/api/admin/products/:id", async (req, res) => {
+  // GET PARTICIPANT CREDIT BALANCE
+  app.get("/api/admin/credits/participant/:participantId/balance", requireAdminAuth, async (req, res) => {
     try {
-      const product = await storage.getProduct(req.params.id);
-      if (!product) {
-        return res.status(404).json({ error: "Product not found" });
-      }
-      res.json(product);
+      const balance = await storage.getParticipantCreditBalance(req.params.participantId);
+      res.json({ balance: balance.toFixed(2), currency: "USD" });
     } catch (error) {
-      res.status(500).json({ error: "Failed to fetch product" });
+      console.error("[ADMIN] Error getting participant credit balance:", error);
+      res.status(500).json({ error: "Failed to get participant credit balance" });
     }
   });
 
-  // UPDATE PRODUCT
-  app.patch("/api/admin/products/:id", async (req, res) => {
+  // GET PARTICIPANT CREDIT SUMMARY
+  app.get("/api/admin/credits/participant/:participantId/summary", requireAdminAuth, async (req, res) => {
     try {
-      const parsed = updateProductSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({
-          error: "Invalid update data",
-          details: parsed.error.flatten()
-        });
-      }
-
-      const updated = await storage.updateProduct(req.params.id, parsed.data);
-      if (!updated) {
-        return res.status(404).json({ error: "Product not found" });
-      }
-
-      console.log(`[ADMIN] Updated product: ${updated.sku}`);
-      res.json(updated);
+      const summary = await storage.getParticipantCreditSummary(req.params.participantId);
+      res.json(summary);
     } catch (error) {
-      console.error("[ADMIN] Error updating product:", error);
-      res.status(500).json({ error: "Failed to update product" });
+      if (error instanceof Error && error.message === "Participant not found") {
+        res.status(404).json({ error: "Participant not found" });
+      } else {
+        console.error("[ADMIN] Error getting participant credit summary:", error);
+        res.status(500).json({ error: "Failed to get participant credit summary" });
+      }
     }
   });
 
-  // ARCHIVE PRODUCT (Soft Delete)
-  app.delete("/api/admin/products/:id", async (req, res) => {
+  // ============================================
+  // ADMIN PARTICIPANT MANAGEMENT (Protected)
+  // ============================================
+
+  // LIST PARTICIPANTS (search + pagination)
+  app.get("/api/admin/participants", requireAdminAuth, async (req, res) => {
     try {
-      const archived = await storage.archiveProduct(req.params.id);
-      if (!archived) {
-        return res.status(404).json({ error: "Product not found" });
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
+
+      const listQuery = parseListQuery(req.query as Record<string, string | string[] | undefined>, {
+        defaultPageSize: 25,
+        allowedPageSizes: [25, 50, 100],
+        allowedSorts: {
+          created_desc: "created_desc",
+        },
+        defaultSort: "created_desc",
+      });
+
+      const conditions: any[] = [];
+      if (listQuery.params.search) {
+        const searchValue = `%${listQuery.params.search}%`;
+        conditions.push(
+          or(
+            ilike(users.id, searchValue),
+            ilike(users.email, searchValue),
+            ilike(userProfiles.fullName, searchValue)
+          )
+        );
       }
-      console.log(`[ADMIN] Archived product: ${archived.sku}`);
-      res.json({ success: true, message: "Product archived" });
+      if (listQuery.params.createdFrom) {
+        const fromDate = new Date(listQuery.params.createdFrom);
+        fromDate.setHours(0, 0, 0, 0);
+        conditions.push(gte(users.createdAt, fromDate));
+      }
+      if (listQuery.params.createdTo) {
+        const toDate = new Date(listQuery.params.createdTo);
+        toDate.setHours(23, 59, 59, 999);
+        conditions.push(lte(users.createdAt, toDate));
+      }
+
+      const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+      const [countResult] = await db
+        .select({ count: count() })
+        .from(users)
+        .leftJoin(userProfiles, eq(userProfiles.userId, users.id))
+        .where(whereClause);
+
+      const rows = await db
+        .select({
+          id: users.id,
+          email: users.email,
+          fullName: userProfiles.fullName,
+          createdAt: users.createdAt,
+          phoneNumber: userProfiles.phone,
+        })
+        .from(users)
+        .leftJoin(userProfiles, eq(userProfiles.userId, users.id))
+        .where(whereClause)
+        .orderBy(desc(users.createdAt), desc(users.id))
+        .limit(listQuery.limit)
+        .offset(listQuery.offset);
+
+      res.json({
+        rows,
+        total: countResult?.count || 0,
+        page: listQuery.params.page,
+        pageSize: listQuery.params.pageSize,
+        sortApplied: listQuery.sortApplied,
+        filtersApplied: listQuery.filtersApplied,
+      });
     } catch (error) {
-      console.error("[ADMIN] Error archiving product:", error);
-      res.status(500).json({ error: "Failed to archive product" });
+      console.error("[ADMIN] Error listing participants:", error);
+      res.status(500).json({ error: "Failed to list participants" });
+    }
+  });
+
+  // GET PARTICIPANT DETAIL (identity + summary)
+  app.get("/api/admin/participants/:id", requireAdminAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      // Get user identity
+      const [user] = await db
+        .select({
+          id: users.id,
+          email: users.email,
+          fullName: userProfiles.fullName,
+          phoneNumber: userProfiles.phone,
+          createdAt: users.createdAt,
+        })
+        .from(users)
+        .leftJoin(userProfiles, eq(userProfiles.userId, users.id))
+        .where(eq(users.id, id));
+
+      if (!user) {
+        return res.status(404).json({ error: "Participant not found" });
+      }
+
+      // Get user profile if exists
+      const [profile] = await db
+        .select()
+        .from(userProfiles)
+        .where(eq(userProfiles.userId, id));
+
+      // Get summary statistics
+      // 1. Active commitments count
+      const [activeCommitmentsResult] = await db
+        .select({ count: count() })
+        .from(commitments)
+        .where(
+          and(
+            eq(commitments.userId, id),
+            eq(commitments.status, "LOCKED")
+          )
+        );
+
+      // 2. Total committed to escrow (lifetime)
+      const [totalEscrowResult] = await db
+        .select({ total: sum(escrowLedger.amount) })
+        .from(escrowLedger)
+        .innerJoin(commitments, eq(escrowLedger.commitmentId, commitments.id))
+        .where(
+          and(
+            eq(commitments.userId, id),
+            eq(escrowLedger.entryType, "LOCK")
+          )
+        );
+
+      // 3. Credit balance (use existing summary endpoint logic)
+      let creditSummary = null;
+      try {
+        creditSummary = await storage.getParticipantCreditSummary(id);
+      } catch (error) {
+        // Participant may not have credits yet
+        console.log(`[ADMIN] No credit summary for participant ${id}`);
+      }
+
+      // 4. Refunds pending count
+      const [refundsPendingResult] = await db
+        .select({ count: count() })
+        .from(escrowLedger)
+        .innerJoin(commitments, eq(escrowLedger.commitmentId, commitments.id))
+        .where(
+          and(
+            eq(commitments.userId, id),
+            eq(escrowLedger.entryType, "REFUND")
+          )
+        );
+
+      res.json({
+        identity: {
+          id: user.id,
+          email: user.email,
+          fullName: user.fullName,
+          phoneNumber: user.phoneNumber,
+          createdAt: user.createdAt,
+          profile: profile || null,
+        },
+        summary: {
+          activeCommitmentsCount: activeCommitmentsResult?.count || 0,
+          totalCommittedEscrow: totalEscrowResult?.total || "0",
+          creditBalance: creditSummary?.totalBalance || "0",
+          creditCurrency: creditSummary?.currency || "USD",
+          refundsPending: refundsPendingResult?.count || 0,
+        },
+      });
+    } catch (error) {
+      console.error("[ADMIN] Error getting participant detail:", error);
+      res.status(500).json({ error: "Failed to get participant detail" });
+    }
+  });
+
+  // GET PARTICIPANT COMMITMENTS
+  app.get("/api/admin/participants/:id/commitments", requireAdminAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { limit = "50", offset = "0" } = req.query;
+
+      const limitNum = parseInt(limit as string, 10);
+      const offsetNum = parseInt(offset as string, 10);
+
+      const participantCommitments = await db
+        .select({
+          id: commitments.id,
+          referenceNumber: commitments.referenceNumber,
+          campaignId: commitments.campaignId,
+          campaignTitle: campaigns.title,
+          quantity: commitments.quantity,
+          amount: commitments.amount,
+          status: commitments.status,
+          createdAt: commitments.createdAt,
+        })
+        .from(commitments)
+        .leftJoin(campaigns, eq(commitments.campaignId, campaigns.id))
+        .where(eq(commitments.userId, id))
+        .orderBy(
+          sql`case when ${commitments.status} = 'LOCKED' then 0 else 1 end`,
+          desc(commitments.createdAt)
+        )
+        .limit(limitNum)
+        .offset(offsetNum);
+
+      const [countResult] = await db
+        .select({ count: count() })
+        .from(commitments)
+        .where(eq(commitments.userId, id));
+
+      res.json({
+        commitments: participantCommitments,
+        total: countResult?.count || 0,
+        limit: limitNum,
+        offset: offsetNum,
+      });
+    } catch (error) {
+      console.error("[ADMIN] Error getting participant commitments:", error);
+      res.status(500).json({ error: "Failed to get participant commitments" });
+    }
+  });
+
+  // GET PARTICIPANT REFUNDS
+  app.get("/api/admin/participants/:id/refunds", requireAdminAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const participantRefunds = await db
+        .select({
+          id: escrowLedger.id,
+          amount: escrowLedger.amount,
+          createdAt: escrowLedger.createdAt,
+          reason: escrowLedger.reason,
+          campaignId: escrowLedger.campaignId,
+          commitmentId: escrowLedger.commitmentId,
+        })
+        .from(escrowLedger)
+        .innerJoin(commitments, eq(escrowLedger.commitmentId, commitments.id))
+        .where(
+          and(
+            eq(commitments.userId, id),
+            eq(escrowLedger.entryType, "REFUND")
+          )
+        )
+        .orderBy(desc(escrowLedger.createdAt))
+        .limit(50);
+
+      // Enrich with campaign and commitment details
+      const enriched = await Promise.all(
+        participantRefunds.map(async (refund) => {
+          const [campaign] = await db
+            .select({ title: campaigns.title })
+            .from(campaigns)
+            .where(eq(campaigns.id, refund.campaignId));
+
+          const [commitment] = await db
+            .select({ referenceNumber: commitments.referenceNumber })
+            .from(commitments)
+            .where(eq(commitments.id, refund.commitmentId));
+
+          return {
+            ...refund,
+            campaignTitle: campaign?.title || "Unknown",
+            commitmentReference: commitment?.referenceNumber || "Unknown",
+          };
+        })
+      );
+
+      res.json({ refunds: enriched });
+    } catch (error) {
+      console.error("[ADMIN] Error getting participant refunds:", error);
+      res.status(500).json({ error: "Failed to get participant refunds" });
+    }
+  });
+
+  // ============================================
+  // ADMIN COMMITMENTS (High-volume list + detail)
+  // ============================================
+
+  app.get("/api/admin/commitments", requireAdminAuth, async (req, res) => {
+    try {
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
+
+      const listQuery = parseListQuery(req.query as Record<string, string | string[] | undefined>, {
+        defaultPageSize: 25,
+        allowedPageSizes: [25, 50, 100],
+        allowedSorts: {
+          status_created_desc: "status_created_desc",
+        },
+        defaultSort: "status_created_desc",
+      });
+
+      const campaignId = typeof req.query.campaignId === "string" ? req.query.campaignId.trim() : undefined;
+
+      const conditions: any[] = [];
+      if (listQuery.params.status) {
+        conditions.push(eq(commitments.status, listQuery.params.status as any));
+      }
+      if (campaignId) {
+        conditions.push(eq(commitments.campaignId, campaignId));
+      }
+      if (listQuery.params.search) {
+        const searchValue = `%${listQuery.params.search}%`;
+        conditions.push(
+          or(
+            ilike(commitments.referenceNumber, searchValue),
+            ilike(commitments.participantEmail, searchValue),
+            ilike(commitments.participantName, searchValue),
+            ilike(commitments.id, searchValue)
+          )
+        );
+      }
+      if (listQuery.params.createdFrom) {
+        const fromDate = new Date(listQuery.params.createdFrom);
+        fromDate.setHours(0, 0, 0, 0);
+        conditions.push(gte(commitments.createdAt, fromDate));
+      }
+      if (listQuery.params.createdTo) {
+        const toDate = new Date(listQuery.params.createdTo);
+        toDate.setHours(23, 59, 59, 999);
+        conditions.push(lte(commitments.createdAt, toDate));
+      }
+
+      const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+      const rows = await db
+        .select({
+          id: commitments.id,
+          referenceNumber: commitments.referenceNumber,
+          participantName: commitments.participantName,
+          participantEmail: commitments.participantEmail,
+          campaignId: commitments.campaignId,
+          campaignTitle: campaigns.title,
+          quantity: commitments.quantity,
+          amount: commitments.amount,
+          status: commitments.status,
+          createdAt: commitments.createdAt,
+        })
+        .from(commitments)
+        .leftJoin(campaigns, eq(commitments.campaignId, campaigns.id))
+        .where(whereClause)
+        .orderBy(
+          sql`case when ${commitments.status} = 'LOCKED' then 0 else 1 end`,
+          desc(commitments.createdAt),
+          desc(commitments.id)
+        )
+        .limit(listQuery.limit)
+        .offset(listQuery.offset);
+
+      const [countResult] = await db
+        .select({ count: count() })
+        .from(commitments)
+        .where(whereClause);
+
+      res.json({
+        rows,
+        total: countResult?.count || 0,
+        page: listQuery.params.page,
+        pageSize: listQuery.params.pageSize,
+        sortApplied: listQuery.sortApplied,
+        filtersApplied: {
+          ...listQuery.filtersApplied,
+          campaignId: campaignId || null,
+        },
+      });
+    } catch (error) {
+      console.error("[ADMIN] Error listing commitments:", error);
+      res.status(500).json({ error: "Failed to list commitments" });
+    }
+  });
+
+  app.get("/api/admin/commitments/:id", requireAdminAuth, async (req, res) => {
+    try {
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
+
+      const { id } = req.params;
+      const [commitment] = await db
+        .select({
+          id: commitments.id,
+          referenceNumber: commitments.referenceNumber,
+          participantName: commitments.participantName,
+          participantEmail: commitments.participantEmail,
+          userId: commitments.userId,
+          campaignId: commitments.campaignId,
+          campaignTitle: campaigns.title,
+          quantity: commitments.quantity,
+          amount: commitments.amount,
+          status: commitments.status,
+          createdAt: commitments.createdAt,
+        })
+        .from(commitments)
+        .leftJoin(campaigns, eq(commitments.campaignId, campaigns.id))
+        .where(eq(commitments.id, id))
+        .limit(1);
+
+      if (!commitment) {
+        return res.status(404).json({ error: "Commitment not found" });
+      }
+
+      res.json(commitment);
+    } catch (error) {
+      console.error("[ADMIN] Error getting commitment detail:", error);
+      res.status(500).json({ error: "Failed to get commitment detail" });
     }
   });
 
@@ -523,11 +1481,114 @@ export async function registerRoutes(
   // ADMIN SUPPLIER MANAGEMENT (Protected)
   // ============================================
 
-  // LIST SUPPLIERS
-  app.get("/api/admin/suppliers", async (req, res) => {
+  // LIST SUPPLIERS (HVLC)
+  app.get("/api/admin/suppliers", requireAdminAuth, async (req, res) => {
     try {
-      const suppliers = await storage.getSuppliers();
-      res.json(suppliers);
+      if (req.query.mode === "legacy") {
+        const suppliers = await storage.getSuppliers();
+        return res.json(suppliers);
+      }
+
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
+
+      const listQuery = parseListQuery(req.query as Record<string, string | string[] | undefined>, {
+        defaultPageSize: 25,
+        allowedPageSizes: [25, 50, 100],
+        allowedSorts: {
+          name_asc: "name_asc",
+          name_desc: "name_desc",
+          status_asc: "status_asc",
+          status_desc: "status_desc",
+          created_asc: "created_asc",
+          created_desc: "created_desc",
+        },
+        defaultSort: "created_desc",
+      });
+
+      const conditions: any[] = [];
+      if (listQuery.params.status) {
+        conditions.push(eq(suppliers.status, listQuery.params.status as any));
+      }
+      if (listQuery.params.search) {
+        const searchValue = `%${listQuery.params.search}%`;
+        conditions.push(
+          or(
+            ilike(suppliers.name, searchValue),
+            ilike(suppliers.contactName, searchValue),
+            ilike(suppliers.contactEmail, searchValue),
+            ilike(suppliers.phone, searchValue)
+          )
+        );
+      }
+      if (listQuery.params.createdFrom) {
+        const fromDate = new Date(listQuery.params.createdFrom);
+        fromDate.setHours(0, 0, 0, 0);
+        conditions.push(gte(suppliers.createdAt, fromDate));
+      }
+      if (listQuery.params.createdTo) {
+        const toDate = new Date(listQuery.params.createdTo);
+        toDate.setHours(23, 59, 59, 999);
+        conditions.push(lte(suppliers.createdAt, toDate));
+      }
+
+      const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+      const [countResult] = await db
+        .select({ count: count(suppliers.id) })
+        .from(suppliers)
+        .where(whereClause);
+
+      let orderByClause = [desc(suppliers.createdAt), desc(suppliers.id)];
+      switch (listQuery.sortApplied) {
+        case "name_asc":
+          orderByClause = [asc(suppliers.name), desc(suppliers.createdAt), desc(suppliers.id)];
+          break;
+        case "name_desc":
+          orderByClause = [desc(suppliers.name), desc(suppliers.createdAt), desc(suppliers.id)];
+          break;
+        case "status_asc":
+          orderByClause = [asc(suppliers.status), desc(suppliers.createdAt), desc(suppliers.id)];
+          break;
+        case "status_desc":
+          orderByClause = [desc(suppliers.status), desc(suppliers.createdAt), desc(suppliers.id)];
+          break;
+        case "created_asc":
+          orderByClause = [asc(suppliers.createdAt), desc(suppliers.id)];
+          break;
+        default:
+          break;
+      }
+
+      const rows = await db
+        .select({
+          id: suppliers.id,
+          name: suppliers.name,
+          contactName: suppliers.contactName,
+          contactEmail: suppliers.contactEmail,
+          phone: suppliers.phone,
+          website: suppliers.website,
+          region: suppliers.region,
+          status: suppliers.status,
+          createdAt: suppliers.createdAt,
+        })
+        .from(suppliers)
+        .where(whereClause)
+        .orderBy(...orderByClause)
+        .limit(listQuery.limit)
+        .offset(listQuery.offset);
+
+      res.json({
+        rows,
+        total: countResult?.count || 0,
+        page: listQuery.params.page,
+        pageSize: listQuery.params.pageSize,
+        sortApplied: listQuery.sortApplied,
+        filtersApplied: {
+          ...listQuery.filtersApplied,
+        },
+      });
     } catch (error) {
       console.error("[ADMIN] Error listing suppliers:", error);
       res.status(500).json({ error: "Failed to list suppliers" });
@@ -535,7 +1596,7 @@ export async function registerRoutes(
   });
 
   // CREATE SUPPLIER
-  app.post("/api/admin/suppliers", async (req, res) => {
+  app.post("/api/admin/suppliers", requireAdminAuth, async (req, res) => {
     try {
       const parsed = insertSupplierSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -555,7 +1616,7 @@ export async function registerRoutes(
   });
 
   // GET SUPPLIER BY ID
-  app.get("/api/admin/suppliers/:id", async (req, res) => {
+  app.get("/api/admin/suppliers/:id", requireAdminAuth, async (req, res) => {
     try {
       const supplier = await storage.getSupplier(req.params.id);
       if (!supplier) {
@@ -568,7 +1629,7 @@ export async function registerRoutes(
   });
 
   // UPDATE SUPPLIER
-  app.patch("/api/admin/suppliers/:id", async (req, res) => {
+  app.patch("/api/admin/suppliers/:id", requireAdminAuth, async (req, res) => {
     try {
       console.log(`[ADMIN] UPDATING SUPPLIER ${req.params.id} ...`);
       console.log(`[ADMIN] RAW BODY:`, JSON.stringify(req.body, null, 2));
@@ -597,7 +1658,7 @@ export async function registerRoutes(
   });
 
   // ARCHIVE SUPPLIER
-  app.delete("/api/admin/suppliers/:id", async (req, res) => {
+  app.delete("/api/admin/suppliers/:id", requireAdminAuth, async (req, res) => {
     try {
       const archived = await storage.archiveSupplier(req.params.id);
       if (!archived) {
@@ -607,6 +1668,67 @@ export async function registerRoutes(
     } catch (error) {
       console.error("[ADMIN] Error archiving supplier:", error);
       res.status(500).json({ error: "Failed to archive supplier" });
+    }
+  });
+
+  // BULK IMPORT SUPPLIERS (CSV)
+  app.post("/api/admin/suppliers/bulk", requireAdminAuth, async (req, res) => {
+    try {
+      const supplierRows = req.body;
+
+      if (!Array.isArray(supplierRows) || supplierRows.length === 0) {
+        return res.status(400).json({ error: "Suppliers array is required" });
+      }
+
+      const results = {
+        total: supplierRows.length,
+        successful: 0,
+        errors: 0,
+        details: [] as { row: number; name: string; status: string; success: boolean; error?: string }[],
+      };
+
+      for (let i = 0; i < supplierRows.length; i++) {
+        const row = supplierRows[i];
+        const rowNum = i + 1;
+
+        try {
+          if (!row.name?.trim()) {
+            results.errors++;
+            results.details.push({ row: rowNum, name: "", status: "", success: false, error: "Name is required" });
+            continue;
+          }
+
+          const supplierData = {
+            name: row.name.trim(),
+            contactName: row.contactName?.trim() || null,
+            contactEmail: row.contactEmail?.trim() || null,
+            phone: row.phone?.trim() || null,
+            website: row.website?.trim() || null,
+            region: row.region?.trim() || null,
+            notes: row.notes?.trim() || null,
+            status: row.status?.trim() || "ACTIVE",
+          };
+
+          const parsed = insertSupplierSchema.safeParse(supplierData);
+          if (!parsed.success) {
+            results.errors++;
+            results.details.push({ row: rowNum, name: row.name, status: supplierData.status, success: false, error: parsed.error.errors[0]?.message || "Validation failed" });
+            continue;
+          }
+
+          await storage.createSupplier(parsed.data);
+          results.successful++;
+          results.details.push({ row: rowNum, name: row.name, status: supplierData.status, success: true });
+        } catch (err: any) {
+          results.errors++;
+          results.details.push({ row: rowNum, name: row.name || "", status: "", success: false, error: err.message || "Unknown error" });
+        }
+      }
+
+      return res.json(results);
+    } catch (error) {
+      console.error("[ADMIN] Error in bulk supplier import:", error);
+      return res.status(500).json({ error: "Failed to process bulk import" });
     }
   });
 
@@ -702,8 +1824,78 @@ export async function registerRoutes(
     }
   });
 
+  // BULK IMPORT CONSOLIDATION POINTS (CSV)
+  app.post("/api/admin/consolidation-points/bulk", requireAdminAuth, async (req, res) => {
+    try {
+      const pointRows = req.body;
+
+      if (!Array.isArray(pointRows) || pointRows.length === 0) {
+        return res.status(400).json({ error: "Consolidation points array is required" });
+      }
+
+      const results = {
+        total: pointRows.length,
+        successful: 0,
+        errors: 0,
+        details: [] as { row: number; name: string; status: string; success: boolean; error?: string }[],
+      };
+
+      for (let i = 0; i < pointRows.length; i++) {
+        const row = pointRows[i];
+        const rowNum = i + 1;
+
+        try {
+          // Check required field (name or location_name)
+          const name = row.name?.trim() || row.location_name?.trim();
+          if (!name) {
+            results.errors++;
+            results.details.push({ row: rowNum, name: "", status: "", success: false, error: "Name is required" });
+            continue;
+          }
+
+          const pointData = {
+            name,
+            addressLine1: row.addressLine1?.trim() || row.address_line1?.trim() || null,
+            addressLine2: row.addressLine2?.trim() || row.address_line2?.trim() || null,
+            city: row.city?.trim() || null,
+            state: row.state?.trim() || null,
+            postalCode: row.postalCode?.trim() || row.postal_code?.trim() || null,
+            country: row.country?.trim() || null,
+            contactName: row.contactName?.trim() || row.contact_name?.trim() || null,
+            contactEmail: row.contactEmail?.trim() || row.contact_email?.trim() || null,
+            contactPhone: row.contactPhone?.trim() || row.contact_phone?.trim() || null,
+            notes: row.notes?.trim() || null,
+            status: row.status?.trim() || "ACTIVE",
+          };
+
+          const parsed = insertConsolidationPointSchema.safeParse(pointData);
+          if (!parsed.success) {
+            results.errors++;
+            results.details.push({ row: rowNum, name, status: pointData.status, success: false, error: parsed.error.errors[0]?.message || "Validation failed" });
+            continue;
+          }
+
+          await storage.createConsolidationPoint(parsed.data);
+          results.successful++;
+          results.details.push({ row: rowNum, name, status: pointData.status, success: true });
+        } catch (err: any) {
+          results.errors++;
+          results.details.push({ row: rowNum, name: row.name || row.location_name || "", status: "", success: false, error: err.message || "Unknown error" });
+        }
+      }
+
+      return res.json(results);
+    } catch (error) {
+      console.error("[ADMIN] Error in bulk consolidation point import:", error);
+      return res.status(500).json({ error: "Failed to process bulk import" });
+    }
+  });
+
   // Check admin session status
   app.get("/api/admin/session", (req, res) => {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
     if (req.session?.isAdmin === true) {
       res.json({
         authenticated: true,
@@ -1235,39 +2427,155 @@ export async function registerRoutes(
     }
   });
 
-  // Get all campaigns with stats (public endpoint)
+  // Get campaigns with stats (public endpoint - HVLC)
   // Only returns PUBLISHED campaigns, redacts monetary fields for list view
   app.get("/api/campaigns", async (req, res) => {
     try {
-      const allCampaigns = await storage.getCampaignsWithStats();
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
 
-      // Filter to only PUBLISHED campaigns
-      const publishedCampaigns = allCampaigns.filter(
-        (c: any) => c.adminPublishStatus === "PUBLISHED"
-      );
+      const listQuery = parseListQuery(req.query as Record<string, string | string[] | undefined>, {
+        defaultPageSize: 25,
+        allowedPageSizes: [25, 50, 100],
+        allowedSorts: {
+          created_desc: "created_desc",
+          created_asc: "created_asc",
+          deadline_asc: "deadline_asc",
+          deadline_desc: "deadline_desc",
+          title_asc: "title_asc",
+          title_desc: "title_desc",
+        },
+        defaultSort: "created_desc",
+      });
 
-      // Redact monetary fields for public/list view
-      // Only expose: id, title, description, state, imageUrl, progress percentage
-      const redactedCampaigns = publishedCampaigns.map((c: any) => {
-        const targetAmount = parseFloat(c.targetAmount) || 0;
+      const statusRaw = typeof req.query.status === "string" ? req.query.status.trim() : undefined;
+      const statuses = statusRaw
+        ? statusRaw.split(",").map((entry) => entry.trim()).filter(Boolean)
+        : [];
+
+      const conditions: any[] = [eq(campaigns.adminPublishStatus, "PUBLISHED")];
+      if (listQuery.params.search) {
+        const searchValue = `%${listQuery.params.search}%`;
+        conditions.push(
+          or(
+            ilike(campaigns.title, searchValue),
+            ilike(campaigns.description, searchValue),
+            ilike(campaigns.id, searchValue)
+          )
+        );
+      }
+      if (statuses.length > 0) {
+        conditions.push(
+          or(...statuses.map((state) => eq(campaigns.state, state as any)))
+        );
+      }
+      if (listQuery.params.createdFrom) {
+        const fromDate = new Date(listQuery.params.createdFrom);
+        fromDate.setHours(0, 0, 0, 0);
+        conditions.push(gte(campaigns.createdAt, fromDate));
+      }
+      if (listQuery.params.createdTo) {
+        const toDate = new Date(listQuery.params.createdTo);
+        toDate.setHours(23, 59, 59, 999);
+        conditions.push(lte(campaigns.createdAt, toDate));
+      }
+
+      const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+      const [countResult] = await db
+        .select({ count: countDistinct(campaigns.id) })
+        .from(campaigns)
+        .where(whereClause);
+
+      const totalCommittedExpr = sql<number>`coalesce(sum(${commitments.amount}::numeric), 0)::float`;
+
+      let orderByClause = [desc(campaigns.createdAt), desc(campaigns.id)];
+      switch (listQuery.sortApplied) {
+        case "created_asc":
+          orderByClause = [asc(campaigns.createdAt), desc(campaigns.id)];
+          break;
+        case "deadline_asc":
+          orderByClause = [asc(campaigns.aggregationDeadline), desc(campaigns.createdAt), desc(campaigns.id)];
+          break;
+        case "deadline_desc":
+          orderByClause = [desc(campaigns.aggregationDeadline), desc(campaigns.createdAt), desc(campaigns.id)];
+          break;
+        case "title_asc":
+          orderByClause = [asc(campaigns.title), desc(campaigns.createdAt), desc(campaigns.id)];
+          break;
+        case "title_desc":
+          orderByClause = [desc(campaigns.title), desc(campaigns.createdAt), desc(campaigns.id)];
+          break;
+        default:
+          break;
+      }
+
+      const rows = await db
+        .select({
+          id: campaigns.id,
+          title: campaigns.title,
+          description: campaigns.description,
+          state: campaigns.state,
+          imageUrl: campaigns.imageUrl,
+          primaryImageUrl: campaigns.primaryImageUrl,
+          galleryImageUrls: campaigns.galleryImageUrls,
+          targetAmount: campaigns.targetAmount,
+          aggregationDeadline: campaigns.aggregationDeadline,
+          createdAt: campaigns.createdAt,
+          totalCommitted: totalCommittedExpr,
+        })
+        .from(campaigns)
+        .leftJoin(commitments, eq(commitments.campaignId, campaigns.id))
+        .where(whereClause)
+        .groupBy(
+          campaigns.id,
+          campaigns.title,
+          campaigns.description,
+          campaigns.state,
+          campaigns.imageUrl,
+          campaigns.primaryImageUrl,
+          campaigns.galleryImageUrls,
+          campaigns.targetAmount,
+          campaigns.aggregationDeadline,
+          campaigns.createdAt
+        )
+        .orderBy(...orderByClause)
+        .limit(listQuery.limit)
+        .offset(listQuery.offset);
+
+      const redactedRows = rows.map((c) => {
+        const targetAmount = parseFloat(String(c.targetAmount || 0)) || 0;
         const totalCommitted = c.totalCommitted || 0;
         const progressPercent = targetAmount > 0
           ? Math.min(Math.round((totalCommitted / targetAmount) * 100), 100)
           : 0;
+        const galleryFirst = getFirstGalleryImageUrl(c.galleryImageUrls);
+        const resolvedImageUrl = c.primaryImageUrl || galleryFirst || c.imageUrl;
 
         return {
           id: c.id,
           title: c.title,
           description: c.description,
           state: c.state,
-          imageUrl: c.imageUrl,
+          imageUrl: resolvedImageUrl,
           progressPercent,
           aggregationDeadline: c.aggregationDeadline,
           createdAt: c.createdAt,
         };
       });
 
-      res.json(redactedCampaigns);
+      res.json({
+        rows: redactedRows,
+        total: countResult?.count || 0,
+        page: listQuery.params.page,
+        pageSize: listQuery.params.pageSize,
+        sortApplied: listQuery.sortApplied,
+        filtersApplied: {
+          ...listQuery.filtersApplied,
+          status: statuses.length > 0 ? statuses.join(",") : null,
+        },
+      });
     } catch (error) {
       console.error("Error fetching campaigns:", error);
       res.status(500).json({ error: "Failed to fetch campaigns" });
@@ -1321,6 +2629,8 @@ export async function registerRoutes(
         rules: campaign.rules,
         state: campaign.state,
         imageUrl: campaign.imageUrl,
+        primaryImageUrl: (campaign as any).primaryImageUrl,
+        galleryImageUrls: (campaign as any).galleryImageUrls,
         progressPercent,
         aggregationDeadline: campaign.aggregationDeadline,
         createdAt: campaign.createdAt,
@@ -1518,11 +2828,119 @@ export async function registerRoutes(
   // ADMIN PRODUCT ENDPOINTS
   // ============================================
 
-  // List all products
+  // List products (HVLC)
   app.get("/api/admin/products", requireAdminAuth, async (req, res) => {
     try {
-      const allProducts = await storage.getProducts();
-      res.json(allProducts);
+      if (req.query.mode === "legacy") {
+        const allProducts = await storage.getProducts();
+        return res.json(allProducts);
+      }
+
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
+
+      const listQuery = parseListQuery(req.query as Record<string, string | string[] | undefined>, {
+        defaultPageSize: 25,
+        allowedPageSizes: [25, 50, 100],
+        allowedSorts: {
+          name_asc: "name_asc",
+          name_desc: "name_desc",
+          sku_asc: "sku_asc",
+          sku_desc: "sku_desc",
+          status_asc: "status_asc",
+          status_desc: "status_desc",
+          created_asc: "created_asc",
+          created_desc: "created_desc",
+        },
+        defaultSort: "created_desc",
+      });
+
+      const conditions: any[] = [];
+      if (listQuery.params.status) {
+        conditions.push(eq(products.status, listQuery.params.status as any));
+      }
+      if (listQuery.params.search) {
+        const searchValue = `%${listQuery.params.search}%`;
+        conditions.push(
+          or(
+            ilike(products.name, searchValue),
+            ilike(products.sku, searchValue),
+            ilike(products.brand, searchValue)
+          )
+        );
+      }
+      if (listQuery.params.createdFrom) {
+        const fromDate = new Date(listQuery.params.createdFrom);
+        fromDate.setHours(0, 0, 0, 0);
+        conditions.push(gte(products.createdAt, fromDate));
+      }
+      if (listQuery.params.createdTo) {
+        const toDate = new Date(listQuery.params.createdTo);
+        toDate.setHours(23, 59, 59, 999);
+        conditions.push(lte(products.createdAt, toDate));
+      }
+
+      const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+      const [countResult] = await db
+        .select({ count: count(products.id) })
+        .from(products)
+        .where(whereClause);
+
+      let orderByClause = [desc(products.createdAt), desc(products.id)];
+      switch (listQuery.sortApplied) {
+        case "name_asc":
+          orderByClause = [asc(products.name), desc(products.createdAt), desc(products.id)];
+          break;
+        case "name_desc":
+          orderByClause = [desc(products.name), desc(products.createdAt), desc(products.id)];
+          break;
+        case "sku_asc":
+          orderByClause = [asc(products.sku), desc(products.createdAt), desc(products.id)];
+          break;
+        case "sku_desc":
+          orderByClause = [desc(products.sku), desc(products.createdAt), desc(products.id)];
+          break;
+        case "status_asc":
+          orderByClause = [asc(products.status), desc(products.createdAt), desc(products.id)];
+          break;
+        case "status_desc":
+          orderByClause = [desc(products.status), desc(products.createdAt), desc(products.id)];
+          break;
+        case "created_asc":
+          orderByClause = [asc(products.createdAt), desc(products.id)];
+          break;
+        default:
+          break;
+      }
+
+      const rows = await db
+        .select({
+          id: products.id,
+          sku: products.sku,
+          name: products.name,
+          brand: products.brand,
+          category: products.category,
+          status: products.status,
+          createdAt: products.createdAt,
+        })
+        .from(products)
+        .where(whereClause)
+        .orderBy(...orderByClause)
+        .limit(listQuery.limit)
+        .offset(listQuery.offset);
+
+      res.json({
+        rows,
+        total: countResult?.count || 0,
+        page: listQuery.params.page,
+        pageSize: listQuery.params.pageSize,
+        sortApplied: listQuery.sortApplied,
+        filtersApplied: {
+          ...listQuery.filtersApplied,
+        },
+      });
     } catch (error) {
       console.error("[ADMIN] Error fetching products:", error);
       res.status(500).json({ error: "Failed to fetch products" });
@@ -1835,6 +3253,193 @@ export async function registerRoutes(
     } catch (error) {
       console.error("[ADMIN] Error in bulk upload:", error);
       res.status(500).json({ error: "Failed to process bulk upload" });
+    }
+  });
+
+  // ============================================
+  // ADMIN PRODUCT REQUEST ENDPOINTS
+  // ============================================
+
+  // Admin: Get all product requests (including rejected)
+  app.get("/api/admin/product-requests", requireAdminAuth, async (req, res) => {
+    try {
+      const status = typeof req.query.status === "string" ? req.query.status : null;
+      const sort = typeof req.query.sort === "string" ? req.query.sort : "newest";
+      const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 50, 1), 200);
+      const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+
+      const conditions = [];
+      if (status) {
+        conditions.push(eq(productRequests.status, status as ProductRequestStatus));
+      }
+
+      const orderBy = sort === "votes"
+        ? [desc(productRequests.voteCount), desc(productRequests.createdAt)]
+        : [desc(productRequests.createdAt)];
+
+      const results = await db
+        .select({
+          id: productRequests.id,
+          productName: productRequests.productName,
+          category: productRequests.category,
+          inputSku: productRequests.inputSku,
+          derivedSku: productRequests.derivedSku,
+          canonicalProductId: productRequests.canonicalProductId,
+          referenceUrl: productRequests.referenceUrl,
+          reason: productRequests.reason,
+          submitterEmail: productRequests.submitterEmail,
+          submitterCity: productRequests.submitterCity,
+          submitterState: productRequests.submitterState,
+          notifyOnCampaign: productRequests.notifyOnCampaign,
+          voteCount: productRequests.voteCount,
+          status: productRequests.status,
+          statusChangedAt: productRequests.statusChangedAt,
+          statusChangedBy: productRequests.statusChangedBy,
+          statusChangeReason: productRequests.statusChangeReason,
+          verificationStatus: productRequests.verificationStatus,
+          verificationReason: productRequests.verificationReason,
+          createdAt: productRequests.createdAt,
+          updatedAt: productRequests.updatedAt,
+        })
+        .from(productRequests)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(...orderBy)
+        .limit(limit)
+        .offset(offset);
+
+      const [{ total }] = await db
+        .select({ total: count() })
+        .from(productRequests)
+        .where(conditions.length > 0 ? and(...conditions) : undefined);
+
+      return res.json({
+        items: results,
+        total,
+        limit,
+        offset,
+      });
+    } catch (error) {
+      console.error("[ADMIN] Error fetching product requests:", error);
+      return res.status(500).json({ error: "Failed to fetch requests" });
+    }
+  });
+
+  // Admin: Get single product request with full details
+  app.get("/api/admin/product-requests/:id", requireAdminAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const [request] = await db
+        .select()
+        .from(productRequests)
+        .where(eq(productRequests.id, id))
+        .limit(1);
+
+      if (!request) {
+        return res.status(404).json({ error: "Product request not found" });
+      }
+
+      return res.json(request);
+    } catch (error) {
+      console.error("[ADMIN] Error fetching product request:", error);
+      return res.status(500).json({ error: "Failed to fetch request" });
+    }
+  });
+
+  // Admin: Update product request status
+  app.patch("/api/admin/product-requests/:id/status", requireAdminAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const adminUsername = (req.session as Record<string, unknown>)?.adminUsername as string || "unknown";
+
+      const parseResult = updateProductRequestStatusSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          details: parseResult.error.flatten()
+        });
+      }
+
+      const { status, reason } = parseResult.data;
+
+      // Get current request
+      const [current] = await db
+        .select({ id: productRequests.id, status: productRequests.status })
+        .from(productRequests)
+        .where(eq(productRequests.id, id))
+        .limit(1);
+
+      if (!current) {
+        return res.status(404).json({ error: "Product request not found" });
+      }
+
+      const now = new Date();
+
+      // Update status
+      await db
+        .update(productRequests)
+        .set({
+          status,
+          statusChangedAt: now,
+          statusChangedBy: adminUsername,
+          statusChangeReason: reason || null,
+          updatedAt: now,
+        })
+        .where(eq(productRequests.id, id));
+
+      // Create audit event
+      await db.insert(productRequestEvents).values({
+        productRequestId: id,
+        eventType: "STATUS_CHANGED",
+        actor: adminUsername,
+        previousValue: current.status,
+        newValue: status,
+        metadata: reason ? JSON.stringify({ reason }) : null,
+        createdAt: now,
+      });
+
+      console.log(`[ADMIN] Product request ${id} status changed: ${current.status} -> ${status} by ${adminUsername}`);
+
+      // Get updated request
+      const [updated] = await db
+        .select()
+        .from(productRequests)
+        .where(eq(productRequests.id, id))
+        .limit(1);
+
+      return res.json(updated);
+    } catch (error) {
+      console.error("[ADMIN] Error updating product request status:", error);
+      return res.status(500).json({ error: "Failed to update status" });
+    }
+  });
+
+  // Admin: Get product request events (audit log)
+  app.get("/api/admin/product-requests/:id/events", requireAdminAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      // Verify request exists
+      const [request] = await db
+        .select({ id: productRequests.id })
+        .from(productRequests)
+        .where(eq(productRequests.id, id))
+        .limit(1);
+
+      if (!request) {
+        return res.status(404).json({ error: "Product request not found" });
+      }
+
+      const events = await db
+        .select()
+        .from(productRequestEvents)
+        .where(eq(productRequestEvents.productRequestId, id))
+        .orderBy(desc(productRequestEvents.createdAt));
+
+      return res.json(events);
+    } catch (error) {
+      console.error("[ADMIN] Error fetching product request events:", error);
+      return res.status(500).json({ error: "Failed to fetch events" });
     }
   });
 
@@ -2413,26 +4018,213 @@ export async function registerRoutes(
   // Admin: Get campaigns list with full details
   app.get("/api/admin/campaigns", requireAdminAuth, async (req, res) => {
     try {
-      const campaignsList = await storage.getCampaignsWithStats();
-      res.json(campaignsList.map(c => ({
-        id: c.id,
-        title: c.title,
-        state: c.state,
-        adminPublishStatus: (c as any).adminPublishStatus || "DRAFT",
-        aggregationDeadline: c.aggregationDeadline,
-        participantCount: c.participantCount,
-        totalCommitted: c.totalCommitted,
-        createdAt: c.createdAt,
-        productId: (c as any).productId,
-        supplierId: (c as any).supplierId,
-        consolidationPointId: (c as any).consolidationPointId,
-        productName: (c as any).productName,
-        supplierName: (c as any).supplierName,
-        consolidationPointName: (c as any).consolidationPointName,
-        productStatus: (c as any).productStatus,
-        supplierStatus: (c as any).supplierStatus,
-        consolidationPointStatus: (c as any).consolidationPointStatus,
-      })));
+      if (req.query.mode === "legacy") {
+        const campaignsList = await storage.getCampaignsWithStats();
+        return res.json(campaignsList.map(c => ({
+          id: c.id,
+          title: c.title,
+          state: c.state,
+          adminPublishStatus: (c as any).adminPublishStatus || "DRAFT",
+          aggregationDeadline: c.aggregationDeadline,
+          participantCount: c.participantCount,
+          totalCommitted: c.totalCommitted,
+          createdAt: c.createdAt,
+          productId: (c as any).productId,
+          supplierId: (c as any).supplierId,
+          consolidationPointId: (c as any).consolidationPointId,
+          productName: (c as any).productName,
+          supplierName: (c as any).supplierName,
+          consolidationPointName: (c as any).consolidationPointName,
+          productStatus: (c as any).productStatus,
+          supplierStatus: (c as any).supplierStatus,
+          consolidationPointStatus: (c as any).consolidationPointStatus,
+        })));
+      }
+
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
+
+      const listQuery = parseListQuery(req.query as Record<string, string | string[] | undefined>, {
+        defaultPageSize: 25,
+        allowedPageSizes: [25, 50, 100],
+        allowedSorts: {
+          name_asc: "name_asc",
+          name_desc: "name_desc",
+          deadline_asc: "deadline_asc",
+          deadline_desc: "deadline_desc",
+          commitments_asc: "commitments_asc",
+          commitments_desc: "commitments_desc",
+          escrow_asc: "escrow_asc",
+          escrow_desc: "escrow_desc",
+          created_asc: "created_asc",
+          created_desc: "created_desc",
+          state_asc: "state_asc",
+          state_desc: "state_desc",
+        },
+        defaultSort: "created_desc",
+      });
+
+      const publishStatus = typeof req.query.publishStatus === "string" ? req.query.publishStatus.trim() : undefined;
+      const prerequisite = typeof req.query.prerequisite === "string" ? req.query.prerequisite.trim() : undefined;
+
+      const conditions: any[] = [];
+      if (listQuery.params.status) {
+        conditions.push(eq(campaigns.state, listQuery.params.status as any));
+      }
+      if (publishStatus && publishStatus !== "all") {
+        conditions.push(eq(campaigns.adminPublishStatus, publishStatus as any));
+      }
+      if (listQuery.params.search) {
+        const searchValue = `%${listQuery.params.search}%`;
+        conditions.push(
+          or(
+            ilike(campaigns.title, searchValue),
+            ilike(campaigns.id, searchValue)
+          )
+        );
+      }
+      if (prerequisite === "ready") {
+        conditions.push(
+          and(
+            isNotNull(campaigns.productId),
+            isNotNull(campaigns.supplierId),
+            isNotNull(campaigns.consolidationPointId)
+          )
+        );
+      } else if (prerequisite === "incomplete") {
+        conditions.push(
+          or(
+            isNull(campaigns.productId),
+            isNull(campaigns.supplierId),
+            isNull(campaigns.consolidationPointId)
+          )
+        );
+      }
+      if (listQuery.params.createdFrom) {
+        const fromDate = new Date(listQuery.params.createdFrom);
+        fromDate.setHours(0, 0, 0, 0);
+        conditions.push(gte(campaigns.createdAt, fromDate));
+      }
+      if (listQuery.params.createdTo) {
+        const toDate = new Date(listQuery.params.createdTo);
+        toDate.setHours(23, 59, 59, 999);
+        conditions.push(lte(campaigns.createdAt, toDate));
+      }
+
+      const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+      const participantCountExpr = sql<number>`count(${commitments.id})::int`;
+      const totalCommittedExpr = sql<number>`coalesce(sum(${commitments.amount}::numeric), 0)::float`;
+
+      const [countResult] = await db
+        .select({ count: countDistinct(campaigns.id) })
+        .from(campaigns)
+        .leftJoin(commitments, eq(commitments.campaignId, campaigns.id))
+        .leftJoin(products, eq(campaigns.productId, products.id))
+        .leftJoin(suppliers, eq(campaigns.supplierId, suppliers.id))
+        .leftJoin(consolidationPoints, eq(campaigns.consolidationPointId, consolidationPoints.id))
+        .where(whereClause);
+
+      let orderByClause = [desc(campaigns.createdAt), desc(campaigns.id)];
+      switch (listQuery.sortApplied) {
+        case "name_asc":
+          orderByClause = [asc(campaigns.title), desc(campaigns.createdAt), desc(campaigns.id)];
+          break;
+        case "name_desc":
+          orderByClause = [desc(campaigns.title), desc(campaigns.createdAt), desc(campaigns.id)];
+          break;
+        case "deadline_asc":
+          orderByClause = [asc(campaigns.aggregationDeadline), desc(campaigns.createdAt), desc(campaigns.id)];
+          break;
+        case "deadline_desc":
+          orderByClause = [desc(campaigns.aggregationDeadline), desc(campaigns.createdAt), desc(campaigns.id)];
+          break;
+        case "commitments_asc":
+          orderByClause = [asc(participantCountExpr), desc(campaigns.createdAt), desc(campaigns.id)];
+          break;
+        case "commitments_desc":
+          orderByClause = [desc(participantCountExpr), desc(campaigns.createdAt), desc(campaigns.id)];
+          break;
+        case "escrow_asc":
+          orderByClause = [asc(totalCommittedExpr), desc(campaigns.createdAt), desc(campaigns.id)];
+          break;
+        case "escrow_desc":
+          orderByClause = [desc(totalCommittedExpr), desc(campaigns.createdAt), desc(campaigns.id)];
+          break;
+        case "created_asc":
+          orderByClause = [asc(campaigns.createdAt), desc(campaigns.id)];
+          break;
+        case "state_asc":
+          orderByClause = [asc(campaigns.state), desc(campaigns.createdAt), desc(campaigns.id)];
+          break;
+        case "state_desc":
+          orderByClause = [desc(campaigns.state), desc(campaigns.createdAt), desc(campaigns.id)];
+          break;
+        default:
+          break;
+      }
+
+      const rows = await db
+        .select({
+          id: campaigns.id,
+          title: campaigns.title,
+          state: campaigns.state,
+          adminPublishStatus: campaigns.adminPublishStatus,
+          aggregationDeadline: campaigns.aggregationDeadline,
+          participantCount: participantCountExpr,
+          totalCommitted: totalCommittedExpr,
+          targetAmount: campaigns.targetAmount,
+          createdAt: campaigns.createdAt,
+          productId: campaigns.productId,
+          supplierId: campaigns.supplierId,
+          consolidationPointId: campaigns.consolidationPointId,
+          productName: products.name,
+          supplierName: suppliers.name,
+          consolidationPointName: consolidationPoints.name,
+          productStatus: products.status,
+          supplierStatus: suppliers.status,
+          consolidationPointStatus: consolidationPoints.status,
+        })
+        .from(campaigns)
+        .leftJoin(commitments, eq(commitments.campaignId, campaigns.id))
+        .leftJoin(products, eq(campaigns.productId, products.id))
+        .leftJoin(suppliers, eq(campaigns.supplierId, suppliers.id))
+        .leftJoin(consolidationPoints, eq(campaigns.consolidationPointId, consolidationPoints.id))
+        .where(whereClause)
+        .groupBy(
+          campaigns.id,
+          campaigns.title,
+          campaigns.state,
+          campaigns.adminPublishStatus,
+          campaigns.aggregationDeadline,
+          campaigns.targetAmount,
+          campaigns.createdAt,
+          campaigns.productId,
+          campaigns.supplierId,
+          campaigns.consolidationPointId,
+          products.name,
+          suppliers.name,
+          consolidationPoints.name,
+          products.status,
+          suppliers.status,
+          consolidationPoints.status
+        )
+        .orderBy(...orderByClause)
+        .limit(listQuery.limit)
+        .offset(listQuery.offset);
+
+      res.json({
+        rows,
+        total: countResult?.count || 0,
+        page: listQuery.params.page,
+        pageSize: listQuery.params.pageSize,
+        sortApplied: listQuery.sortApplied,
+        filtersApplied: {
+          ...listQuery.filtersApplied,
+          publishStatus: publishStatus || null,
+          prerequisite: prerequisite || null,
+        },
+      });
     } catch (error) {
       console.error("Error fetching admin campaigns:", error);
       res.status(500).json({ error: "Failed to fetch campaigns" });
@@ -2855,8 +4647,89 @@ export async function registerRoutes(
   // Protected by requireAdminAuth middleware
   app.get("/api/admin/logs", requireAdminAuth, async (req, res) => {
     try {
-      const logs = await storage.getAdminActionLogs(100);
-      res.json(logs);
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
+
+      const listQuery = parseListQuery(req.query as Record<string, string | string[] | undefined>, {
+        defaultPageSize: 25,
+        allowedPageSizes: [25, 50, 100],
+        allowedSorts: {
+          created_desc: "created_desc",
+        },
+        defaultSort: "created_desc",
+      });
+
+      const campaignId = typeof req.query.campaignId === "string" ? req.query.campaignId.trim() : undefined;
+      const commitmentId = typeof req.query.commitmentId === "string" ? req.query.commitmentId.trim() : undefined;
+
+      const conditions: any[] = [];
+      if (campaignId) {
+        conditions.push(eq(adminActionLogs.campaignId, campaignId));
+      }
+      if (commitmentId) {
+        conditions.push(eq(adminActionLogs.commitmentId, commitmentId));
+      }
+      if (listQuery.params.search) {
+        const searchValue = `%${listQuery.params.search}%`;
+        conditions.push(
+          or(
+            ilike(adminActionLogs.adminUsername, searchValue),
+            ilike(adminActionLogs.action, searchValue),
+            ilike(adminActionLogs.reason, searchValue),
+            ilike(adminActionLogs.campaignId, searchValue),
+            ilike(adminActionLogs.commitmentId, searchValue)
+          )
+        );
+      }
+      if (listQuery.params.createdFrom) {
+        const fromDate = new Date(listQuery.params.createdFrom);
+        fromDate.setHours(0, 0, 0, 0);
+        conditions.push(gte(adminActionLogs.createdAt, fromDate));
+      }
+      if (listQuery.params.createdTo) {
+        const toDate = new Date(listQuery.params.createdTo);
+        toDate.setHours(23, 59, 59, 999);
+        conditions.push(lte(adminActionLogs.createdAt, toDate));
+      }
+
+      const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+      const [countResult] = await db
+        .select({ count: count() })
+        .from(adminActionLogs)
+        .where(whereClause);
+
+      const rows = await db
+        .select({
+          id: adminActionLogs.id,
+          adminUsername: adminActionLogs.adminUsername,
+          action: adminActionLogs.action,
+          previousState: adminActionLogs.previousState,
+          newState: adminActionLogs.newState,
+          reason: adminActionLogs.reason,
+          campaignId: adminActionLogs.campaignId,
+          commitmentId: adminActionLogs.commitmentId,
+          createdAt: adminActionLogs.createdAt,
+        })
+        .from(adminActionLogs)
+        .where(whereClause)
+        .orderBy(desc(adminActionLogs.createdAt), desc(adminActionLogs.id))
+        .limit(listQuery.limit)
+        .offset(listQuery.offset);
+
+      res.json({
+        rows,
+        total: countResult?.count || 0,
+        page: listQuery.params.page,
+        pageSize: listQuery.params.pageSize,
+        sortApplied: listQuery.sortApplied,
+        filtersApplied: {
+          ...listQuery.filtersApplied,
+          campaignId: campaignId || null,
+          commitmentId: commitmentId || null,
+        },
+      });
     } catch (error) {
       console.error("Error fetching admin logs:", error);
       res.status(500).json({ error: "Failed to fetch admin logs" });
@@ -2962,33 +4835,95 @@ export async function registerRoutes(
   // Admin: Refunds list (REFUND type entries from escrow ledger)
   app.get("/api/admin/refunds", requireAdminAuth, async (req, res) => {
     try {
-      const refundEntries = await db
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
+
+      const listQuery = parseListQuery(req.query as Record<string, string | string[] | undefined>, {
+        defaultPageSize: 25,
+        allowedPageSizes: [25, 50, 100],
+        allowedSorts: {
+          created_desc: "created_desc",
+          amount_desc: "amount_desc",
+        },
+        defaultSort: "created_desc",
+      });
+
+      const reason = typeof req.query.reason === "string" ? req.query.reason.trim() : undefined;
+      const commitmentCode = typeof req.query.commitmentCode === "string" ? req.query.commitmentCode.trim() : undefined;
+      const campaignId = typeof req.query.campaignId === "string" ? req.query.campaignId.trim() : undefined;
+
+      const conditions: any[] = [eq(escrowLedger.entryType, "REFUND")];
+      if (reason) {
+        conditions.push(eq(escrowLedger.reason, reason));
+      }
+      if (campaignId) {
+        conditions.push(eq(escrowLedger.campaignId, campaignId));
+      }
+      if (listQuery.params.search) {
+        const searchValue = `%${listQuery.params.search}%`;
+        conditions.push(
+          or(
+            ilike(commitments.referenceNumber, searchValue),
+            ilike(campaigns.title, searchValue)
+          )
+        );
+      }
+      if (commitmentCode) {
+        conditions.push(ilike(commitments.referenceNumber, `%${commitmentCode}%`));
+      }
+      if (listQuery.params.createdFrom) {
+        const fromDate = new Date(listQuery.params.createdFrom);
+        fromDate.setHours(0, 0, 0, 0);
+        conditions.push(gte(escrowLedger.createdAt, fromDate));
+      }
+      if (listQuery.params.createdTo) {
+        const toDate = new Date(listQuery.params.createdTo);
+        toDate.setHours(23, 59, 59, 999);
+        conditions.push(lte(escrowLedger.createdAt, toDate));
+      }
+
+      const whereClause = and(...conditions);
+
+      const [countResult] = await db
+        .select({ count: count() })
+        .from(escrowLedger)
+        .leftJoin(commitments, eq(escrowLedger.commitmentId, commitments.id))
+        .leftJoin(campaigns, eq(escrowLedger.campaignId, campaigns.id))
+        .where(whereClause);
+
+      const rows = await db
         .select({
           id: escrowLedger.id,
           amount: escrowLedger.amount,
           createdAt: escrowLedger.createdAt,
           reason: escrowLedger.reason,
-          actor: escrowLedger.actor,
-          commitmentId: escrowLedger.commitmentId,
+          status: sql`'COMPLETED'`.as("status"),
           campaignId: escrowLedger.campaignId,
+          campaignName: campaigns.title,
+          commitmentCode: commitments.referenceNumber,
         })
         .from(escrowLedger)
-        .where(eq(escrowLedger.entryType, "REFUND"))
-        .orderBy(desc(escrowLedger.createdAt))
-        .limit(200);
+        .leftJoin(commitments, eq(escrowLedger.commitmentId, commitments.id))
+        .leftJoin(campaigns, eq(escrowLedger.campaignId, campaigns.id))
+        .where(whereClause)
+        .orderBy(desc(escrowLedger.createdAt), desc(escrowLedger.id))
+        .limit(listQuery.limit)
+        .offset(listQuery.offset);
 
-      const result = await Promise.all(refundEntries.map(async (entry) => {
-        const commitment = await db.select().from(commitments).where(eq(commitments.id, entry.commitmentId)).limit(1);
-        const campaign = await db.select().from(campaigns).where(eq(campaigns.id, entry.campaignId)).limit(1);
-        return {
-          ...entry,
-          status: "COMPLETED",
-          commitmentCode: commitment[0]?.referenceNumber || "Unknown",
-          campaignName: campaign[0]?.title || "Unknown",
-        };
-      }));
-
-      res.json(result);
+      res.json({
+        rows,
+        total: countResult?.count || 0,
+        page: listQuery.params.page,
+        pageSize: listQuery.params.pageSize,
+        sortApplied: listQuery.sortApplied,
+        filtersApplied: {
+          ...listQuery.filtersApplied,
+          reason: reason || null,
+          campaignId: campaignId || null,
+          commitmentCode: commitmentCode || null,
+        },
+      });
     } catch (error) {
       console.error("Error fetching admin refunds:", error);
       res.status(500).json({ error: "Failed to fetch refunds" });
@@ -2998,7 +4933,29 @@ export async function registerRoutes(
   // Admin: Refund Plans list (placeholder - returns empty for now)
   app.get("/api/admin/refund-plans", requireAdminAuth, async (req, res) => {
     try {
-      res.json([]);
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
+
+      const listQuery = parseListQuery(req.query as Record<string, string | string[] | undefined>, {
+        defaultPageSize: 25,
+        allowedPageSizes: [25, 50, 100],
+        allowedSorts: {
+          created_desc: "created_desc",
+        },
+        defaultSort: "created_desc",
+      });
+
+      res.json({
+        rows: [],
+        total: 0,
+        page: listQuery.params.page,
+        pageSize: listQuery.params.pageSize,
+        sortApplied: listQuery.sortApplied,
+        filtersApplied: {
+          ...listQuery.filtersApplied,
+        },
+      });
     } catch (error) {
       console.error("Error fetching refund plans:", error);
       res.status(500).json({ error: "Failed to fetch refund plans" });
@@ -3008,6 +4965,38 @@ export async function registerRoutes(
   // Admin: Refund Plan detail (placeholder)
   app.get("/api/admin/refund-plans/:id", requireAdminAuth, async (req, res) => {
     res.status(404).json({ error: "Refund plan not found" });
+  });
+
+  // Admin: Exceptions list (placeholder HVLC contract)
+  app.get("/api/admin/exceptions", requireAdminAuth, async (req, res) => {
+    try {
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
+
+      const listQuery = parseListQuery(req.query as Record<string, string | string[] | undefined>, {
+        defaultPageSize: 25,
+        allowedPageSizes: [25, 50, 100],
+        allowedSorts: {
+          created_desc: "created_desc",
+        },
+        defaultSort: "created_desc",
+      });
+
+      res.json({
+        rows: [],
+        total: 0,
+        page: listQuery.params.page,
+        pageSize: listQuery.params.pageSize,
+        sortApplied: listQuery.sortApplied,
+        filtersApplied: {
+          ...listQuery.filtersApplied,
+        },
+      });
+    } catch (error) {
+      console.error("Error fetching admin exceptions:", error);
+      res.status(500).json({ error: "Failed to fetch exceptions" });
+    }
   });
 
   // Admin: Refund Plan rows (placeholder)
@@ -3151,20 +5140,108 @@ DEF67890,admin_manual_refund,"Participant requested early refund"`;
   // Admin: Deliveries list
   app.get("/api/admin/deliveries", requireAdminAuth, async (req, res) => {
     try {
-      const campaignsInFulfillment = await storage.getCampaignsWithStats();
-      const deliveries = campaignsInFulfillment
-        .filter(c => c.state === "FULFILLMENT" || c.state === "RELEASED")
-        .map(c => ({
-          campaignId: c.id,
-          campaignName: c.title,
-          deliveryStrategy: "Standard",
-          status: c.state === "RELEASED" ? "COMPLETED" : "IN_PROGRESS",
-          lastUpdateAt: c.supplierAcceptedAt || null,
-          nextUpdateDueAt: null,
-          isOverdue: false,
-        }));
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
 
-      res.json(deliveries);
+      const listQuery = parseListQuery(req.query as Record<string, string | string[] | undefined>, {
+        defaultPageSize: 25,
+        allowedPageSizes: [25, 50, 100],
+        allowedSorts: {
+          campaign_asc: "campaign_asc",
+          campaign_desc: "campaign_desc",
+          status_asc: "status_asc",
+          status_desc: "status_desc",
+          last_update_asc: "last_update_asc",
+          last_update_desc: "last_update_desc",
+        },
+        defaultSort: "campaign_asc",
+      });
+
+      const overdueOnly = typeof req.query.overdueOnly === "string" ? req.query.overdueOnly === "true" : false;
+
+      const conditions: any[] = [
+        or(eq(campaigns.state, "FULFILLMENT"), eq(campaigns.state, "RELEASED")),
+      ];
+      if (listQuery.params.search) {
+        const searchValue = `%${listQuery.params.search}%`;
+        conditions.push(ilike(campaigns.title, searchValue));
+      }
+      if (listQuery.params.status === "COMPLETED") {
+        conditions.push(eq(campaigns.state, "RELEASED"));
+      } else if (listQuery.params.status === "IN_PROGRESS") {
+        conditions.push(eq(campaigns.state, "FULFILLMENT"));
+      }
+      if (overdueOnly) {
+        conditions.push(sql`false`);
+      }
+      if (listQuery.params.createdFrom) {
+        const fromDate = new Date(listQuery.params.createdFrom);
+        fromDate.setHours(0, 0, 0, 0);
+        conditions.push(gte(campaigns.createdAt, fromDate));
+      }
+      if (listQuery.params.createdTo) {
+        const toDate = new Date(listQuery.params.createdTo);
+        toDate.setHours(23, 59, 59, 999);
+        conditions.push(lte(campaigns.createdAt, toDate));
+      }
+
+      const whereClause = and(...conditions);
+      const statusExpr = sql<string>`case when ${campaigns.state} = 'RELEASED' then 'COMPLETED' else 'IN_PROGRESS' end`;
+
+      const [countResult] = await db
+        .select({ count: count() })
+        .from(campaigns)
+        .where(whereClause);
+
+      let orderByClause = [asc(campaigns.title), desc(campaigns.createdAt), desc(campaigns.id)];
+      switch (listQuery.sortApplied) {
+        case "campaign_desc":
+          orderByClause = [desc(campaigns.title), desc(campaigns.createdAt), desc(campaigns.id)];
+          break;
+        case "status_asc":
+          orderByClause = [asc(statusExpr), desc(campaigns.createdAt), desc(campaigns.id)];
+          break;
+        case "status_desc":
+          orderByClause = [desc(statusExpr), desc(campaigns.createdAt), desc(campaigns.id)];
+          break;
+        case "last_update_asc":
+          orderByClause = [asc(campaigns.supplierAcceptedAt), desc(campaigns.createdAt), desc(campaigns.id)];
+          break;
+        case "last_update_desc":
+          orderByClause = [desc(campaigns.supplierAcceptedAt), desc(campaigns.createdAt), desc(campaigns.id)];
+          break;
+        default:
+          break;
+      }
+
+      const rows = await db
+        .select({
+          campaignId: campaigns.id,
+          campaignName: campaigns.title,
+          deliveryStrategy: sql<string>`'Standard'`.as("deliveryStrategy"),
+          status: statusExpr.as("status"),
+          lastUpdateAt: campaigns.supplierAcceptedAt,
+          nextUpdateDueAt: sql<string | null>`null`.as("nextUpdateDueAt"),
+          isOverdue: sql<boolean>`false`.as("isOverdue"),
+        })
+        .from(campaigns)
+        .where(whereClause)
+        .orderBy(...orderByClause)
+        .limit(listQuery.limit)
+        .offset(listQuery.offset);
+
+      res.json({
+        rows,
+        total: countResult?.count || 0,
+        page: listQuery.params.page,
+        pageSize: listQuery.params.pageSize,
+        sortApplied: listQuery.sortApplied,
+        filtersApplied: {
+          ...listQuery.filtersApplied,
+          overdueOnly: overdueOnly ? "true" : null,
+        },
+      });
     } catch (error) {
       console.error("Error fetching deliveries:", error);
       res.status(500).json({ error: "Failed to fetch deliveries" });
