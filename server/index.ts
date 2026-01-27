@@ -63,11 +63,14 @@ app.use(cors({
     const allowedOrigins = [
       "https://alpmera.com",
       "https://www.alpmera.com",
-      // Development
+      // Development - Vite dev server ports
       "http://localhost:5173",
       "http://localhost:5174",
       "http://127.0.0.1:5173",
       "http://127.0.0.1:5174",
+      // Development - Server port (when client and server run on same port)
+      "http://localhost:5000",
+      "http://127.0.0.1:5000",
     ];
 
     if (allowedOrigins.includes(origin)) {
