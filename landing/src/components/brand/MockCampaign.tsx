@@ -5,9 +5,11 @@ interface MockCampaignProps {
 }
 
 export function MockCampaign({ isMobile }: MockCampaignProps) {
-  const progress = 68; // 68% progress
-  const participants = 127;
-  const target = 200;
+  // Using range-based progress (51-74% = "Gaining Momentum")
+  // Internal progress for visual bar only (not displayed as exact %)
+  const visualProgress = 68;
+  const stageName = "Gaining Momentum";
+  const stageMessage = "approaching 75%";
   const daysLeft = 5;
 
   return (
@@ -66,36 +68,34 @@ export function MockCampaign({ isMobile }: MockCampaignProps) {
           </div>
         </div>
 
-        {/* Progress section */}
+        {/* Progress section with stage-based display */}
         <div className="mb-6">
-          <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center justify-between mb-3">
             <span className="text-sm font-semibold text-alpmera-text font-body">
-              Campaign Progress
+              Campaign Status
             </span>
-            <span className="text-sm font-bold text-alpmera-accent font-display">
-              {progress}%
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-alpmera-accent/10 border border-alpmera-accent/20">
+              <span className="w-2 h-2 rounded-full bg-alpmera-accent animate-pulse" />
+              <span className="text-xs font-bold text-alpmera-accent font-display">
+                {stageName}
+              </span>
             </span>
           </div>
 
-          {/* Progress bar */}
-          <div className="relative h-3 bg-alpmera-secondary rounded-full overflow-hidden border border-alpmera-border">
+          {/* Progress bar (visual only, no exact %) */}
+          <div className="relative h-3 bg-alpmera-secondary rounded-full overflow-hidden border border-alpmera-border mb-2">
             <motion.div
               initial={{ width: 0 }}
-              whileInView={{ width: `${progress}%` }}
+              whileInView={{ width: `${visualProgress}%` }}
               viewport={{ once: true }}
               transition={{ duration: 1, delay: 0.3, ease: [0.22, 1, 0.36, 1] }}
               className="absolute inset-y-0 left-0 bg-gradient-to-r from-alpmera-success to-alpmera-accent rounded-full"
             />
           </div>
 
-          <div className="flex items-center justify-between mt-2">
-            <span className="text-xs text-alpmera-text-light font-body">
-              <strong className="text-alpmera-text">{participants}</strong> participants
-            </span>
-            <span className="text-xs text-alpmera-text-light font-body">
-              Target: <strong className="text-alpmera-text">{target}</strong>
-            </span>
-          </div>
+          <p className="text-xs text-alpmera-text-light font-body text-center">
+            {stageMessage}
+          </p>
         </div>
 
         {/* Key details grid */}
@@ -133,10 +133,10 @@ export function MockCampaign({ isMobile }: MockCampaignProps) {
           </svg>
           <div className="flex-1">
             <p className="text-sm font-semibold text-alpmera-success mb-1 font-body">
-              On track for success
+              Building momentum
             </p>
             <p className="text-xs text-alpmera-text-light font-body leading-relaxed">
-              If 200 participants join by deadline, campaign moves to procurement. Otherwise, all funds are refunded.
+              Campaign reaches goal → moves to procurement. Doesn't reach goal → full refunds to all participants.
             </p>
           </div>
         </div>
