@@ -12,6 +12,7 @@ import { z } from "zod";
 
 // Different validation for test vs non-test environments
 const isTestEnv = process.env.NODE_ENV === "test";
+const isDevelopment = process.env.NODE_ENV === "development";
 
 const envSchema = z.object({
   // Database
@@ -20,8 +21,17 @@ const envSchema = z.object({
 
   // Security (CRITICAL - Constitutional Article II §2.1: Trust as Primary Asset)
   // In test mode, these can have defaults for automated testing
+  // In development, SESSION_SECRET gets a fallback with warning
+  // In production, SESSION_SECRET is REQUIRED (no fallback)
   SESSION_SECRET: isTestEnv
     ? z.string().default("test-session-secret-min-32-chars-long-for-testing")
+    : isDevelopment
+    ? z.string().min(32).default("dev-session-secret-CHANGE-IN-PROD-min32chars").transform(val => {
+        if (val === "dev-session-secret-CHANGE-IN-PROD-min32chars") {
+          console.warn("⚠️  WARNING: Using default SESSION_SECRET in development. Set SESSION_SECRET in .env for production.");
+        }
+        return val;
+      })
     : z.string().min(32, "SESSION_SECRET must be at least 32 characters for security"),
   ADMIN_API_KEY: isTestEnv
     ? z.string().default("test-admin-key")
@@ -29,13 +39,17 @@ const envSchema = z.object({
 
   // Application
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
-  APP_ENV: z.enum(["dev", "staging", "production"]).optional(),
+  // Accept both "prod" and "production" for backward compatibility
+  APP_ENV: z.enum(["dev", "staging", "prod", "production"]).optional().transform(val =>
+    val === "prod" ? "production" : val
+  ),
   PORT: z.string().regex(/^\d+$/).transform(Number).default("5000"),
 
   // Optional integrations
   GIT_COMMIT: z.string().optional(),
   GOOGLE_CLOUD_PROJECT: z.string().optional(),
   GOOGLE_CLOUD_KEYFILE: z.string().optional(),
+  ANONYMOUS_ID_SECRET: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
