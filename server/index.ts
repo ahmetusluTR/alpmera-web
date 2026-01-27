@@ -8,8 +8,14 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import pg from "pg";
 import { pool } from "./db";
-import { log } from "./log";
+import { log, traceMiddleware } from "./log";
 import { startSkuVerifier } from "./workers/sku-verifier";
+import { validateEnv } from "./env";
+
+// CRITICAL: Validate environment before starting server
+// Constitutional Article IX - Prevents undefined system states
+// Elite Backend Standard - Crash immediately if configuration is invalid
+validateEnv();
 
 const app = express();
 const httpServer = createServer(app);
@@ -38,6 +44,11 @@ app.use(
 );
 
 app.use(express.urlencoded({ extended: false }));
+
+// Distributed tracing - Add trace ID to every request
+// Constitutional Article III §3.1: No Silent Transitions - enables full request tracing
+// Elite Backend Standard: Every request MUST carry a trace ID
+app.use(traceMiddleware);
 
 // Cookie parser - MUST be before routes for req.cookies access
 app.use(cookieParser());
@@ -78,7 +89,9 @@ app.use(
       tableName: "session",
       createTableIfMissing: true,
     }),
-    secret: process.env.SESSION_SECRET || "alpmera-admin-session-secret",
+    // SECURITY: No fallback allowed - validateEnv() ensures SESSION_SECRET exists
+    // Constitutional Article II §2.1: Trust as Primary Asset
+    secret: process.env.SESSION_SECRET!,
     resave: false,
     saveUninitialized: false,
     cookie: {

@@ -32,8 +32,10 @@ import {
   productRequestEvents,
   skuVerificationJobs,
   users,
-  userProfiles
+  userProfiles,
+  creditLedgerEntries
 } from "@shared/schema";
+import { log } from "./log";
 import { z } from "zod";
 import { and, asc, count, countDistinct, desc, eq, gte, ilike, isNotNull, isNull, lte, or, sql, sum } from "drizzle-orm";
 import { createHash, randomBytes, randomInt, randomUUID } from "crypto";
@@ -3448,9 +3450,19 @@ export async function registerRoutes(
   // ============================================
 
   // Admin: Transition campaign state
+  // IDEMPOTENCY: Requires x-idempotency-key header to prevent duplicate state transitions
   // Protected by requireAdminAuth middleware - all access is logged
+  // Constitutional enforcement: Article IV §4.2 - No campaign exists without escrow integrity
   app.post("/api/admin/campaigns/:id/transition", requireAdminAuth, async (req, res) => {
     try {
+      // IDEMPOTENCY CHECK: Require x-idempotency-key header
+      const idempotencyKey = req.headers["x-idempotency-key"] as string | undefined;
+      if (!idempotencyKey) {
+        return res.status(400).json({
+          error: "x-idempotency-key header is required for state transition operations"
+        });
+      }
+
       // Validate request
       const parseResult = transitionRequestSchema.safeParse(req.body);
       if (!parseResult.success) {
@@ -3461,6 +3473,33 @@ export async function registerRoutes(
       }
 
       const { newState, reason, adminUsername } = parseResult.data;
+
+      const scope = `transition:${req.params.id}`;
+      const requestHash = computeRequestHash(req.body);
+
+      // Check if this key+scope already processed
+      const existingKey = await storage.getIdempotencyKey(idempotencyKey, scope);
+      if (existingKey) {
+        if (existingKey.response) {
+          try {
+            const responseStr = typeof existingKey.response === 'string'
+              ? existingKey.response
+              : JSON.stringify(existingKey.response);
+            const cachedResponse = JSON.parse(responseStr);
+            return res.status(200).json({ ...cachedResponse, _idempotent: true });
+          } catch {
+            return res.status(200).json({ message: "Transition already processed", _idempotent: true });
+          }
+        }
+        // Key exists but no cached response - wait or fail
+        return res.status(409).json({
+          error: "This request is currently being processed. Please try again later.",
+          _idempotent: true
+        });
+      }
+
+      // Store idempotency key before processing
+      await storage.storeIdempotencyKey(idempotencyKey, scope, requestHash, null);
 
       const campaign = await storage.getCampaign(req.params.id);
       if (!campaign) {
@@ -3488,6 +3527,9 @@ export async function registerRoutes(
         newState: newState,
         reason,
       });
+
+      // Store successful response in idempotency key
+      await storage.updateIdempotencyKeyResponse(idempotencyKey, scope, updated);
 
       res.json(updated);
     } catch (error) {
@@ -5024,7 +5066,7 @@ export async function registerRoutes(
         { reason_code: "commitment_cancelled", label: "Commitment Cancelled", description: "Refund due to commitment cancellation", scope: "commitment", active: "true" },
         { reason_code: "duplicate_commitment", label: "Duplicate Commitment", description: "Refund for duplicate or erroneous commitment", scope: "commitment", active: "true" },
         { reason_code: "participant_request", label: "Participant Request", description: "Refund requested by participant before campaign deadline", scope: "commitment", active: "true" },
-        { reason_code: "supplier_unable_to_fulfill", label: "Supplier Unable to Fulfill", description: "Refund when supplier cannot fulfill the order", scope: "campaign", active: "true" },
+        { reason_code: "supplier_unable_to_fulfill", label: "Supplier Unable to Fulfill", description: "Refund when supplier cannot fulfill the commitment", scope: "campaign", active: "true" },
         { reason_code: "quality_issue", label: "Quality Issue", description: "Refund due to product quality problems", scope: "commitment", active: "true" },
         { reason_code: "delivery_failure", label: "Delivery Failure", description: "Refund due to failed delivery", scope: "commitment", active: "true" },
       ];
@@ -5350,7 +5392,7 @@ DEF67890,admin_manual_refund,"Participant requested early refund"`;
   });
 
   // Admin: Export direct supplier manifest (SUPPLIER_DIRECT strategy)
-  // Includes per-recipient delivery data for direct-to-customer fulfillment
+  // Includes per-recipient delivery data for direct-to-participant fulfillment
   // Eligibility: commitments that are LOCKED (not refunded/released)
   // SECURITY: Only allowed for SUPPLIER_DIRECT strategy campaigns
   app.get("/api/admin/campaigns/:id/fulfillment/export/direct", requireAdminAuth, async (req, res) => {
