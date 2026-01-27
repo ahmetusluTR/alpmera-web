@@ -58,7 +58,37 @@ const SAFETY_CARDS = [
   },
 ];
 
-const FAQS = [
+// Core FAQ - Most critical questions (always visible)
+const CORE_FAQS = [
+  {
+    q: "What happens if a campaign doesn't succeed?",
+    a: "100% of your escrowed funds are automatically refunded to your original payment method. No fees, no delays. Failed campaigns cost you nothing.",
+    category: "refunds" as const,
+  },
+  {
+    q: "Who holds my money during a campaign?",
+    a: "A US-regulated escrow provider (details provided upon registration). Alpmera never touches participant funds. We only coordinate the campaign.",
+    category: "trust" as const,
+  },
+  {
+    q: "Can I leave a campaign after joining?",
+    a: "Before the campaign reaches its target: yes, full refund. After target is met and supplier accepts: no, your commitment is binding to protect the collective agreement.",
+    category: "refunds" as const,
+  },
+  {
+    q: "Why Seattle only for beta launch?",
+    a: "We're testing our trust model with a concentrated geographic area first. If Seattle campaigns succeed with zero trust issues, we'll expand to other cities in Q3 2026.",
+    category: "general" as const,
+  },
+  {
+    q: "How do you make money if you're not the seller?",
+    a: "We charge suppliers a small coordination fee (typically 8-12% of campaign value). Participants pay the collective price with no markup. Our incentive aligns with successful, trust-preserving campaigns.",
+    category: "general" as const,
+  },
+];
+
+// Additional FAQ - Secondary questions (collapsible)
+const ADDITIONAL_FAQS = [
   {
     q: "What is Alpmera?",
     a: "Alpmera is a trust-first collective buying platform for consumers. Instead of buying alone, people join campaigns, commit funds to escrow, and move forward together only when the campaign makes sense for everyone. Alpmera is not a store and does not sell products.",
@@ -69,24 +99,12 @@ const FAQS = [
     a: "Traditional stores sell products immediately. Alpmera works differently: You join a campaign instead of buying instantly. Your funds stay protected in escrow. The campaign moves forward only if enough people participate. If it doesn't work out, you get a refund. There is no fake urgency, no flash sales, and no pressure to act fast.",
   },
   {
-    q: "Who is Alpmera for?",
-    a: "Alpmera is for individual consumers, including: People willing to wait a bit for a better collective outcome, families, neighborhoods, parent groups, and hobbyist communities. Alpmera is not designed for businesses, wholesale buyers, or corporate procurement groups.",
-  },
-  {
     q: "What does it mean to \"join a campaign\"?",
     a: "Joining a campaign means you're signaling real interest in a product by committing funds to escrow. You're not placing an order. You're not buying yet. You're saying: \"If enough people join, I'm in.\"",
   },
   {
-    q: "Is my money safe?",
-    a: "Yes. Your funds are held in escrow-style protection and are not released unless the campaign succeeds under its stated rules. If the campaign fails or is canceled, your funds are refunded according to the campaign terms.",
-  },
-  {
     q: "When does Alpmera release funds?",
     a: "Funds are released only after: The campaign reaches its target, the supplier accepts the campaign, and all conditions are clearly met. Until then, your funds remain protected.",
-  },
-  {
-    q: "What happens if a campaign doesn't succeed?",
-    a: "If a campaign fails: It is clearly closed, no fulfillment happens, and your committed funds are refunded. Failure is treated as a normal outcome, not a problem to hide.",
   },
   {
     q: "Who handles delivery and fulfillment?",
@@ -97,10 +115,6 @@ const FAQS = [
     a: "Because Alpmera prioritizes fairness and protection over speed. Collective buying takes time: People need time to join, campaigns need to reach viability, and suppliers need clear, confirmed demand. If speed matters more than protection, traditional stores may be a better fit.",
   },
   {
-    q: "Are there any guarantees?",
-    a: "No implicit guarantees. Every campaign clearly states: What needs to happen for success, what happens if it fails, and expected timelines (with uncertainty explained). Alpmera avoids overpromising and always explains the worst-case scenario upfront.",
-  },
-  {
     q: "Does Alpmera offer discounts?",
     a: "Alpmera does not offer discounts. Better pricing comes from real collective demand, not promotions or coupons. Pricing is the outcome of people joining together — not a marketing trick.",
   },
@@ -109,16 +123,8 @@ const FAQS = [
     a: "Because Alpmera is built around a simple rule: Trust is created by clear rules and honest outcomes — especially when things fail. No hidden steps, no silent changes, no pressure tactics. If something changes, you're informed. If something fails, you're protected.",
   },
   {
-    q: "Is Alpmera live yet?",
-    a: "Alpmera is currently launching in controlled phases. Early users help shape: Which campaigns run, how the experience improves, and what categories expand next. You're joining early — thoughtfully, not experimentally.",
-  },
-  {
     q: "What happens after I join a campaign?",
     a: "You'll be able to: Track campaign progress, see clear status updates, and know exactly what happens next. No guessing. No chasing updates.",
-  },
-  {
-    q: "Can I leave a campaign after joining?",
-    a: "Each campaign clearly explains: When exits are allowed, what refund options apply, and what happens if timelines change. You always see your options — nothing is hidden.",
   },
   {
     q: "Is Alpmera right for me?",
@@ -126,14 +132,11 @@ const FAQS = [
   },
 ];
 
+// Skeptic FAQ - Condensed to 6 most important
 const SKEPTIC_FAQS = [
   {
     q: "Is this just another group-buying site?",
     a: "No. Most group-buying sites: Push urgency, advertise \"deals\", shift risk to users, and disappear when things fail. Alpmera does the opposite. There is no pressure, no fake scarcity, and no obligation to move forward unless the campaign works for everyone.",
-  },
-  {
-    q: "What's the catch?",
-    a: "There isn't one. Alpmera is deliberately slower and more structured than typical online shopping. That tradeoff exists to protect participants. If a campaign doesn't make sense, it simply doesn't move forward — and your funds don't either.",
   },
   {
     q: "How do I know you won't run off with the money?",
@@ -144,32 +147,12 @@ const SKEPTIC_FAQS = [
     a: "Alpmera treats failure as a first-class outcome. If something goes wrong: The campaign is clearly marked as failed, you are informed, and refunds are issued according to the rules. There's no \"we're looking into it\" limbo and no reframing failure as a delay.",
   },
   {
-    q: "Why don't you just guarantee outcomes?",
-    a: "Because guarantees that depend on things outside Alpmera's control would be misleading. Instead, Alpmera guarantees: Clear rules, protected funds, honest communication, and defined exit paths. Promises are explicit, not implied.",
-  },
-  {
     q: "Why should I trust a new platform?",
     a: "You shouldn't trust blindly. That's why Alpmera doesn't ask you to. Instead, it shows you: What happens in success, what happens in failure, when funds move, and when they don't. Trust is earned through predictable behavior, not brand claims.",
   },
   {
-    q: "Why can't suppliers deal with users directly?",
-    a: "Because direct supplier–user relationships create confusion and risk. Alpmera stays in the middle so that: Rules stay consistent, accountability is clear, and users aren't pressured or negotiated with. You deal with Alpmera. Alpmera deals with suppliers.",
-  },
-  {
     q: "How is this not just crowdfunding?",
     a: "Crowdfunding typically: Promises future delivery, shifts risk to backers, treats delays as normal, and has weak refund protections. Alpmera: Uses real demand (not speculation), holds funds until conditions are met, treats failure as a valid outcome, and makes refunds part of the system. The goal is coordination, not hope.",
-  },
-  {
-    q: "What if I change my mind after joining?",
-    a: "Every campaign explains: When you can exit, what refund rules apply, and what happens if timelines change. There are no hidden penalties or surprise lock-ins.",
-  },
-  {
-    q: "Why not just buy from a store instead?",
-    a: "You should — if speed and convenience are your top priorities. Alpmera is for people who value: Transparency, protection, collective leverage, and fair outcomes. It's a different tool for a different mindset.",
-  },
-  {
-    q: "Is Alpmera trying to become a marketplace later?",
-    a: "Not in Phase 1 or Phase 2. Right now, Alpmera is intentionally operating as a controlled operator to: Protect users, learn from real campaigns, and build trust before scale. Any future evolution will be explicit and documented — not silently introduced.",
   },
   {
     q: "What would make Alpmera fail as a platform?",
@@ -179,6 +162,7 @@ const SKEPTIC_FAQS = [
 
 export default function LandingHome() {
   const [email, setEmail] = useState("");
+  const [zipCode, setZipCode] = useState("");
   const [interests, setInterests] = useState<string[]>([]);
   const [notes, setNotes] = useState("");
   const [notify, setNotify] = useState(false);
@@ -188,6 +172,7 @@ export default function LandingHome() {
   const [error, setError] = useState("");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [showAdditionalFAQ, setShowAdditionalFAQ] = useState(false);
 
   // Detect mobile for performance optimization
   useEffect(() => {
@@ -224,6 +209,7 @@ export default function LandingHome() {
     try {
       const result = await subscribeToEarlyList({
         email,
+        zipCode,
         interestTags: interests,
         notes,
         recommendationOptIn: notify,
@@ -348,11 +334,11 @@ export default function LandingHome() {
                 <p className="text-sm uppercase tracking-[0.25em] text-alpmera-text-light font-body">
                   ALPMERA
                 </p>
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-alpmera-accent/30 bg-alpmera-secondary px-3 py-1 text-xs font-medium text-alpmera-text">
-                  <svg className="w-3 h-3 text-alpmera-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-alpmera-accent/30 bg-amber-100 px-3 py-1 text-xs font-medium text-amber-900">
+                  <svg className="w-3 h-3 text-amber-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
-                  Platform launching soon
+                  Beta Launch: Q2 2026 • Seattle Only
                 </span>
               </div>
 
@@ -422,10 +408,10 @@ export default function LandingHome() {
                 </div>
                 <div className="space-y-3">
                   <p className="text-white font-semibold font-body text-lg">
-                    Launching Seattle 2026
+                    Beta Launch Q2 2026 – Seattle Only
                   </p>
                   <p className="text-white/80 font-body text-sm">
-                    Join the early list for campaign notifications
+                    Phase 1 proof-of-concept. Expanding Q3 2026 if trust model succeeds.
                   </p>
                 </div>
               </motion.div>
@@ -773,24 +759,160 @@ export default function LandingHome() {
           </div>
         </section>
 
-        {/* Demand CTA */}
-        <section className="px-4 py-8 sm:px-6 sm:py-10 bg-alpmera-primary text-white">
-          <div className="mx-auto max-w-6xl text-center">
-            <h2 className="text-2xl md:text-3xl font-normal font-display">
-              What should we unlock next?
-            </h2>
-            <p className="mt-4 text-sm text-white/90 font-body max-w-2xl mx-auto">
-              Tell us what products you'd like to see on Alpmera. Your suggestions shape our first campaigns.
-            </p>
-            <a
-              href="/demand"
-              className="mt-6 inline-flex items-center gap-2 rounded-md bg-alpmera-accent px-6 py-3 text-sm font-semibold text-alpmera-text hover:bg-opacity-90 transition-all focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-alpmera-primary"
+        {/* Demand CTA - Now More Prominent */}
+        <section className="px-4 py-12 sm:px-6 sm:py-16 bg-gradient-to-br from-alpmera-accent to-alpmera-primary text-white">
+          <div className="mx-auto max-w-6xl">
+            <div className="text-center max-w-3xl mx-auto">
+              <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-white/10 flex items-center justify-center backdrop-blur-sm">
+                <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                </svg>
+              </div>
+              <h2 className="text-3xl md:text-4xl font-normal font-display mb-4">
+                Shape Our First Campaigns
+              </h2>
+              <p className="text-lg text-white/90 font-body mb-8">
+                Suggest products you'd join a campaign for. Most-requested items become our beta campaigns. Your voice directly influences what we launch.
+              </p>
+              <a
+                href="/demand"
+                className="inline-flex items-center gap-3 rounded-lg bg-white px-8 py-4 text-base font-semibold text-alpmera-primary hover:bg-opacity-95 transition-all focus:outline-none focus:ring-4 focus:ring-white/30 shadow-xl"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Suggest a Product Now
+              </a>
+            </div>
+          </div>
+        </section>
+
+        {/* Security & Compliance Section */}
+        <section className="px-4 py-12 sm:px-6 md:py-16 bg-slate-900 text-white">
+          <div className="mx-auto max-w-6xl">
+            <motion.div
+              initial={{ opacity: 0, y: isMobile ? 0 : 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, margin: "-100px" }}
+              transition={
+                isMobile
+                  ? { duration: 0.3 }
+                  : { duration: 0.5, ease: [0.22, 1, 0.36, 1] }
+              }
+              className="text-center mb-12"
             >
-              Suggest a Product
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </a>
+              <h2 className="text-3xl font-normal font-display mb-3">
+                Security & Compliance
+              </h2>
+              <p className="text-slate-300 max-w-2xl mx-auto font-body">
+                Your funds are protected by regulated financial infrastructure, not promises.
+              </p>
+            </motion.div>
+
+            <div className="grid md:grid-cols-3 gap-8">
+              <motion.div
+                initial={{ opacity: 0, y: isMobile ? 0 : 30 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, margin: "-100px" }}
+                transition={
+                  isMobile
+                    ? { duration: 0.3 }
+                    : { duration: 0.5, delay: 0.1, ease: [0.22, 1, 0.36, 1] }
+                }
+                className="text-center space-y-4 p-6 rounded-lg bg-slate-800/50 border border-slate-700"
+              >
+                <div className="w-16 h-16 mx-auto rounded-full bg-blue-500/10 flex items-center justify-center">
+                  <svg className="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                </div>
+                <h3 className="text-xl font-semibold font-display">Regulated Escrow Partner</h3>
+                <p className="text-sm text-slate-300 font-body">
+                  Funds held by US-regulated escrow provider. Details provided upon registration. Alpmera never touches participant funds.
+                </p>
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0, y: isMobile ? 0 : 30 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, margin: "-100px" }}
+                transition={
+                  isMobile
+                    ? { duration: 0.3, delay: 0.1 }
+                    : { duration: 0.5, delay: 0.2, ease: [0.22, 1, 0.36, 1] }
+                }
+                className="text-center space-y-4 p-6 rounded-lg bg-slate-800/50 border border-slate-700"
+              >
+                <div className="w-16 h-16 mx-auto rounded-full bg-green-500/10 flex items-center justify-center">
+                  <svg className="w-8 h-8 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                  </svg>
+                </div>
+                <h3 className="text-xl font-semibold font-display">Bank-Level Security</h3>
+                <p className="text-sm text-slate-300 font-body">
+                  256-bit encryption, PCI compliance, and third-party security audits. Your data is protected to industry standards.
+                </p>
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0, y: isMobile ? 0 : 30 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, margin: "-100px" }}
+                transition={
+                  isMobile
+                    ? { duration: 0.3, delay: 0.2 }
+                    : { duration: 0.5, delay: 0.3, ease: [0.22, 1, 0.36, 1] }
+                }
+                className="text-center space-y-4 p-6 rounded-lg bg-slate-800/50 border border-slate-700"
+              >
+                <div className="w-16 h-16 mx-auto rounded-full bg-purple-500/10 flex items-center justify-center">
+                  <svg className="w-8 h-8 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                  </svg>
+                </div>
+                <h3 className="text-xl font-semibold font-display">Transparent Conditions</h3>
+                <p className="text-sm text-slate-300 font-body">
+                  Every campaign has explicit rules. Funds release only when conditions are met. No ambiguity, no surprises.
+                </p>
+              </motion.div>
+            </div>
+          </div>
+        </section>
+
+        {/* Founder's Note */}
+        <section className="px-4 py-12 sm:px-6 md:py-16 bg-amber-50 border-y border-amber-100">
+          <div className="mx-auto max-w-3xl">
+            <motion.div
+              initial={{ opacity: 0, y: isMobile ? 0 : 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, margin: "-100px" }}
+              transition={
+                isMobile
+                  ? { duration: 0.3 }
+                  : { duration: 0.5, ease: [0.22, 1, 0.36, 1] }
+              }
+              className="space-y-6"
+            >
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-amber-200 border border-amber-300">
+                <span className="text-sm font-semibold text-amber-900 font-body">Why Alpmera Exists</span>
+              </div>
+
+              <h2 className="text-3xl font-normal font-display text-alpmera-primary">
+                Why We Built This
+              </h2>
+
+              <div className="space-y-4 text-slate-700 font-body leading-relaxed">
+                <p className="text-lg">
+                  Flash sale sites create artificial urgency. Subscription boxes lock people into unwanted commitments. Group-buy platforms collapse without refunding members. The pattern is clear: platforms optimized for their own revenue, not participant trust.
+                </p>
+                <p className="text-lg">
+                  Alpmera is different by design. We're a coordination platform, not a retailer. Escrow protection is constitutional, not optional. Campaign rules are explicit, not hidden. We succeed only when participants get exactly what they committed to—no surprises, no trust debt.
+                </p>
+                <p className="text-lg">
+                  This is collective buying rebuilt from first principles. Seattle is our proof-of-concept. If we get trust right here, we expand. If not, we stop.
+                </p>
+              </div>
+            </motion.div>
           </div>
         </section>
 
@@ -798,36 +920,70 @@ export default function LandingHome() {
         <section className="px-4 py-8 sm:px-6 sm:py-12" id="early-access">
           <div className="mx-auto max-w-6xl">
             <div className="rounded-lg border-2 border-alpmera-success/20 bg-alpmera-secondary p-6 md:p-12">
-              <h2 className="text-3xl font-normal font-display text-alpmera-primary">
-                Join the early list
-              </h2>
-              <p className="mt-3 text-sm text-alpmera-text-light font-body">
-                We're launching campaigns in the Seattle area first. Sign up to receive notifications when campaigns become available.
-              </p>
+              <div className="flex items-start justify-between gap-4 mb-4">
+                <div>
+                  <h2 className="text-3xl font-normal font-display text-alpmera-primary">
+                    Join the early list
+                  </h2>
+                  <p className="mt-3 text-sm text-alpmera-text-light font-body">
+                    We're launching campaigns in the Seattle area first. Sign up to receive notifications when campaigns become available.
+                  </p>
+                </div>
+                <div className="shrink-0 bg-alpmera-accent text-white px-5 py-3 rounded-lg text-center">
+                  <div className="text-sm font-semibold font-body">Early participants receive campaign credits</div>
+                </div>
+              </div>
 
               <form onSubmit={handleSubmit} className="mt-8 space-y-6">
                 <HoneypotField value={honeypot} onChange={setHoneypot} />
 
-                <div>
-                  <label htmlFor="email" className="block text-sm font-semibold text-alpmera-text font-body">
-                    Email address <span className="text-alpmera-danger">*</span>
-                  </label>
-                  <input
-                    type="email"
-                    id="email"
-                    name="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="your@email.com"
-                    inputMode="email"
-                    autoComplete="email"
-                    autoCapitalize="none"
-                    spellCheck="false"
-                    className="mt-2 w-full rounded-md border border-alpmera-border bg-white px-4 py-3 text-sm font-body focus:border-alpmera-primary focus:outline-none focus:ring-1 focus:ring-alpmera-primary"
-                    required
-                    aria-required="true"
-                    aria-describedby="email-hint"
-                  />
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label htmlFor="email" className="block text-sm font-semibold text-alpmera-text font-body">
+                      Email address <span className="text-alpmera-danger">*</span>
+                    </label>
+                    <input
+                      type="email"
+                      id="email"
+                      name="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="your@email.com"
+                      inputMode="email"
+                      autoComplete="email"
+                      autoCapitalize="none"
+                      spellCheck="false"
+                      className="mt-2 w-full rounded-md border border-alpmera-border bg-white px-4 py-3 text-sm font-body focus:border-alpmera-primary focus:outline-none focus:ring-1 focus:ring-alpmera-primary"
+                      required
+                      aria-required="true"
+                      aria-describedby="email-hint"
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="zipcode" className="block text-sm font-semibold text-alpmera-text font-body">
+                      Zip Code <span className="text-alpmera-danger">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      id="zipcode"
+                      name="zipcode"
+                      value={zipCode}
+                      onChange={(e) => setZipCode(e.target.value)}
+                      placeholder="98101"
+                      maxLength={5}
+                      pattern="[0-9]{5}"
+                      inputMode="numeric"
+                      autoComplete="postal-code"
+                      className="mt-2 w-full rounded-md border border-alpmera-border bg-white px-4 py-3 text-sm font-body focus:border-alpmera-primary focus:outline-none focus:ring-1 focus:ring-alpmera-primary"
+                      required
+                      aria-required="true"
+                      aria-describedby="zipcode-hint"
+                    />
+                    <p id="zipcode-hint" className="mt-1 text-xs text-alpmera-text-light font-body">
+                      We'll notify you when campaigns launch in your area
+                    </p>
+                  </div>
                 </div>
 
                 <div>
@@ -972,25 +1128,42 @@ export default function LandingHome() {
 
             {/* Main FAQ */}
             <div className="space-y-4">
-              {FAQS.map((faq, index) => {
-                // Auto-categorize based on keywords
-                let category: "trust" | "how-it-works" | "refunds" | "general" = "general";
-                if (faq.q.includes("money") || faq.q.includes("safe") || faq.q.includes("trust") || faq.q.includes("funds")) category = "trust";
-                if (faq.q.includes("join") || faq.q.includes("works") || faq.q.includes("handles")) category = "how-it-works";
-                if (faq.q.includes("refund") || faq.q.includes("fail") || faq.q.includes("doesn't succeed")) category = "refunds";
+              {CORE_FAQS.map((faq, index) => (
+                <FAQItem
+                  key={faq.q}
+                  question={faq.q}
+                  answer={faq.a}
+                  index={index}
+                  isMobile={isMobile}
+                  category={faq.category}
+                />
+              ))}
 
-                return (
-                  <FAQItem
-                    key={faq.q}
-                    question={faq.q}
-                    answer={faq.a}
-                    index={index}
-                    isMobile={isMobile}
-                    category={category}
-                  />
-                );
-              })}
+              {showAdditionalFAQ && ADDITIONAL_FAQS.map((faq, index) => (
+                <FAQItem
+                  key={faq.q}
+                  question={faq.q}
+                  answer={faq.a}
+                  index={CORE_FAQS.length + index}
+                  isMobile={isMobile}
+                  category={faq.category}
+                />
+              ))}
             </div>
+
+            {!showAdditionalFAQ && (
+              <div className="mt-6 text-center">
+                <button
+                  onClick={() => setShowAdditionalFAQ(true)}
+                  className="inline-flex items-center gap-2 px-6 py-3 text-sm font-medium text-alpmera-primary border border-alpmera-accent/30 rounded-md hover:bg-alpmera-accent/5 transition-colors"
+                >
+                  Show More Questions
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+              </div>
+            )}
 
             {/* Skeptic FAQ */}
             <div className="mt-16">
@@ -1025,6 +1198,31 @@ export default function LandingHome() {
           </div>
         </section>
       </main>
+
+      {/* Phase 1 Context Banner */}
+      <section className="bg-gradient-to-r from-amber-50 to-orange-50 border-y border-amber-200">
+        <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6">
+          <div className="text-center">
+            <div className="inline-flex items-center gap-2 mb-4 text-amber-900">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span className="font-semibold text-sm font-body">Phase 1: Seattle Proof-of-Concept</span>
+            </div>
+            <h3 className="text-2xl font-normal font-display text-alpmera-primary mb-3">
+              We're Starting Small. Intentionally.
+            </h3>
+            <p className="text-alpmera-text-light font-body max-w-2xl mx-auto">
+              Alpmera launches Q2 2026 in the Seattle metropolitan area only. This isn't a limited beta—it's a deliberate
+              foundation phase. We're proving the trust model works in one market before expanding. If participants get
+              value and suppliers deliver reliably, we'll expand to additional cities in Q3 2026.
+            </p>
+            <p className="mt-4 text-sm text-amber-900 font-medium font-body">
+              Early participants shape how Alpmera grows. Your feedback matters.
+            </p>
+          </div>
+        </div>
+      </section>
 
       {/* Footer */}
       <footer className="border-t border-border bg-background px-4 py-6 sm:px-6 sm:py-8">

@@ -27,7 +27,14 @@
       "Bash(dir:*)",
       "Bash(npx tsc:*)",
       "Bash(git restore:*)",
-      "Bash(git pull:*)"
+      "Bash(git pull:*)",
+      "Skill(maestro:backend-design)",
+      "Skill(maestro:backend-design:*)",
+      "Bash(npm --version:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(taskkill:*)",
+      "Bash(curl:*)"
     ]
   }
 }
