@@ -39,6 +39,7 @@ import AdminSuppliers from "@/pages/admin/suppliers";
 import AdminSupplierDetail from "@/pages/admin/supplier-detail";
 import AdminSupplierBulk from "@/pages/admin/supplier-bulk";
 import AdminProductRequests from "@/pages/admin/product-requests";
+import AdminLandingSubscribers from "@/pages/admin/landing-subscribers";
 import AdminConsolidationPoints from "@/pages/admin/consolidation-points";
 import AdminConsolidationDetail from "@/pages/admin/consolidation-detail";
 import AdminCredits from "@/pages/admin/credits";
@@ -307,6 +308,13 @@ function Router() {
       <Route path="/admin/product-requests">
         <AdminGuard>
           <AdminProductRequests />
+        </AdminGuard>
+      </Route>
+
+      {/* Admin Landing Subscribers */}
+      <Route path="/admin/landing-subscribers">
+        <AdminGuard>
+          <AdminLandingSubscribers />
         </AdminGuard>
       </Route>
 

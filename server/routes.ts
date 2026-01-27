@@ -493,7 +493,7 @@ export async function registerRoutes(
         .map((tag: string) => tag.trim())
         .filter((tag: string) => tag.length > 0);
 
-      const invalidTags = normalizedTags.filter((tag) => !LANDING_ALLOWED_TAGS.includes(tag));
+      const invalidTags = normalizedTags.filter((tag: string) => !LANDING_ALLOWED_TAGS.includes(tag));
       if (invalidTags.length > 0) {
         return res.status(400).json({ error: "Invalid interest tags" });
       }
@@ -1476,6 +1476,233 @@ export async function registerRoutes(
     } catch (error) {
       console.error("[ADMIN] Error getting commitment detail:", error);
       res.status(500).json({ error: "Failed to get commitment detail" });
+    }
+  });
+
+  // ============================================
+  // ADMIN LANDING SUBSCRIBERS MANAGEMENT (Protected)
+  // ============================================
+
+  // LIST LANDING SUBSCRIBERS (search + pagination + filters)
+  app.get("/api/admin/landing-subscribers", requireAdminAuth, async (req, res) => {
+    try {
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
+
+      const listQuery = parseListQuery(req.query as Record<string, string | string[] | undefined>, {
+        defaultPageSize: 25,
+        allowedPageSizes: [25, 50, 100],
+        allowedSorts: {
+          created_desc: "created_desc",
+          created_asc: "created_asc",
+        },
+        defaultSort: "created_desc",
+      });
+
+      // Build filters
+      const conditions: any[] = [];
+
+      // Search by email
+      if (listQuery.params.search) {
+        const searchValue = `%${listQuery.params.search}%`;
+        conditions.push(ilike(landingSubscribers.email, searchValue));
+      }
+
+      // Filter by status
+      const statusFilter = req.query.status as string;
+      if (statusFilter && statusFilter !== "all") {
+        conditions.push(eq(landingSubscribers.status, statusFilter));
+      }
+
+      // Filter by interest tags (contains any of the selected tags)
+      const tagsFilter = req.query.tags as string;
+      if (tagsFilter && tagsFilter !== "all") {
+        const tags = tagsFilter.split(",");
+        // Check if any of the selected tags are in the subscriber's interestTags array
+        conditions.push(
+          or(...tags.map(tag =>
+            sql`${landingSubscribers.interestTags} @> ARRAY[${tag}]::text[]`
+          ))
+        );
+      }
+
+      // Filter by recommendation opt-in
+      const optInFilter = req.query.optIn as string;
+      if (optInFilter === "true") {
+        conditions.push(eq(landingSubscribers.recommendationOptIn, true));
+      } else if (optInFilter === "false") {
+        conditions.push(eq(landingSubscribers.recommendationOptIn, false));
+      }
+
+      // Date range filters
+      if (listQuery.params.createdFrom) {
+        const fromDate = new Date(listQuery.params.createdFrom);
+        fromDate.setHours(0, 0, 0, 0);
+        conditions.push(gte(landingSubscribers.createdAt, fromDate));
+      }
+      if (listQuery.params.createdTo) {
+        const toDate = new Date(listQuery.params.createdTo);
+        toDate.setHours(23, 59, 59, 999);
+        conditions.push(lte(landingSubscribers.createdAt, toDate));
+      }
+
+      const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+      // Get total count
+      const [countResult] = await db
+        .select({ count: count() })
+        .from(landingSubscribers)
+        .where(whereClause);
+
+      // Get paginated results
+      const orderByClause = listQuery.sortApplied === "created_asc"
+        ? [asc(landingSubscribers.createdAt)]
+        : [desc(landingSubscribers.createdAt)];
+
+      const rows = await db
+        .select()
+        .from(landingSubscribers)
+        .where(whereClause)
+        .orderBy(...orderByClause)
+        .limit(listQuery.limit)
+        .offset(listQuery.offset);
+
+      res.json({
+        rows,
+        total: countResult?.count || 0,
+        page: listQuery.params.page,
+        pageSize: listQuery.params.pageSize,
+        sortApplied: listQuery.sortApplied,
+        filtersApplied: {
+          search: listQuery.params.search || null,
+          status: statusFilter || null,
+          tags: tagsFilter || null,
+          optIn: optInFilter || null,
+          createdFrom: listQuery.params.createdFrom || null,
+          createdTo: listQuery.params.createdTo || null,
+        },
+      });
+    } catch (error) {
+      console.error("[ADMIN] Error listing landing subscribers:", error);
+      res.status(500).json({ error: "Failed to list landing subscribers" });
+    }
+  });
+
+  // GET LANDING SUBSCRIBER DETAIL
+  app.get("/api/admin/landing-subscribers/:id", requireAdminAuth, async (req, res) => {
+    try {
+      const [subscriber] = await db
+        .select()
+        .from(landingSubscribers)
+        .where(eq(landingSubscribers.id, req.params.id));
+
+      if (!subscriber) {
+        return res.status(404).json({ error: "Subscriber not found" });
+      }
+
+      res.json(subscriber);
+    } catch (error) {
+      console.error("[ADMIN] Error getting landing subscriber:", error);
+      res.status(500).json({ error: "Failed to get landing subscriber" });
+    }
+  });
+
+  // UPDATE LANDING SUBSCRIBER (status, notes)
+  app.patch("/api/admin/landing-subscribers/:id", requireAdminAuth, async (req, res) => {
+    try {
+      const updates: any = {};
+
+      // Allow updating status (active/unsubscribed)
+      if (req.body.status !== undefined) {
+        updates.status = req.body.status;
+        if (req.body.status === "unsubscribed" && !req.body.unsubscribedAt) {
+          updates.unsubscribedAt = new Date();
+        }
+      }
+
+      // Allow updating notes
+      if (req.body.notes !== undefined) {
+        updates.notes = req.body.notes;
+      }
+
+      if (Object.keys(updates).length === 0) {
+        return res.status(400).json({ error: "No valid fields to update" });
+      }
+
+      const [updated] = await db
+        .update(landingSubscribers)
+        .set(updates)
+        .where(eq(landingSubscribers.id, req.params.id))
+        .returning();
+
+      if (!updated) {
+        return res.status(404).json({ error: "Subscriber not found" });
+      }
+
+      res.json(updated);
+    } catch (error) {
+      console.error("[ADMIN] Error updating landing subscriber:", error);
+      res.status(500).json({ error: "Failed to update landing subscriber" });
+    }
+  });
+
+  // EXPORT LANDING SUBSCRIBERS TO CSV
+  app.get("/api/admin/landing-subscribers/export/csv", requireAdminAuth, async (req, res) => {
+    try {
+      // Use same filters as list endpoint
+      const conditions: any[] = [];
+
+      const statusFilter = req.query.status as string;
+      if (statusFilter && statusFilter !== "all") {
+        conditions.push(eq(landingSubscribers.status, statusFilter));
+      }
+
+      const tagsFilter = req.query.tags as string;
+      if (tagsFilter && tagsFilter !== "all") {
+        const tags = tagsFilter.split(",");
+        conditions.push(
+          or(...tags.map(tag =>
+            sql`${landingSubscribers.interestTags} @> ARRAY[${tag}]::text[]`
+          ))
+        );
+      }
+
+      const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+      const subscribers = await db
+        .select()
+        .from(landingSubscribers)
+        .where(whereClause)
+        .orderBy(desc(landingSubscribers.createdAt));
+
+      // Generate CSV
+      const headers = ["Email", "Status", "Interest Tags", "Recommendation Opt-In", "Source", "Notes", "Created At", "Unsubscribed At"];
+      const rows = [headers.join(",")];
+
+      for (const sub of subscribers) {
+        const row = [
+          `"${sub.email}"`,
+          `"${sub.status}"`,
+          `"${sub.interestTags?.join(", ") || ""}"`,
+          `"${sub.recommendationOptIn ? "Yes" : "No"}"`,
+          `"${sub.source}"`,
+          `"${(sub.notes || "").replace(/"/g, '""')}"`,
+          `"${sub.createdAt.toISOString()}"`,
+          `"${sub.unsubscribedAt ? sub.unsubscribedAt.toISOString() : ""}"`,
+        ];
+        rows.push(row.join(","));
+      }
+
+      const csv = rows.join("\n");
+      const filename = `landing-subscribers-${new Date().toISOString().split('T')[0]}.csv`;
+
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.send(csv);
+    } catch (error) {
+      console.error("[ADMIN] Error exporting landing subscribers:", error);
+      res.status(500).json({ error: "Failed to export landing subscribers" });
     }
   });
 
@@ -3499,7 +3726,12 @@ export async function registerRoutes(
       }
 
       // Store idempotency key before processing
-      await storage.storeIdempotencyKey(idempotencyKey, scope, requestHash, null);
+      const createdKey = await storage.createIdempotencyKey({
+        key: idempotencyKey,
+        scope,
+        requestHash,
+        response: null,
+      });
 
       const campaign = await storage.getCampaign(req.params.id);
       if (!campaign) {
@@ -3529,7 +3761,7 @@ export async function registerRoutes(
       });
 
       // Store successful response in idempotency key
-      await storage.updateIdempotencyKeyResponse(idempotencyKey, scope, updated);
+      await storage.updateIdempotencyKeyResponse(createdKey.id, JSON.stringify(updated));
 
       res.json(updated);
     } catch (error) {

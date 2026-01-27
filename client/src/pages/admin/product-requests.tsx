@@ -220,6 +220,8 @@ export default function AdminProductRequests() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="min-w-[300px]">Product</TableHead>
+                  <TableHead className="w-[200px]">Email</TableHead>
+                  <TableHead className="w-[150px]">City/State</TableHead>
                   <TableHead className="w-[120px]">SKU</TableHead>
                   <TableHead className="w-[80px]">Votes</TableHead>
                   <TableHead className="w-[120px]">Status</TableHead>
@@ -231,21 +233,21 @@ export default function AdminProductRequests() {
               <TableBody>
                 {isLoading && (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8">
+                    <TableCell colSpan={9} className="text-center py-8">
                       Loading...
                     </TableCell>
                   </TableRow>
                 )}
                 {error && (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-red-500">
+                    <TableCell colSpan={9} className="text-center py-8 text-red-500">
                       Error loading data
                     </TableCell>
                   </TableRow>
                 )}
                 {data?.items.length === 0 && !isLoading && (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                       No product requests found
                     </TableCell>
                   </TableRow>
@@ -256,6 +258,22 @@ export default function AdminProductRequests() {
                       <div className="font-medium break-words">{request.productName}</div>
                       <div className="text-sm text-muted-foreground">
                         {request.category || "No category"}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-sm break-all">
+                        {request.submitterEmail || (
+                          <span className="text-muted-foreground italic">Not provided</span>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-sm">
+                        {request.submitterCity && request.submitterState
+                          ? `${request.submitterCity}, ${request.submitterState}`
+                          : request.submitterCity || request.submitterState || (
+                              <span className="text-muted-foreground italic">Not provided</span>
+                            )}
                       </div>
                     </TableCell>
                     <TableCell>
