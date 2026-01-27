@@ -1,4 +1,24 @@
 @layer utilities {
+  /* Performance optimization: Add will-change hints for animated elements */
+  .animate-optimized {
+    will-change: transform, opacity;
+  }
+
+  /* Remove will-change after animation completes to free GPU memory */
+  .animate-completed {
+    will-change: auto;
+  }
+
+  /* Hide scrollbar but keep functionality */
+  .scrollbar-hide {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;  /* Chrome, Safari, Opera */
+  }
+
   .hover-lift {
     @apply hover:-translate-y-1 hover:shadow-calm transition-transform duration-[var(--motion-standard)];
   }
@@ -38,5 +58,235 @@
 
   .shadow-brand {
     box-shadow: 0 12px 36px -20px hsl(220 20% 20% / 0.3);
+  }
+
+  /* Mobile Navigation Animations */
+  .mobile-nav-panel {
+    animation: slideInRight 0.3s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  }
+
+  .mobile-nav-backdrop {
+    animation: fadeIn 0.3s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  }
+
+  @keyframes slideInRight {
+    from {
+      transform: translateX(100%);
+    }
+    to {
+      transform: translateX(0);
+    }
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  /* Touch Target Utilities (WCAG 2.5.5 - min 44x44px) */
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  .btn-touch {
+    @apply px-4 py-3 min-h-[44px] inline-flex items-center justify-center;
+  }
+
+  /* Larger checkboxes/radios for mobile */
+  @media (max-width: 768px) {
+    input[type="checkbox"],
+    input[type="radio"] {
+      width: 20px;
+      height: 20px;
+    }
+  }
+
+  /* Prevent overflow utilities */
+  .no-overflow {
+    overflow-x: hidden;
+    max-width: 100%;
+  }
+
+  /* Long text handling */
+  .break-words {
+    overflow-wrap: break-word;
+    word-wrap: break-word;
+    hyphens: auto;
+  }
+
+  /* Ensure images don't overflow */
+  img,
+  video,
+  svg {
+    max-width: 100%;
+    height: auto;
+  }
+
+  /* Rim Lighting & Depth - "Apple-finish" quality */
+  .card-elevated {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.1),  /* Top rim light */
+      0 1px 2px rgba(27, 77, 62, 0.05),         /* Close shadow */
+      0 4px 6px rgba(27, 77, 62, 0.07),         /* Mid shadow */
+      0 10px 15px rgba(27, 77, 62, 0.1);        /* Far shadow */
+  }
+
+  .card-elevated:hover {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.15),  /* Brighter rim on hover */
+      0 2px 4px rgba(27, 77, 62, 0.06),
+      0 8px 12px rgba(27, 77, 62, 0.09),
+      0 16px 24px rgba(27, 77, 62, 0.12);
+  }
+
+  /* Button depth effects */
+  .btn-depth {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.2),   /* Top rim */
+      inset 0 -1px 0 rgba(0, 0, 0, 0.1),        /* Bottom edge */
+      0 2px 4px rgba(27, 77, 62, 0.1),
+      0 4px 8px rgba(27, 77, 62, 0.15);
+    transform: translateY(0);
+    transition: all 0.15s cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  .btn-depth:active {
+    box-shadow:
+      inset 0 2px 4px rgba(0, 0, 0, 0.15),      /* Pressed inward */
+      0 1px 2px rgba(27, 77, 62, 0.1);
+    transform: translateY(1px);
+  }
+
+  /* Subtle inner glow for special elements */
+  .inner-glow {
+    box-shadow: inset 0 0 20px rgba(201, 169, 98, 0.1);
+  }
+
+  /* Glassmorphism - Premium frosted glass effect */
+  .glass-header {
+    background: rgba(250, 250, 248, 0.85);
+    backdrop-filter: blur(12px) saturate(1.2);
+    -webkit-backdrop-filter: blur(12px) saturate(1.2);
+    border-bottom: 1px solid rgba(212, 207, 199, 0.3);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.5),  /* Top rim light */
+      0 1px 3px rgba(27, 77, 62, 0.05),          /* Subtle depth shadow */
+      0 4px 12px rgba(27, 77, 62, 0.08);         /* Softer far shadow */
+  }
+
+  /* Mobile-optimized glassmorphism (less intensive blur) */
+  @media (max-width: 768px) {
+    .glass-header {
+      backdrop-filter: blur(8px) saturate(1.1);
+      -webkit-backdrop-filter: blur(8px) saturate(1.1);
+    }
+
+    /* Reduce expensive effects on mobile for better performance */
+    .card-elevated {
+      /* Simplify shadow stack on mobile */
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.1),
+        0 2px 4px rgba(27, 77, 62, 0.08),
+        0 8px 12px rgba(27, 77, 62, 0.1);
+    }
+
+    .card-elevated:hover {
+      /* No hover effect on mobile (touch doesn't have hover state) */
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.1),
+        0 2px 4px rgba(27, 77, 62, 0.08),
+        0 8px 12px rgba(27, 77, 62, 0.1);
+    }
+
+    /* Simplify button depth on mobile */
+    .btn-depth {
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.2),
+        0 2px 4px rgba(27, 77, 62, 0.1);
+    }
+
+    .btn-depth:active {
+      box-shadow:
+        inset 0 1px 2px rgba(0, 0, 0, 0.1),
+        0 1px 2px rgba(27, 77, 62, 0.1);
+      transform: translateY(0.5px);
+    }
+
+    /* Disable noise texture on low-end mobile devices */
+    @media (max-width: 480px) {
+      .card-texture {
+        background-image: none;
+      }
+    }
+  }
+
+  /* GPU acceleration hints for smooth animations */
+  .card-elevated,
+  .btn-depth,
+  .glass-header {
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    perspective: 1000px;
+  }
+
+  /* Optimize animations for 60fps */
+  @media (hover: hover) and (pointer: fine) {
+    /* Only apply expensive hover effects on devices with precise pointers */
+    .hover-lift {
+      transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+  }
+
+  /* Gradient text effects for emphasis */
+  .gradient-text-primary {
+    background: linear-gradient(135deg, hsl(var(--alpmera-primary)) 0%, hsl(var(--alpmera-accent)) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .gradient-text-success {
+    background: linear-gradient(135deg, hsl(var(--alpmera-success)) 0%, hsl(var(--alpmera-accent)) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .gradient-text-accent {
+    background: linear-gradient(135deg, hsl(var(--alpmera-accent)) 0%, hsl(var(--alpmera-primary)) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* Animated gradient text (subtle shimmer effect) */
+  .gradient-text-animated {
+    background: linear-gradient(
+      90deg,
+      hsl(var(--alpmera-primary)) 0%,
+      hsl(var(--alpmera-accent)) 25%,
+      hsl(var(--alpmera-primary)) 50%,
+      hsl(var(--alpmera-accent)) 75%,
+      hsl(var(--alpmera-primary)) 100%
+    );
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    animation: gradient-shift 8s ease infinite;
+  }
+
+  @keyframes gradient-shift {
+    0%, 100% {
+      background-position: 0% center;
+    }
+    50% {
+      background-position: 100% center;
+    }
   }
 }

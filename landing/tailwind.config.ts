@@ -31,8 +31,8 @@ module.exports = {
       },
       fontFamily: {
         display: ["Libre Baskerville", "Georgia", "serif"],
-        body: ["Inter", "system-ui", "sans-serif"],
-        sans: ["var(--brand-font-sans)", "Inter", "sans-serif"],
+        body: ["Work Sans", "system-ui", "sans-serif"],
+        sans: ["var(--brand-font-sans)", "Work Sans", "sans-serif"],
         serif: ["var(--brand-font-serif)", "Libre Baskerville", "serif"],
       },
       boxShadow: {

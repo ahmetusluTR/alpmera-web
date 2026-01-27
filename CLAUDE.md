@@ -94,6 +94,20 @@ npm start                      # Start production server
 
 ---
 
+### Security Checks
+1) PreSecurity Check
+before completing any task, run these checks:
+- scan for hardcoded secrets, API keys, passwords
+- check for SQL injection, shell injection, path traversal
+- verify all user inputs are validated
+- run the test suite
+- check for type errors
+2) write 20 unit tests designed to break this function
+3) find every security vulnerability in this file. think like a pentester
+4) generate 50 edge cases: null, empty strings, negative numbers, unicode, arrays with 100k items
+5) audit this entire codebase for leaked secrets
+
+
 ## 🏗️ Architecture Overview
 
 ### Monorepo Structure

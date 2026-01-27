@@ -1,4 +1,5 @@
-import { ButtonHTMLAttributes, ReactNode } from "react";
+import { ButtonHTMLAttributes, ReactNode, useState, useEffect } from "react";
+import { motion } from "framer-motion";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   children: ReactNode;
@@ -14,15 +15,42 @@ export default function Button({
   className = "",
   ...props
 }: ButtonProps) {
-  const baseClasses = "inline-flex items-center justify-center rounded-lg px-6 py-3 text-sm font-semibold transition-all duration-[var(--motion-standard)] focus-visible:ring-2 focus-visible:ring-alpmera-accent focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed";
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    // Check if screen is mobile-sized (less than 768px)
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
+  }, []);
+
+  const baseClasses = "inline-flex items-center justify-center rounded-lg px-6 py-3 text-sm font-semibold focus-visible:ring-2 focus-visible:ring-alpmera-accent focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed";
 
   const variantClasses = {
-    primary: "bg-alpmera-accent text-white shadow-calm hover:-translate-y-0.5 hover:shadow-calm active:translate-y-0 active:shadow-soft",
+    primary: "bg-alpmera-accent text-white btn-depth",
     secondary: "text-alpmera-primary hover:text-alpmera-accent"
   };
 
+  // Reduce animation complexity on mobile for better performance
+  const animationProps = isMobile
+    ? {
+        whileTap: { scale: 0.98 },
+        transition: { duration: 0.1 }
+      }
+    : {
+        whileHover: { scale: 1.02, y: -2 },
+        whileTap: { scale: 0.98, y: 0 },
+        transition: {
+          type: "spring",
+          stiffness: 400,
+          damping: 17
+        }
+      };
+
   return (
-    <button
+    <motion.button
+      {...animationProps}
       className={`${baseClasses} ${variantClasses[variant]} ${className}`}
       disabled={disabled || loading}
       {...props}
@@ -36,6 +64,6 @@ export default function Button({
           {typeof children === "string" ? "Submitting..." : children}
         </span>
       ) : children}
-    </button>
+    </motion.button>
   );
 }
