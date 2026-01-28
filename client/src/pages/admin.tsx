@@ -104,10 +104,11 @@ function getTransitionIdempotencyKey(campaignId: string, targetState: string): s
 // Fallback transitions in case server is unavailable
 const FALLBACK_TRANSITIONS: Record<CampaignState, CampaignState[]> = {
   AGGREGATION: ["SUCCESS", "FAILED"],
-  SUCCESS: ["FULFILLMENT", "FAILED"],
+  SUCCESS: ["PROCUREMENT", "FAILED"],
+  PROCUREMENT: ["FULFILLMENT", "FAILED"],
+  FULFILLMENT: ["COMPLETED", "FAILED"],
   FAILED: [],
-  FULFILLMENT: ["RELEASED", "FAILED"],
-  RELEASED: [],
+  COMPLETED: [],
 };
 
 export default function AdminConsole() {
@@ -607,7 +608,7 @@ export default function AdminConsole() {
                     Process Refunds
                   </Button>
                 )}
-                {selectedCampaign.state === "RELEASED" && (
+                {selectedCampaign.state === "COMPLETED" && (
                   <Button 
                     variant="outline" 
                     size="sm"
@@ -786,9 +787,10 @@ export default function AdminConsole() {
                   <SelectItem value="all">All States</SelectItem>
                   <SelectItem value="AGGREGATION">Aggregation</SelectItem>
                   <SelectItem value="SUCCESS">Success</SelectItem>
-                  <SelectItem value="FAILED">Failed</SelectItem>
+                  <SelectItem value="PROCUREMENT">Procurement</SelectItem>
                   <SelectItem value="FULFILLMENT">Fulfillment</SelectItem>
-                  <SelectItem value="RELEASED">Released</SelectItem>
+                  <SelectItem value="COMPLETED">Completed</SelectItem>
+                  <SelectItem value="FAILED">Failed</SelectItem>
                 </SelectContent>
               </Select>
             </div>
