@@ -1,0 +1,29 @@
+<svg width="200" height="200" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Concept: Collective Grid - Progressive filling representing aggregation toward completion -->
+  <g transform="translate(50, 50)">
+    <!-- 4x4 grid with progressive filling suggesting campaign progress -->
+    <!-- Row 1 -->
+    <rect x="0" y="0" width="22" height="22" fill="#1B4D3E"/>
+    <rect x="26" y="0" width="22" height="22" fill="#1B4D3E"/>
+    <rect x="52" y="0" width="22" height="22" fill="#1B4D3E"/>
+    <rect x="78" y="0" width="22" height="22" fill="#1B4D3E"/>
+
+    <!-- Row 2 -->
+    <rect x="0" y="26" width="22" height="22" fill="#1B4D3E"/>
+    <rect x="26" y="26" width="22" height="22" fill="#1B4D3E"/>
+    <rect x="52" y="26" width="22" height="22" fill="#1B4D3E"/>
+    <rect x="78" y="26" width="22" height="22" stroke="#1B4D3E" stroke-width="2" fill="none"/>
+
+    <!-- Row 3 -->
+    <rect x="0" y="52" width="22" height="22" fill="#1B4D3E"/>
+    <rect x="26" y="52" width="22" height="22" fill="#1B4D3E"/>
+    <rect x="52" y="52" width="22" height="22" stroke="#1B4D3E" stroke-width="2" fill="none"/>
+    <rect x="78" y="52" width="22" height="22" stroke="#1B4D3E" stroke-width="2" fill="none"/>
+
+    <!-- Row 4 -->
+    <rect x="0" y="78" width="22" height="22" fill="#1B4D3E"/>
+    <rect x="26" y="78" width="22" height="22" stroke="#1B4D3E" stroke-width="2" fill="none"/>
+    <rect x="52" y="78" width="22" height="22" stroke="#1B4D3E" stroke-width="2" fill="none"/>
+    <rect x="78" y="78" width="22" height="22" stroke="#1B4D3E" stroke-width="2" fill="none"/>
+  </g>
+</svg>

@@ -1,0 +1,15 @@
+<svg width="200" height="200" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Concept: Contained Peak - Abstract mountain geometry (subtle nod to "Alp" in Alpmera) within containing circle -->
+  <circle cx="100" cy="100" r="70" stroke="#1B4D3E" stroke-width="2" fill="none"/>
+
+  <!-- Geometric peak/mountain with horizontal layers suggesting stages -->
+  <path d="M 100,50 L 140,110 L 60,110 Z" fill="none" stroke="#1B4D3E" stroke-width="2"/>
+
+  <!-- Internal horizontal divisions suggesting stages/milestones -->
+  <line x1="70" y1="100" x2="130" y2="100" stroke="#1B4D3E" stroke-width="2"/>
+  <line x1="80" y1="85" x2="120" y2="85" stroke="#1B4D3E" stroke-width="2"/>
+  <line x1="90" y1="70" x2="110" y2="70" stroke="#1B4D3E" stroke-width="2"/>
+
+  <!-- Base line -->
+  <line x1="60" y1="110" x2="140" y2="110" stroke="#1B4D3E" stroke-width="3"/>
+</svg>

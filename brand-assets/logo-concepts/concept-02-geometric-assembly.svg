@@ -1,0 +1,14 @@
+<svg width="200" height="200" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Concept: Geometric Assembly - Individual units aggregating into a complete hexagon -->
+  <g transform="translate(100, 100)">
+    <!-- Six triangular segments forming a hexagon, suggesting collective assembly -->
+    <path d="M 0,-60 L 52,-30 L 52,30 L 0,60 L -52,30 L -52,-30 Z" stroke="#1B4D3E" stroke-width="2" fill="none"/>
+    <line x1="0" y1="-60" x2="0" y2="0" stroke="#1B4D3E" stroke-width="2"/>
+    <line x1="52" y1="-30" x2="0" y2="0" stroke="#1B4D3E" stroke-width="2"/>
+    <line x1="52" y1="30" x2="0" y2="0" stroke="#1B4D3E" stroke-width="2"/>
+    <line x1="0" y1="60" x2="0" y2="0" stroke="#1B4D3E" stroke-width="2"/>
+    <line x1="-52" y1="30" x2="0" y2="0" stroke="#1B4D3E" stroke-width="2"/>
+    <line x1="-52" y1="-30" x2="0" y2="0" stroke="#1B4D3E" stroke-width="2"/>
+    <circle cx="0" cy="0" r="8" fill="#1B4D3E"/>
+  </g>
+</svg>
