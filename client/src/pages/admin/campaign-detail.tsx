@@ -87,6 +87,8 @@ interface CampaignDetail {
   variations: string | null;
   media: string | null;
   targetUnits: number | null;
+  minThresholdUnits: number | null;
+  processingLock: string | null;
   primaryImageUrl: string | null;
   galleryImageUrls: string | null;
   referencePrices: string | null;
@@ -194,17 +196,19 @@ function getAvailableActions(campaign: CampaignDetail): AdminAction[] {
 const STATE_DISPLAY_LABELS: Record<string, string> = {
   AGGREGATION: "Active",
   SUCCESS: "Funded",
-  FAILED: "Failed",
+  PROCUREMENT: "Processing",
   FULFILLMENT: "Fulfillment",
-  RELEASED: "Released",
+  COMPLETED: "Completed",
+  FAILED: "Failed",
 };
 
 const STATE_COLORS: Record<string, string> = {
   AGGREGATION: "bg-blue-500 text-white",
   SUCCESS: "bg-green-600 text-white",
-  FAILED: "bg-red-500 text-white",
+  PROCUREMENT: "bg-orange-500 text-white",
   FULFILLMENT: "bg-amber-500 text-white",
-  RELEASED: "bg-green-700 text-white",
+  COMPLETED: "bg-green-700 text-white",
+  FAILED: "bg-red-500 text-white",
 };
 
 const PUBLISH_STATUS_BADGES: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = {

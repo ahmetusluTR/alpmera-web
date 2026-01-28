@@ -4214,6 +4214,62 @@ export async function registerRoutes(
     }
   });
 
+  // Admin: Get refund alerts
+  // Lists refund processing failures that require manual intervention
+  // Supports filtering by campaign and unresolved status
+  app.get("/api/admin/refund-alerts", requireAdminAuth, async (req, res) => {
+    try {
+      const { campaignId, unresolvedOnly, limit, offset } = req.query;
+
+      const filters: {
+        campaignId?: string;
+        unresolvedOnly?: boolean;
+        limit?: number;
+        offset?: number;
+      } = {};
+
+      if (campaignId && typeof campaignId === "string") {
+        filters.campaignId = campaignId;
+      }
+
+      if (unresolvedOnly === "true") {
+        filters.unresolvedOnly = true;
+      }
+
+      if (limit && typeof limit === "string") {
+        filters.limit = parseInt(limit, 10);
+      }
+
+      if (offset && typeof offset === "string") {
+        filters.offset = parseInt(offset, 10);
+      }
+
+      const result = await storage.getRefundAlerts(filters);
+      res.json(result);
+    } catch (error) {
+      console.error("Error getting refund alerts:", error);
+      res.status(500).json({ error: "Failed to get refund alerts" });
+    }
+  });
+
+  // Admin: Resolve refund alert
+  // Marks a refund alert as resolved
+  app.post("/api/admin/refund-alerts/:id/resolve", requireAdminAuth, async (req, res) => {
+    try {
+      const { adminUsername } = req.body;
+
+      if (!adminUsername) {
+        return res.status(400).json({ error: "Admin username is required" });
+      }
+
+      await storage.resolveRefundAlert(req.params.id, adminUsername);
+      res.json({ message: "Refund alert resolved successfully" });
+    } catch (error) {
+      console.error("Error resolving refund alert:", error);
+      res.status(500).json({ error: "Failed to resolve refund alert" });
+    }
+  });
+
   // Admin: Create new campaign
   // Protected by requireAdminAuth middleware
   // ALWAYS creates campaigns in AGGREGATION state and DRAFT publish status

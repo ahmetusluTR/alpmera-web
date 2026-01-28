@@ -6,6 +6,7 @@ import {
   supplierAcceptances,
   adminActionLogs,
   idempotencyKeys,
+  refundAlerts,
   users,
   userProfiles,
   userSessions,
@@ -52,7 +53,7 @@ import {
   VALID_TRANSITIONS
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, sql, and, lt } from "drizzle-orm";
+import { eq, desc, sql, and, lt, isNull } from "drizzle-orm";
 import { randomBytes } from "crypto";
 
 export interface IStorage {
@@ -170,6 +171,36 @@ export interface IStorage {
     };
     lastUpdated: string | null;
   }>;
+
+  // Refund alerts operations
+  getRefundAlerts(filters?: {
+    campaignId?: string;
+    unresolvedOnly?: boolean;
+    limit?: number;
+    offset?: number;
+  }): Promise<{
+    alerts: Array<{
+      id: string;
+      campaignId: string;
+      campaignTitle: string;
+      commitmentId: string;
+      commitmentReference: string;
+      participantEmail: string;
+      errorMessage: string;
+      requiresManualIntervention: boolean;
+      resolvedAt: Date | null;
+      resolvedBy: string | null;
+      createdAt: Date;
+    }>;
+    total: number;
+  }>;
+  createRefundAlert(data: {
+    campaignId: string;
+    commitmentId: string;
+    errorMessage: string;
+    requiresManualIntervention?: boolean;
+  }): Promise<void>;
+  resolveRefundAlert(id: string, resolvedBy: string): Promise<void>;
 }
 
 // Generate unique reference number for commitments
@@ -977,6 +1008,106 @@ export class DatabaseStorage implements IStorage {
       },
       lastUpdated: lastUpdatedResult?.lastUpdated || null,
     };
+  }
+
+  // Refund alerts operations
+  async getRefundAlerts(filters?: {
+    campaignId?: string;
+    unresolvedOnly?: boolean;
+    limit?: number;
+    offset?: number;
+  }): Promise<{
+    alerts: Array<{
+      id: string;
+      campaignId: string;
+      campaignTitle: string;
+      commitmentId: string;
+      commitmentReference: string;
+      participantEmail: string;
+      errorMessage: string;
+      requiresManualIntervention: boolean;
+      resolvedAt: Date | null;
+      resolvedBy: string | null;
+      createdAt: Date;
+    }>;
+    total: number;
+  }> {
+    const limit = filters?.limit || 50;
+    const offset = filters?.offset || 0;
+
+    // Build where conditions
+    const conditions: any[] = [];
+    if (filters?.campaignId) {
+      conditions.push(eq(refundAlerts.campaignId, filters.campaignId));
+    }
+    if (filters?.unresolvedOnly) {
+      conditions.push(isNull(refundAlerts.resolvedAt));
+    }
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    // Get total count
+    const [countResult] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(refundAlerts)
+      .where(whereClause);
+
+    // Get alerts with campaign and commitment details
+    const alerts = await db
+      .select({
+        id: refundAlerts.id,
+        campaignId: refundAlerts.campaignId,
+        campaignTitle: campaigns.title,
+        commitmentId: refundAlerts.commitmentId,
+        commitmentReference: commitments.referenceNumber,
+        participantEmail: commitments.participantEmail,
+        errorMessage: refundAlerts.errorMessage,
+        requiresManualIntervention: refundAlerts.requiresManualIntervention,
+        resolvedAt: refundAlerts.resolvedAt,
+        resolvedBy: refundAlerts.resolvedBy,
+        createdAt: refundAlerts.createdAt,
+      })
+      .from(refundAlerts)
+      .leftJoin(campaigns, eq(refundAlerts.campaignId, campaigns.id))
+      .leftJoin(commitments, eq(refundAlerts.commitmentId, commitments.id))
+      .where(whereClause)
+      .orderBy(desc(refundAlerts.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    return {
+      alerts: alerts.map(alert => ({
+        ...alert,
+        campaignTitle: alert.campaignTitle || "Unknown Campaign",
+        commitmentReference: alert.commitmentReference || "Unknown",
+        participantEmail: alert.participantEmail || "Unknown",
+      })),
+      total: countResult?.count || 0,
+    };
+  }
+
+  async createRefundAlert(data: {
+    campaignId: string;
+    commitmentId: string;
+    errorMessage: string;
+    requiresManualIntervention?: boolean;
+  }): Promise<void> {
+    await db.insert(refundAlerts).values({
+      campaignId: data.campaignId,
+      commitmentId: data.commitmentId,
+      errorMessage: data.errorMessage,
+      requiresManualIntervention: data.requiresManualIntervention ?? true,
+    });
+  }
+
+  async resolveRefundAlert(id: string, resolvedBy: string): Promise<void> {
+    await db
+      .update(refundAlerts)
+      .set({
+        resolvedAt: new Date(),
+        resolvedBy,
+      })
+      .where(eq(refundAlerts.id, id));
   }
 }
 

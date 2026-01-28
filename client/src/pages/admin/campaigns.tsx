@@ -64,17 +64,19 @@ interface CampaignListItem {
 const STATE_DISPLAY_LABELS: Record<string, string> = {
   AGGREGATION: "Active",
   SUCCESS: "Funded",
-  FAILED: "Failed",
+  PROCUREMENT: "Processing",
   FULFILLMENT: "Fulfillment",
-  RELEASED: "Released",
+  COMPLETED: "Completed",
+  FAILED: "Failed",
 };
 
 const STATE_COLORS: Record<string, string> = {
   AGGREGATION: "bg-blue-500 text-white",
   SUCCESS: "bg-green-600 text-white",
-  FAILED: "bg-red-500 text-white",
+  PROCUREMENT: "bg-orange-500 text-white",
   FULFILLMENT: "bg-amber-500 text-white",
-  RELEASED: "bg-green-700 text-white",
+  COMPLETED: "bg-green-700 text-white",
+  FAILED: "bg-red-500 text-white",
 };
 
 const PUBLISH_STATUS_BADGES: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = {
@@ -223,8 +225,9 @@ export default function CampaignsListPage() {
                 { value: "all", label: "All States" },
                 { value: "AGGREGATION", label: "Active" },
                 { value: "SUCCESS", label: "Funded" },
+                { value: "PROCUREMENT", label: "Processing" },
                 { value: "FULFILLMENT", label: "Fulfillment" },
-                { value: "RELEASED", label: "Released" },
+                { value: "COMPLETED", label: "Completed" },
                 { value: "FAILED", label: "Failed" },
               ]}
               createdFrom={controls.createdFrom}

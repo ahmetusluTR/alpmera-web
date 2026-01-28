@@ -10,6 +10,7 @@ import pg from "pg";
 import { pool } from "./db";
 import { log, traceMiddleware } from "./log";
 import { startSkuVerifier } from "./workers/sku-verifier";
+import { campaignLifecycleJob } from "./jobs/campaign-lifecycle";
 import { validateEnv } from "./env";
 
 // CRITICAL: Validate environment before starting server
@@ -181,7 +182,23 @@ app.use((req, res, next) => {
       if (process.env.NODE_ENV !== "test") {
         startSkuVerifier();
         log("SKU verification worker started");
+
+        campaignLifecycleJob.start();
+        log("Campaign lifecycle job started");
       }
     },
   );
 })();
+
+// Graceful shutdown handler for background jobs
+process.on("SIGTERM", () => {
+  log("SIGTERM signal received: stopping background jobs");
+  campaignLifecycleJob.stop();
+  process.exit(0);
+});
+
+process.on("SIGINT", () => {
+  log("SIGINT signal received: stopping background jobs");
+  campaignLifecycleJob.stop();
+  process.exit(0);
+});
