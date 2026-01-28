@@ -1,0 +1,17 @@
+{
+  "name": "alpmera-brand-assets",
+  "version": "1.0.0",
+  "description": "Platform-specific brand asset generation for Alpmera",
+  "type": "module",
+  "scripts": {
+    "generate:x": "node generate-x-assets.js",
+    "generate:linkedin": "node generate-linkedin-assets.js",
+    "generate:all": "npm run generate:x && npm run generate:linkedin"
+  },
+  "dependencies": {
+    "sharp": "^0.33.2"
+  },
+  "devDependencies": {},
+  "author": "Alpmera",
+  "license": "UNLICENSED"
+}

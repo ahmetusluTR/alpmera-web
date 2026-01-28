@@ -36,7 +36,14 @@
       "Bash(taskkill:*)",
       "Bash(curl:*)",
       "Skill(frontend-design)",
-      "Skill(frontend-design:*)"
+      "Skill(frontend-design:*)",
+      "Skill(maestro:git-worktrees)",
+      "Skill(maestro:git-worktrees:*)",
+      "Skill(maestro:planning-mastery)",
+      "Skill(maestro:planning-mastery:*)",
+      "Bash(npm test:*)",
+      "Bash(npm run db:test:reset:*)",
+      "Bash(npm run generate:all:*)"
     ]
   }
 }
