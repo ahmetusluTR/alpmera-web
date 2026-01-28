@@ -36,4 +36,5 @@ vite.config.ts.*
 .trae
 .windsurf
 .zencoder
+.worktrees
 nul
