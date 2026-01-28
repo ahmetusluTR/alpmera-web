@@ -15,19 +15,9 @@ export default function AdminSignInPage() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const refreshAdminSession = async () => {
-    await queryClient.fetchQuery({
+    // Invalidate and wait for refetch to complete in AdminAuthProvider
+    await queryClient.refetchQueries({
       queryKey: ["/api/admin/session"],
-      queryFn: async () => {
-        const res = await fetch("/api/admin/session", {
-          credentials: "include",
-          cache: "no-store",
-        });
-        if (!res.ok) {
-          const text = (await res.text()) || res.statusText;
-          throw new Error(`${res.status}: ${text}`);
-        }
-        return res.json();
-      },
     });
   };
 

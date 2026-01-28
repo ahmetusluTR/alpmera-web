@@ -34,7 +34,9 @@
       "Bash(netstat:*)",
       "Bash(findstr:*)",
       "Bash(taskkill:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Skill(frontend-design)",
+      "Skill(frontend-design:*)"
     ]
   }
 }

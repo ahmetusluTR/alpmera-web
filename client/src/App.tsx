@@ -78,6 +78,7 @@ import AccountPayments from "@/pages/account/payments";
 import AccountEscrowDetail from "@/pages/account/escrow-detail";
 import AccountRefunds from "@/pages/account/refunds";
 import AccountRefundDetail from "@/pages/account/refund-detail";
+import AccountCredits from "@/pages/account/credits";
 import AccountSecurity from "@/pages/account/security";
 
 function Router() {
@@ -181,6 +182,11 @@ function Router() {
             <AccountRefundDetail />
           </AuthGuard>
         )}
+      </Route>
+      <Route path="/account/credits">
+        <AuthGuard>
+          <AccountCredits />
+        </AuthGuard>
       </Route>
       <Route path="/account/security">
         <AuthGuard>

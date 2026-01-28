@@ -4,10 +4,11 @@ import { Layout } from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/lib/auth";
-import { User, Package, Wallet, RefreshCcw, Shield, LogOut } from "lucide-react";
+import { User, Package, Wallet, RefreshCcw, Shield, LogOut, LayoutDashboard } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
+  { path: "/account", label: "Dashboard", icon: LayoutDashboard },
   { path: "/account/commitments", label: "Commitments", icon: Package },
   { path: "/account/profile", label: "Profile", icon: User },
   { path: "/account/escrow", label: "Payments & Escrow", icon: Wallet },
@@ -66,7 +67,10 @@ export function AccountLayout({ children, returnTo }: AccountLayoutProps) {
           <nav className="md:w-56 shrink-0">
             <div className="flex md:flex-col gap-1 overflow-x-auto pb-2 md:pb-0">
               {navItems.map((item) => {
-                const isActive = location === item.path;
+                // Handle /account path matching (both "/account" and "/account/" should match)
+                const isActive = item.path === "/account"
+                  ? (location === "/account" || location === "/account/")
+                  : location === item.path;
                 const Icon = item.icon;
                 return (
                   <Link key={item.path} href={item.path}>
@@ -76,7 +80,7 @@ export function AccountLayout({ children, returnTo }: AccountLayoutProps) {
                         "justify-start gap-2 w-full whitespace-nowrap",
                         isActive && "bg-muted"
                       )}
-                      data-testid={`nav-${item.path.split("/").pop()}`}
+                      data-testid={`nav-${item.path.split("/").pop() || "account"}`}
                     >
                       <Icon className="w-4 h-4" />
                       <span className="hidden sm:inline">{item.label}</span>

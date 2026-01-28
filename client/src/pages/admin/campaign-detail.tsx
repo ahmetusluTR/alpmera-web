@@ -1116,6 +1116,14 @@ export default function CampaignDetailPage() {
               const updates = { ...editForm };
               if (editingSection === "specs") updates.specs = JSON.stringify(specs.filter(s => s.key && s.value));
               if (editingSection === "prices") updates.referencePrices = JSON.stringify(editForm.referencePrices);
+
+              // Sanitize UUID fields: convert empty strings to null
+              if (editingSection === "prerequisites") {
+                if (updates.productId === "") updates.productId = null;
+                if (updates.supplierId === "") updates.supplierId = null;
+                if (updates.consolidationPointId === "") updates.consolidationPointId = null;
+              }
+
               saveMutation.mutate(updates);
             }} disabled={saveMutation.isPending}>
               {saveMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}

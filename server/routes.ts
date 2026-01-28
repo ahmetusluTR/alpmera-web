@@ -20,6 +20,10 @@ import {
   commitments,
   campaigns,
   campaignAdminEvents,
+  adminActionLogs,
+  products,
+  suppliers,
+  consolidationPoints,
   insertProductSchema,
   updateProductSchema,
   insertSupplierSchema,
@@ -2656,6 +2660,158 @@ export async function registerRoutes(
     }
   });
 
+  // GET /api/account/credits - Get user's credit balance and transaction history
+  app.get("/api/account/credits", requireUserAuth, async (req, res) => {
+    try {
+      const userId = (req as any).userId;
+
+      // Get credit summary (balance breakdown)
+      const summary = await storage.getParticipantCreditSummary(userId);
+
+      // Get credit ledger entries for transaction history
+      const { entries } = await storage.getCreditLedgerEntries({
+        participantId: userId,
+        limit: 100, // Last 100 transactions
+      });
+
+      // Map entries to participant-friendly format
+      const transactions = entries.map(entry => ({
+        id: entry.id,
+        eventType: entry.eventType,
+        amount: entry.amount,
+        currency: entry.currency,
+        campaignTitle: entry.campaignTitle || null,
+        campaignId: entry.campaignId || null,
+        reason: entry.reason || null,
+        createdAt: entry.createdAt,
+      }));
+
+      res.json({
+        summary,
+        transactions,
+      });
+    } catch (error) {
+      console.error("[USER] Error fetching credits:", error);
+      res.status(500).json({ error: "Failed to fetch credits" });
+    }
+  });
+
+  // GET /api/account/dashboard - Participant dashboard data
+  app.get("/api/account/dashboard", requireUserAuth, async (req, res) => {
+    try {
+      const userId = (req as any).userId;
+
+      // 1. Get all user commitments
+      const userCommitments = await storage.getCommitmentsByUserId(userId);
+
+      // 2. Calculate summary stats
+      const activeCommitments = userCommitments.filter(c => c.status === "LOCKED").length;
+
+      // 3. Calculate total locked in escrow
+      const escrowEntries = await storage.getEscrowEntriesByUserId(userId);
+      const totalLockedInEscrow = escrowEntries
+        .filter(e => e.entryType === "LOCK")
+        .reduce((sum, e) => sum + parseFloat(e.amount), 0);
+
+      // 4. Get available credits
+      const creditSummary = await storage.getParticipantCreditSummary(userId);
+      const availableCredits = creditSummary.availableBalance;
+
+      // 5. Get recent commitments (max 6, most recent first)
+      const recentCommitments = userCommitments
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .slice(0, 6)
+        .map(c => ({
+          id: c.id,
+          referenceNumber: c.referenceNumber,
+          campaignId: c.campaign.id,
+          campaignTitle: c.campaign.title,
+          campaignImage: c.campaign.imageUrl || null,
+          campaignState: c.campaign.state,
+          commitmentStatus: c.status,
+          amount: c.quantity.toString(), // Display as quantity
+          createdAt: c.createdAt,
+        }));
+
+      // 6. Check for priority items
+      const now = new Date();
+      const sevenDaysFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+      // Campaigns closing soon (deadline < 7 days, user has commitment, campaign in AGGREGATION)
+      const closingSoon = userCommitments
+        .filter(c => {
+          if (c.campaign.state !== "AGGREGATION") return false;
+          if (!c.campaign.deadline) return false;
+          const deadline = new Date(c.campaign.deadline);
+          return deadline >= now && deadline <= sevenDaysFromNow;
+        })
+        .map(c => {
+          const deadline = new Date(c.campaign.deadline!);
+          const daysUntilDeadline = Math.ceil((deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+          return {
+            campaignId: c.campaign.id,
+            title: c.campaign.title,
+            daysUntilDeadline,
+            deadline: c.campaign.deadline!,
+          };
+        })
+        .sort((a, b) => a.daysUntilDeadline - b.daysUntilDeadline);
+
+      // Recent status changes (last 7 days)
+      const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const campaignIds = [...new Set(userCommitments.map(c => c.campaignId))];
+
+      const recentUpdatesPromises = campaignIds.map(async (campaignId) => {
+        const logs = await storage.getAdminActionLogsByCampaign(campaignId);
+        const recentTransitions = logs
+          .filter(log =>
+            log.action === "state_transition" &&
+            log.newState &&
+            new Date(log.createdAt) >= sevenDaysAgo
+          )
+          .map(log => {
+            const campaign = userCommitments.find(c => c.campaignId === campaignId)?.campaign;
+            return {
+              campaignId,
+              title: campaign?.title || "Unknown Campaign",
+              statusChange: `Changed to ${log.newState}`,
+              timestamp: log.createdAt,
+            };
+          });
+        return recentTransitions;
+      });
+
+      const recentUpdatesNested = await Promise.all(recentUpdatesPromises);
+      const recentUpdates = recentUpdatesNested
+        .flat()
+        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+        .slice(0, 5); // Limit to 5 most recent
+
+      // Build response
+      const response: any = {
+        summary: {
+          activeCommitments,
+          totalLockedInEscrow: totalLockedInEscrow.toFixed(2),
+          availableCredits,
+        },
+        recentCommitments,
+      };
+
+      // Only include priorityItems if there are items to show
+      if (closingSoon.length > 0 || recentUpdates.length > 0) {
+        response.priorityItems = {
+          closingSoon,
+          recentUpdates,
+        };
+      }
+
+      res.json(response);
+    } catch (error) {
+      console.error("[USER] Error fetching dashboard data:", error);
+      res.status(500).json({ error: "Failed to fetch dashboard data" });
+    }
+  });
+
   // Get campaigns with stats (public endpoint - HVLC)
   // Only returns PUBLISHED campaigns, redacts monetary fields for list view
   app.get("/api/campaigns", async (req, res) => {
@@ -4501,6 +4657,8 @@ export async function registerRoutes(
       });
     } catch (error) {
       console.error("Error fetching admin campaigns:", error);
+      console.error("Error stack:", error instanceof Error ? error.stack : String(error));
+      console.error("Error message:", error instanceof Error ? error.message : String(error));
       res.status(500).json({ error: "Failed to fetch campaigns" });
     }
   });
