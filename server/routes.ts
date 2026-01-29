@@ -154,7 +154,7 @@ const commitmentRequestSchema = z.object({
 
 // Admin transition request schema
 const transitionRequestSchema = z.object({
-  newState: z.enum(["AGGREGATION", "SUCCESS", "FAILED", "FULFILLMENT", "RELEASED"]),
+  newState: z.enum(["AGGREGATION", "SUCCESS", "PROCUREMENT", "FULFILLMENT", "COMPLETED", "FAILED"]),
   reason: z.string().min(1, "Reason is required for audit trail"),
   adminUsername: z.string().min(1, "Admin username is required"),
 });
@@ -4115,8 +4115,8 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Campaign not found" });
       }
 
-      if (campaign.state !== "RELEASED") {
-        return res.status(400).json({ error: "Can only release funds for campaigns in RELEASED state" });
+      if (campaign.state !== "COMPLETED") {
+        return res.status(400).json({ error: "Can only release funds for campaigns in COMPLETED state" });
       }
 
       // Insert idempotency key BEFORE processing (catches duplicates)
@@ -4211,6 +4211,62 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error releasing funds:", error);
       res.status(500).json({ error: "Failed to release funds" });
+    }
+  });
+
+  // Admin: Get refund alerts
+  // Lists refund processing failures that require manual intervention
+  // Supports filtering by campaign and unresolved status
+  app.get("/api/admin/refund-alerts", requireAdminAuth, async (req, res) => {
+    try {
+      const { campaignId, unresolvedOnly, limit, offset } = req.query;
+
+      const filters: {
+        campaignId?: string;
+        unresolvedOnly?: boolean;
+        limit?: number;
+        offset?: number;
+      } = {};
+
+      if (campaignId && typeof campaignId === "string") {
+        filters.campaignId = campaignId;
+      }
+
+      if (unresolvedOnly === "true") {
+        filters.unresolvedOnly = true;
+      }
+
+      if (limit && typeof limit === "string") {
+        filters.limit = parseInt(limit, 10);
+      }
+
+      if (offset && typeof offset === "string") {
+        filters.offset = parseInt(offset, 10);
+      }
+
+      const result = await storage.getRefundAlerts(filters);
+      res.json(result);
+    } catch (error) {
+      console.error("Error getting refund alerts:", error);
+      res.status(500).json({ error: "Failed to get refund alerts" });
+    }
+  });
+
+  // Admin: Resolve refund alert
+  // Marks a refund alert as resolved
+  app.post("/api/admin/refund-alerts/:id/resolve", requireAdminAuth, async (req, res) => {
+    try {
+      const { adminUsername } = req.body;
+
+      if (!adminUsername) {
+        return res.status(400).json({ error: "Admin username is required" });
+      }
+
+      await storage.resolveRefundAlert(req.params.id, adminUsername);
+      res.json({ message: "Refund alert resolved successfully" });
+    } catch (error) {
+      console.error("Error resolving refund alert:", error);
+      res.status(500).json({ error: "Failed to resolve refund alert" });
     }
   });
 
@@ -4875,7 +4931,7 @@ export async function registerRoutes(
       const adminPublishStatus = campaign[0].adminPublishStatus || "DRAFT";
       const campaignState = campaign[0].state;
       const isPublished = adminPublishStatus === "PUBLISHED";
-      const isFulfillmentPhase = campaignState === "FULFILLMENT" || campaignState === "RELEASED";
+      const isFulfillmentPhase = campaignState === "FULFILLMENT" || campaignState === "COMPLETED";
 
       const updateFields = req.body;
       const disallowedFields: string[] = [];
@@ -5025,13 +5081,13 @@ export async function registerRoutes(
           if (currentState !== "FULFILLMENT") {
             return res.status(400).json({ error: "Campaign must be in FULFILLMENT state to release escrow" });
           }
-          newState = "RELEASED";
+          newState = "COMPLETED";
           reason = "Escrow released by admin after fulfillment";
           break;
 
         case "FAIL_CAMPAIGN":
-          if (currentState === "RELEASED" || currentState === "FAILED") {
-            return res.status(400).json({ error: "Cannot fail a campaign that is already released or failed" });
+          if (currentState === "COMPLETED" || currentState === "FAILED") {
+            return res.status(400).json({ error: "Cannot fail a campaign that is already completed or failed" });
           }
           newState = "FAILED";
           reason = "Campaign failed by admin";
@@ -5593,14 +5649,14 @@ DEF67890,admin_manual_refund,"Participant requested early refund"`;
       const overdueOnly = typeof req.query.overdueOnly === "string" ? req.query.overdueOnly === "true" : false;
 
       const conditions: any[] = [
-        or(eq(campaigns.state, "FULFILLMENT"), eq(campaigns.state, "RELEASED")),
+        or(eq(campaigns.state, "FULFILLMENT"), eq(campaigns.state, "COMPLETED")),
       ];
       if (listQuery.params.search) {
         const searchValue = `%${listQuery.params.search}%`;
         conditions.push(ilike(campaigns.title, searchValue));
       }
       if (listQuery.params.status === "COMPLETED") {
-        conditions.push(eq(campaigns.state, "RELEASED"));
+        conditions.push(eq(campaigns.state, "COMPLETED"));
       } else if (listQuery.params.status === "IN_PROGRESS") {
         conditions.push(eq(campaigns.state, "FULFILLMENT"));
       }
@@ -5619,7 +5675,7 @@ DEF67890,admin_manual_refund,"Participant requested early refund"`;
       }
 
       const whereClause = and(...conditions);
-      const statusExpr = sql<string>`case when ${campaigns.state} = 'RELEASED' then 'COMPLETED' else 'IN_PROGRESS' end`;
+      const statusExpr = sql<string>`case when ${campaigns.state} = 'COMPLETED' then 'COMPLETED' else 'IN_PROGRESS' end`;
 
       const [countResult] = await db
         .select({ count: count() })

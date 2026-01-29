@@ -264,7 +264,7 @@ export const skuVerificationJobs = pgTable("sku_verification_jobs", {
 // CAMPAIGN TABLES
 // ============================================
 
-export const campaignStateEnum = pgEnum("campaign_state", ["AGGREGATION", "SUCCESS", "FAILED", "FULFILLMENT", "RELEASED"]);
+export const campaignStateEnum = pgEnum("campaign_state", ["AGGREGATION", "SUCCESS", "PROCUREMENT", "FULFILLMENT", "COMPLETED", "FAILED"]);
 export const commitmentStatusEnum = pgEnum("commitment_status", ["LOCKED", "REFUNDED", "RELEASED"]);
 export const escrowEntryTypeEnum = pgEnum("escrow_entry_type", ["LOCK", "REFUND", "RELEASE"]);
 export const adminPublishStatusEnum = pgEnum("admin_publish_status", ["DRAFT", "PUBLISHED", "HIDDEN"]);
@@ -319,6 +319,8 @@ export const campaigns = pgTable("campaigns", {
   productId: varchar("product_id").references(() => products.id),
   supplierId: varchar("supplier_id").references(() => suppliers.id),
   consolidationPointId: varchar("consolidation_point_id").references(() => consolidationPoints.id),
+  minThresholdUnits: integer("min_threshold_units"),
+  processingLock: timestamp("processing_lock"),
 });
 
 export const commitments = pgTable("commitments", {
@@ -392,6 +394,19 @@ export const adminActionLogs = pgTable("admin_action_logs", {
   reason: text("reason"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+export const refundAlerts = pgTable("refund_alerts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  campaignId: varchar("campaign_id").notNull().references(() => campaigns.id),
+  commitmentId: varchar("commitment_id").notNull().references(() => commitments.id),
+  errorMessage: text("error_message").notNull(),
+  requiresManualIntervention: boolean("requires_manual_intervention").default(true),
+  resolvedAt: timestamp("resolved_at"),
+  resolvedBy: text("resolved_by"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  unresolvedIdx: index("refund_alerts_unresolved_idx").on(table.requiresManualIntervention, table.createdAt),
+}));
 
 export const campaignAdminEventsEnum = pgEnum("campaign_admin_event_type", ["CREATED", "UPDATED", "PUBLISHED"]);
 
@@ -610,7 +625,7 @@ export type InsertAuthCode = z.infer<typeof insertAuthCodeSchema>;
 export type Campaign = typeof campaigns.$inferSelect;
 export type InsertCampaign = z.infer<typeof insertCampaignSchema>;
 export type CampaignStatus = "DRAFT" | "PUBLISHED" | "HIDDEN" | "ARCHIVED";
-export type CampaignState = "AGGREGATION" | "SUCCESS" | "FAILED" | "FULFILLMENT" | "RELEASED";
+export type CampaignState = "AGGREGATION" | "SUCCESS" | "PROCUREMENT" | "FULFILLMENT" | "COMPLETED" | "FAILED";
 
 export type Commitment = typeof commitments.$inferSelect;
 export type InsertCommitment = z.infer<typeof insertCommitmentSchema>;
@@ -694,8 +709,9 @@ export interface ProductSpec {
 
 export const VALID_TRANSITIONS: Record<CampaignState, CampaignState[]> = {
   AGGREGATION: ["SUCCESS", "FAILED"],
-  SUCCESS: ["FULFILLMENT", "FAILED"],
+  SUCCESS: ["PROCUREMENT", "FAILED"],
+  PROCUREMENT: ["FULFILLMENT", "FAILED"],
+  FULFILLMENT: ["COMPLETED", "FAILED"],
   FAILED: [],
-  FULFILLMENT: ["RELEASED", "FAILED"],
-  RELEASED: [],
+  COMPLETED: [],
 };

@@ -68,9 +68,11 @@ function getCampaignStateBadge(state: string): { label: string; variant: "defaul
       return { label: "Aggregating", variant: "default", color: "bg-blue-50 text-blue-700 border-blue-200" };
     case "SUCCESS":
       return { label: "Target Reached", variant: "default", color: "bg-green-50 text-green-700 border-green-200" };
+    case "PROCUREMENT":
+      return { label: "Processing", variant: "default", color: "bg-orange-50 text-orange-700 border-orange-200" };
     case "FULFILLMENT":
       return { label: "Fulfilling", variant: "default", color: "bg-purple-50 text-purple-700 border-purple-200" };
-    case "RELEASED":
+    case "COMPLETED":
       return { label: "Completed", variant: "outline", color: "bg-gray-50 text-gray-700 border-gray-300" };
     case "FAILED":
       return { label: "Failed", variant: "secondary", color: "bg-gray-100 text-gray-600 border-gray-300" };
