@@ -6,12 +6,13 @@ interface StateTimelineProps {
   isFailed?: boolean;
 }
 
-const STATES: CampaignState[] = ["AGGREGATION", "SUCCESS", "FULFILLMENT", "RELEASED"];
+const STATES: CampaignState[] = ["AGGREGATION", "SUCCESS", "PROCUREMENT", "FULFILLMENT", "RELEASED"];
 
 const STATE_LABELS: Record<CampaignState, string> = {
   AGGREGATION: "Gathering commitments",
   SUCCESS: "Goal reached",
   FAILED: "Not completed",
+  PROCUREMENT: "Supplier preparing",
   FULFILLMENT: "In execution",
   RELEASED: "Completed",
 };

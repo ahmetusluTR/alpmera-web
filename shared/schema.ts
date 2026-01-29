@@ -264,7 +264,7 @@ export const skuVerificationJobs = pgTable("sku_verification_jobs", {
 // CAMPAIGN TABLES
 // ============================================
 
-export const campaignStateEnum = pgEnum("campaign_state", ["AGGREGATION", "SUCCESS", "FAILED", "FULFILLMENT", "RELEASED"]);
+export const campaignStateEnum = pgEnum("campaign_state", ["AGGREGATION", "SUCCESS", "FAILED", "PROCUREMENT", "FULFILLMENT", "RELEASED"]);
 export const commitmentStatusEnum = pgEnum("commitment_status", ["LOCKED", "REFUNDED", "RELEASED"]);
 export const escrowEntryTypeEnum = pgEnum("escrow_entry_type", ["LOCK", "REFUND", "RELEASE"]);
 export const adminPublishStatusEnum = pgEnum("admin_publish_status", ["DRAFT", "PUBLISHED", "HIDDEN"]);
@@ -610,7 +610,7 @@ export type InsertAuthCode = z.infer<typeof insertAuthCodeSchema>;
 export type Campaign = typeof campaigns.$inferSelect;
 export type InsertCampaign = z.infer<typeof insertCampaignSchema>;
 export type CampaignStatus = "DRAFT" | "PUBLISHED" | "HIDDEN" | "ARCHIVED";
-export type CampaignState = "AGGREGATION" | "SUCCESS" | "FAILED" | "FULFILLMENT" | "RELEASED";
+export type CampaignState = "AGGREGATION" | "SUCCESS" | "FAILED" | "PROCUREMENT" | "FULFILLMENT" | "RELEASED";
 
 export type Commitment = typeof commitments.$inferSelect;
 export type InsertCommitment = z.infer<typeof insertCommitmentSchema>;
@@ -694,8 +694,9 @@ export interface ProductSpec {
 
 export const VALID_TRANSITIONS: Record<CampaignState, CampaignState[]> = {
   AGGREGATION: ["SUCCESS", "FAILED"],
-  SUCCESS: ["FULFILLMENT", "FAILED"],
+  SUCCESS: ["PROCUREMENT", "FAILED"],
   FAILED: [],
+  PROCUREMENT: ["FULFILLMENT", "FAILED"],
   FULFILLMENT: ["RELEASED", "FAILED"],
   RELEASED: [],
 };

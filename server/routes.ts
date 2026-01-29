@@ -154,7 +154,7 @@ const commitmentRequestSchema = z.object({
 
 // Admin transition request schema
 const transitionRequestSchema = z.object({
-  newState: z.enum(["AGGREGATION", "SUCCESS", "FAILED", "FULFILLMENT", "RELEASED"]),
+  newState: z.enum(["AGGREGATION", "SUCCESS", "FAILED", "PROCUREMENT", "FULFILLMENT", "RELEASED"]),
   reason: z.string().min(1, "Reason is required for audit trail"),
   adminUsername: z.string().min(1, "Admin username is required"),
 });
@@ -5010,12 +5010,20 @@ export async function registerRoutes(
           reason = "Target met, campaign marked as funded by admin";
           break;
 
-        case "START_FULFILLMENT":
+        case "START_PROCUREMENT":
           if (currentState !== "SUCCESS") {
-            return res.status(400).json({ error: "Campaign must be in SUCCESS (funded) state to start fulfillment" });
+            return res.status(400).json({ error: "Campaign must be in SUCCESS (funded) state to start procurement" });
           }
           if (!campaign.supplierAcceptedAt) {
-            return res.status(400).json({ error: "Supplier must accept before fulfillment can start" });
+            return res.status(400).json({ error: "Supplier must accept before procurement can start" });
+          }
+          newState = "PROCUREMENT";
+          reason = "Supplier accepted, procurement phase started";
+          break;
+
+        case "START_FULFILLMENT":
+          if (currentState !== "PROCUREMENT") {
+            return res.status(400).json({ error: "Campaign must be in PROCUREMENT state to start fulfillment" });
           }
           newState = "FULFILLMENT";
           reason = "Fulfillment started by admin";

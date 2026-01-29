@@ -104,8 +104,9 @@ function getTransitionIdempotencyKey(campaignId: string, targetState: string): s
 // Fallback transitions in case server is unavailable
 const FALLBACK_TRANSITIONS: Record<CampaignState, CampaignState[]> = {
   AGGREGATION: ["SUCCESS", "FAILED"],
-  SUCCESS: ["FULFILLMENT", "FAILED"],
+  SUCCESS: ["PROCUREMENT", "FAILED"],
   FAILED: [],
+  PROCUREMENT: ["FULFILLMENT", "FAILED"],
   FULFILLMENT: ["RELEASED", "FAILED"],
   RELEASED: [],
 };

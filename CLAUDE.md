@@ -161,9 +161,9 @@ Configured in [vite.config.ts](vite.config.ts) and [vitest.config.ts](vitest.con
 ## 🔄 Campaign State Machine
 
 ```
-DESIGN → AGGREGATION → SUCCESS → PROCUREMENT → FULFILLMENT → COMPLETED
-            ↓             ↓
-          FAILED       FAILED
+AGGREGATION → SUCCESS → PROCUREMENT → FULFILLMENT → RELEASED
+      ↓           ↓           ↓             ↓
+   FAILED      FAILED      FAILED        FAILED
 ```
 
 **Requirements:**
