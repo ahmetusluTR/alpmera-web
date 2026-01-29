@@ -43,7 +43,8 @@
       "Skill(maestro:planning-mastery:*)",
       "Bash(npm test:*)",
       "Bash(npm run db:test:reset:*)",
-      "Bash(npm run generate:all:*)"
+      "Bash(npm run generate:all:*)",
+      "Bash(echo:*)"
     ]
   }
 }
